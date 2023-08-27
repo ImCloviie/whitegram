@@ -35,7 +35,7 @@ Box {
 }
 
 boxDuration: 200;
-boxRadius: 8px;
+boxRadius: 6px;
 
 boxButtonFont: font(boxFontSize semibold);
 defaultBoxButtonTextStyle: TextStyle(semiboldTextStyle) {

@@ -168,9 +168,9 @@ introBg: windowBg; // login background
 introTitleFg: windowBoldFg; // login title text
 introDescriptionFg: windowSubTextFg; // login description text
 
-introCoverTopBg: #0f89d0; // intro gradient top (from)
-introCoverBottomBg: #39b0f0; // intro gradient bottom (to)
-introCoverIconsFg: #5ec6ff; // intro cloud graphics
+introCoverTopBg: #2B2242; // intro gradient top (from)
+introCoverBottomBg: #2B2242; // intro gradient bottom (to)
+introCoverIconsFg: #FFFFFF; // intro cloud graphics
 introCoverPlaneTrace: #5ec6ff69; // intro plane traces
 introCoverPlaneInner: #c6d8e8; // intro plane part
 introCoverPlaneOuter: #a1bed4; // intro plane part

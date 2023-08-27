@@ -124,6 +124,7 @@ Toggle {
 	shift: pixels;
 	diameter: pixels;
 	width: pixels;
+	animPadding: pixels;
 	xsize: pixels;
 	vsize: pixels;
 	vshift: pixels;
@@ -858,16 +859,20 @@ defaultRadio: Radio {
 	duration: universalDuration;
 	rippleAreaPadding: 8px;
 }
+defaultToggleDuration: universalDuration;
+defaultToggleShift: 1px;
+defaultToggleDiameter: 16px;
 defaultToggle: Toggle {
 	toggledBg: windowBg;
 	toggledFg: windowBgActive;
 	untoggledBg: windowBg;
 	untoggledFg: checkboxFg;
-	duration: universalDuration;
+    duration: 150;
 	border: 2px;
-	shift: 1px;
-	diameter: 16px;
+	shift: -2px;
+	diameter: 14px;
 	width: 14px;
+	animPadding: 2px;
 	xsize: 0px;
 	vsize: 0px;
 	vshift: 0px;
@@ -930,7 +935,7 @@ roundShadowRadius8px: Shadow {
 defaultPanelAnimation: PanelAnimation {
 	startWidth: 0.5;
 	widthDuration: 0.6;
-	startHeight: 0.3;
+	startHeight: 0.45;
 	heightDuration: 0.9;
 	startOpacity: 0.2;
 	opacityDuration: 0.3;
@@ -991,7 +996,7 @@ defaultPopupMenu: PopupMenu {
 
 	menu: defaultMenu;
 
-	radius: 8px;
+	radius: 6px;
 	duration: 150;
 	showDuration: 200;
 }

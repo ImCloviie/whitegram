@@ -21,6 +21,7 @@ enum class ImageRoundRadius {
 	Large,
 	Small,
 	Ellipse,
+	AyuUserpic,
 };
 
 namespace Images {

@@ -21,6 +21,7 @@ class CustomEmoji;
 [[nodiscard]] TextWithEntities Italic(const QString &text);
 [[nodiscard]] TextWithEntities Underline(const QString &text);
 [[nodiscard]] TextWithEntities StrikeOut(const QString &text);
+[[nodiscard]] TextWithEntities Code(const QString &text);
 [[nodiscard]] TextWithEntities Link(
 	const QString &text,
 	const QString &url = u"internal:action"_q);

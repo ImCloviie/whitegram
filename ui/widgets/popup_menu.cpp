@@ -814,6 +814,7 @@ void PopupMenu::showStarted() {
 		show();
 		if (weak) {
 			startShowAnimation();
+			Integration::Instance().preparePopupMenu(this);
 		}
 		return;
 	} else if (!_hiding) {
@@ -1141,6 +1142,7 @@ void PopupMenu::showPrepared(TriggeredSource source) {
 	if (::Platform::IsWindows()) {
 		ForceFullRepaintSync(this);
 	}
+	Integration::Instance().preparePopupMenu(this);
 	// show() goes all the way into the platform window, deep enough for the
 	// owner to destroy this menu from inside it - a QCocoaWindow freed inside
 	// its own setVisible() is the reported shape - so nothing below may touch

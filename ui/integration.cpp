@@ -96,6 +96,9 @@ rpl::producer<> Integration::forcePopupMenuHideRequests() {
 	return rpl::never<rpl::empty_value>();
 }
 
+void Integration::preparePopupMenu(not_null<QWidget*>) {
+}
+
 QString Integration::phraseContextCopyText() {
 	return "Copy text";
 }

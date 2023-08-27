@@ -123,6 +123,10 @@ TextWithEntities StrikeOut(const QString &text) {
 	return WithSingleEntity(text, EntityType::StrikeOut);
 }
 
+TextWithEntities Code(const QString &text) {
+    return WithSingleEntity(text, EntityType::Code);
+}
+
 TextWithEntities Link(const QString &text, const QString &url) {
 	return WithSingleEntity(text, EntityType::CustomUrl, url);
 }

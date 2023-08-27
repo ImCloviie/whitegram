@@ -113,8 +113,8 @@ noContactsHeight: 100px;
 noContactsFont: font(fsize);
 noContactsColor: windowSubTextFg;
 
-activeFadeInDuration: 500;
-activeFadeOutDuration: 3000;
+activeFadeInDuration: 400;
+activeFadeOutDuration: 2000;
 
 smallCloseIcon: icon {{ "simple_close", smallCloseIconFg }};
 smallCloseIconOver: icon {{ "simple_close", smallCloseIconFgOver }};

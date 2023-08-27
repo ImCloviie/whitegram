@@ -58,6 +58,9 @@ public:
 
 	QMargins getMargins() const override;
 
+	// I don't care about this being public
+	anim::transition ease = anim::linear;
+
 protected:
 	int resizeGetHeight(int newWidth) override;
 	void wrappedSizeUpdated(QSize size) override;

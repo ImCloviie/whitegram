@@ -46,6 +46,7 @@ enum class BadgeType : ushort {
 	Extera = 0x40,
 	ExteraSupporter = 0x80,
 	ExteraCustom = 0x100,
+	WhitegramSponsor = 0x200,
 };
 inline constexpr bool is_flag_type(BadgeType) { return true; }
 

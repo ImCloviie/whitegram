@@ -98,6 +98,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
+#include "ayu/ayu_settings.h"
 
 #include <ksandbox.h>
 
@@ -308,6 +309,8 @@ void Application::run() {
 	startEmojiImageLoader();
 	startSystemDarkModeViewer();
 	Media::Player::start(_audio.get());
+
+	AyuSettings::getInstance().playStartupSound();
 
 	if (MediaControlsManager::Supported()) {
 		_mediaControlsManager = std::make_unique<MediaControlsManager>();
@@ -1901,7 +1904,7 @@ void Application::RegisterUrlScheme() {
 		.arguments = arguments,
 		.protocol = u"tg"_q,
 		.protocolName = u"Telegram Link"_q,
-		.shortAppName = u"AyuGram"_q,
+		.shortAppName = u"Whitegram"_q,
 		.longAppName = QCoreApplication::applicationName(),
 		.displayAppName = AppName.utf16(),
 		.displayAppDescription = AppName.utf16(),

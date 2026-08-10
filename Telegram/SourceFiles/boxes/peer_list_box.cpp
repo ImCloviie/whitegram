@@ -836,6 +836,9 @@ int PeerListRow::paintNameIconGetWidth(
 		.exteraSupporter = &(selected
 			? st::dialogsExteraSupporterIcon.over
 			: st::dialogsExteraSupporterIcon.icon),
+		.whitegramSponsor = &(selected
+			? st::dialogsWhitegramSponsorIcon.over
+			: st::dialogsWhitegramSponsorIcon.icon),
 		.premium = &(selected
 			? st::dialogsPremiumIcon.over
 			: st::dialogsPremiumIcon.icon),

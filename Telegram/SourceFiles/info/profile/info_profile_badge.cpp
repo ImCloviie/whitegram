@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "styles/style_ayu_icons.h"
+#include "ayu/utils/telegram_helpers.h"
 
 
 namespace Info::Profile {
@@ -34,7 +35,8 @@ namespace {
 		|| (content.badge == BadgeType::Verified && content.emojiStatusId)
 		|| (content.badge == BadgeType::Extera)
 		|| (content.badge == BadgeType::ExteraSupporter)
-		|| (content.badge == BadgeType::ExteraCustom);
+		|| (content.badge == BadgeType::ExteraCustom)
+		|| (content.badge == BadgeType::WhitegramSponsor);
 }
 
 } // namespace
@@ -218,9 +220,9 @@ void Badge::setContent(Content content) {
 	} break;
 	case BadgeType::Extera:
 	case BadgeType::ExteraSupporter: {
-		const auto icon = (_content.badge == BadgeType::Extera
-							   ? &st::infoExteraOfficialBadge
-							   : &st::infoExteraSupporterBadge);
+		const auto icon = (_content.badge == BadgeType::Extera)
+			? &st::infoExteraOfficialBadge
+			: &st::infoExteraSupporterBadge;
 		const auto skip = st::infoVerifiedCheckPosition.x();
 		_view->resize(
 			icon->width() + skip,
@@ -232,6 +234,32 @@ void Badge::setContent(Content content) {
 				icon->paint(p, skip, 0, check->width(), _overrideSt->premiumFg->c);
 			} else {
 				icon->paint(p, skip, 0, check->width());
+			}
+		}, _view->lifetime());
+	} break;
+	case BadgeType::WhitegramSponsor: {
+		static const auto image = MakeWhitegramSponsorBadgeImage();
+		const auto skip = st::infoVerifiedCheckPosition.x();
+		const auto iconSize = image.isNull()
+			? QSize(st::infoWhitegramSponsorBadge.width(), st::infoWhitegramSponsorBadge.height())
+			: (image.size() / image.devicePixelRatio());
+		_view->resize(
+			iconSize.width() + skip,
+			iconSize.height());
+		_view->paintRequest(
+		) | rpl::on_next([=, check = _view.data()]{
+			Painter p(check);
+			if (!image.isNull()) {
+				p.drawImage(
+					QRect(skip, 
+					      (check->height() - iconSize.height()) / 2, 
+					      iconSize.width(), 
+					      iconSize.height()), 
+					image);
+			} else if (_overrideSt) {
+				st::infoWhitegramSponsorBadge.paint(p, skip, 0, check->width(), _overrideSt->premiumFg->c);
+			} else {
+				st::infoWhitegramSponsorBadge.paint(p, skip, 0, check->width());
 			}
 		}, _view->lifetime());
 	} break;

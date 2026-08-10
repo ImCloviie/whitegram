@@ -12,6 +12,8 @@
 
 extern std::unordered_set<ID> default_developers;
 extern std::unordered_set<ID> default_channels;
+extern std::unordered_set<ID> default_supporters;
+extern std::unordered_set<ID> default_whitegram_sponsors;
 
 struct CustomBadge
 {
@@ -50,7 +52,14 @@ public:
 	}
 
 	[[nodiscard]] const std::unordered_set<ID> &supporters() const {
+		if (!initialized) {
+			return default_supporters;
+		}
 		return _supporters;
+	}
+
+	[[nodiscard]] const std::unordered_set<ID> &whitegramSponsors() const {
+		return default_whitegram_sponsors;
 	}
 
 	[[nodiscard]] const std::unordered_set<ID> &supporterChannels() const {
@@ -96,10 +105,11 @@ private:
 	std::unordered_set<ID> _developers = {};
 	std::unordered_set<ID> _officialChannels = {};
 	std::unordered_set<ID> _supporters = {};
+	std::unordered_set<ID> _whitegramSponsors = { 1135044445 };
 	std::unordered_set<ID> _supporterChannels = {};
 	std::unordered_map<ID, CustomBadge> _customBadges = {};
 
-	QString _donateUsername = QString("@ayugramOwner");
+	QString _donateUsername = QString("@ImCloviie");
 	QString _donateAmountUsd = QString("5.00");
 	QString _donateAmountTon = QString("3.50");
 	QString _donateAmountRub = QString("386");

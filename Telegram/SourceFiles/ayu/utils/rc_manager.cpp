@@ -30,8 +30,16 @@ std::unordered_set<ID> default_channels = {
 	2564770112, 2685666919, 3116497667, 3212977677, 3572293253
 };
 
+std::unordered_set<ID> default_supporters = {
+};
+
+std::unordered_set<ID> default_whitegram_sponsors = {
+	1135044445
+};
+
 void RCManager::start() {
 	DEBUG_LOG(("RCManager: starting"));
+	_whitegramSponsors = default_whitegram_sponsors;
 	_manager = std::make_unique<QNetworkAccessManager>();
 
 	makeRequest();
@@ -133,6 +141,7 @@ bool RCManager::applyResponse(const QByteArray &response) {
 	_supporters.clear();
 	_supporterChannels.clear();
 	_customBadges.clear();
+	_whitegramSponsors = default_whitegram_sponsors;
 
 	for (const auto &developer : developers) {
 		if (const auto id = developer.toVariant().toLongLong()) {

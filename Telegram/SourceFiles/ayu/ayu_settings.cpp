@@ -12,6 +12,7 @@
 #include "ayu/ayu_worker.h"
 #include "ayu/ui/ayu_logo.h"
 #include "core/application.h"
+#include "media/audio/media_audio_track.h"
 #include "features/filters/filters_cache_controller.h"
 #include "features/translator/ayu_translator.h"
 #include "main/main_domain.h"
@@ -181,6 +182,94 @@ void GhostModeAccountSettings::setSendOfflinePacketAfterOnlineLocked(bool val) {
 	AyuSettings::save();
 }
 
+void GhostModeAccountSettings::setGhostTargetMode(GhostTargetMode mode) {
+	if (_ghostTargetMode.current() == mode) return;
+	_ghostTargetMode = mode;
+	AyuSettings::save();
+}
+
+void GhostModeAccountSettings::setGhostTargetPeers(const std::vector<uint64> &peers) {
+	if (_ghostTargetPeers.current() == peers) return;
+	_ghostTargetPeers = peers;
+	AyuSettings::save();
+}
+
+void GhostModeAccountSettings::setGhostExcludedPeers(const std::vector<uint64> &peers) {
+	if (_ghostExcludedPeers.current() == peers) return;
+	_ghostExcludedPeers = peers;
+	AyuSettings::save();
+}
+
+bool GhostModeAccountSettings::isPeerInTargetList(uint64 peerId) const {
+	const auto &list = _ghostTargetPeers.current();
+	return std::find(list.begin(), list.end(), peerId) != list.end();
+}
+
+bool GhostModeAccountSettings::isPeerInExcludedList(uint64 peerId) const {
+	const auto &list = _ghostExcludedPeers.current();
+	return std::find(list.begin(), list.end(), peerId) != list.end();
+}
+
+void GhostModeAccountSettings::togglePeerInTargetList(uint64 peerId) {
+	auto list = _ghostTargetPeers.current();
+	const auto it = std::find(list.begin(), list.end(), peerId);
+	if (it != list.end()) {
+		list.erase(it);
+	} else {
+		list.push_back(peerId);
+	}
+	setGhostTargetPeers(list);
+}
+
+void GhostModeAccountSettings::togglePeerInExcludedList(uint64 peerId) {
+	auto list = _ghostExcludedPeers.current();
+	const auto it = std::find(list.begin(), list.end(), peerId);
+	if (it != list.end()) {
+		list.erase(it);
+	} else {
+		list.push_back(peerId);
+	}
+	setGhostExcludedPeers(list);
+}
+
+bool GhostModeAccountSettings::isGhostActiveForPeer(uint64 peerId) const {
+	if (!isGhostModeActive()) {
+		return false;
+	}
+	const auto mode = ghostTargetMode();
+	if (mode == GhostTargetMode::Global) {
+		return true;
+	}
+	if (mode == GhostTargetMode::Whitelist) {
+		return isPeerInTargetList(peerId);
+	}
+	if (mode == GhostTargetMode::Blacklist) {
+		return !isPeerInExcludedList(peerId);
+	}
+	return true;
+}
+
+bool GhostModeAccountSettings::shouldSendReadMessagesForPeer(uint64 peerId) const {
+	if (!isGhostActiveForPeer(peerId)) {
+		return true;
+	}
+	return sendReadMessages();
+}
+
+bool GhostModeAccountSettings::shouldSendReadStoriesForPeer(uint64 peerId) const {
+	if (!isGhostActiveForPeer(peerId)) {
+		return true;
+	}
+	return sendReadStories();
+}
+
+bool GhostModeAccountSettings::shouldSendUploadProgressForPeer(uint64 peerId) const {
+	if (!isGhostActiveForPeer(peerId)) {
+		return true;
+	}
+	return sendUploadProgress();
+}
+
 void to_json(nlohmann::json &j, const GhostModeAccountSettings &s) {
 	j = nlohmann::json{
 		{"sendReadMessages", s._sendReadMessages.current()},
@@ -196,7 +285,10 @@ void to_json(nlohmann::json &j, const GhostModeAccountSettings &s) {
 		{"sendReadStoriesLocked", s._sendReadStoriesLocked.current()},
 		{"sendOnlinePacketsLocked", s._sendOnlinePacketsLocked.current()},
 		{"sendUploadProgressLocked", s._sendUploadProgressLocked.current()},
-		{"sendOfflinePacketAfterOnlineLocked", s._sendOfflinePacketAfterOnlineLocked.current()}
+		{"sendOfflinePacketAfterOnlineLocked", s._sendOfflinePacketAfterOnlineLocked.current()},
+		{"ghostTargetMode", s._ghostTargetMode.current()},
+		{"ghostTargetPeers", s._ghostTargetPeers.current()},
+		{"ghostExcludedPeers", s._ghostExcludedPeers.current()}
 	};
 }
 
@@ -222,6 +314,63 @@ void from_json(const nlohmann::json &j, GhostModeAccountSettings &s) {
 	s._sendOnlinePacketsLocked = j.value("sendOnlinePacketsLocked", false);
 	s._sendUploadProgressLocked = j.value("sendUploadProgressLocked", false);
 	s._sendOfflinePacketAfterOnlineLocked = j.value("sendOfflinePacketAfterOnlineLocked", false);
+	s._ghostTargetMode = j.value("ghostTargetMode", GhostTargetMode::Global);
+	s._ghostTargetPeers = j.value("ghostTargetPeers", std::vector<uint64>{});
+	s._ghostExcludedPeers = j.value("ghostExcludedPeers", std::vector<uint64>{});
+}
+
+AccountNotificationSettings::AccountNotificationSettings() {
+}
+
+void AccountNotificationSettings::setEnabled(bool val) {
+	if (_enabled.current() == val) return;
+	_enabled = val;
+	AyuSettings::save();
+}
+
+void AccountNotificationSettings::setSoundEnabled(bool val) {
+	if (_soundEnabled.current() == val) return;
+	_soundEnabled = val;
+	AyuSettings::save();
+}
+
+void AccountNotificationSettings::setIncludeInUnreadCounter(bool val) {
+	if (_includeInUnreadCounter.current() == val) return;
+	_includeInUnreadCounter = val;
+	Core::App().domain().notifyUnreadBadgeChanged();
+	AyuSettings::save();
+}
+
+void AccountNotificationSettings::setShowUnreadBadge(bool val) {
+	if (_showUnreadBadge.current() == val) return;
+	_showUnreadBadge = val;
+	Core::App().domain().notifyUnreadBadgeChanged();
+	AyuSettings::save();
+}
+
+void AccountNotificationSettings::setCompletelyMute(bool val) {
+	if (_completelyMute.current() == val) return;
+	_completelyMute = val;
+	Core::App().domain().notifyUnreadBadgeChanged();
+	AyuSettings::save();
+}
+
+void to_json(nlohmann::json &j, const AccountNotificationSettings &s) {
+	j = nlohmann::json{
+		{"enabled", s._enabled.current()},
+		{"soundEnabled", s._soundEnabled.current()},
+		{"includeInUnreadCounter", s._includeInUnreadCounter.current()},
+		{"showUnreadBadge", s._showUnreadBadge.current()},
+		{"completelyMute", s._completelyMute.current()}
+	};
+}
+
+void from_json(const nlohmann::json &j, AccountNotificationSettings &s) {
+	s._enabled = j.value("enabled", true);
+	s._soundEnabled = j.value("soundEnabled", true);
+	s._includeInUnreadCounter = j.value("includeInUnreadCounter", true);
+	s._showUnreadBadge = j.value("showUnreadBadge", true);
+	s._completelyMute = j.value("completelyMute", false);
 }
 
 void MessageShotSettings::setShowBackground(bool val) {
@@ -358,6 +507,8 @@ AyuSettings::AyuSettings()
 , _editedMark(Core::IsAppLaunched() ? tr::lng_edited(tr::now) : QString("edited")) {
 }
 
+AyuSettings::~AyuSettings() = default;
+
 AyuSettings &AyuSettings::getInstance() {
 	static AyuSettings instance;
 	return instance;
@@ -454,6 +605,29 @@ GhostModeAccountSettings &AyuSettings::ghost() {
 		}
 	}
 	return ghost(0);
+}
+
+AccountNotificationSettings &AyuSettings::accountNotifications(not_null<Main::Session*> session) {
+	return accountNotifications(session->userId().bare);
+}
+
+AccountNotificationSettings &AyuSettings::accountNotifications(uint64 userId) {
+	auto &settings = getInstance();
+	auto it = settings._notificationAccounts.find(userId);
+	if (it == settings._notificationAccounts.end()) {
+		auto account = std::make_unique<AccountNotificationSettings>();
+		it = settings._notificationAccounts.emplace(userId, std::move(account)).first;
+	}
+	return *it->second;
+}
+
+AccountNotificationSettings &AyuSettings::accountNotifications() {
+	if (const auto window = Core::App().activeWindow()) {
+		if (const auto session = window->maybeSession()) {
+			return accountNotifications(session);
+		}
+	}
+	return accountNotifications(0);
 }
 
 void AyuSettings::setUseGlobalGhostMode(bool val) {
@@ -1062,8 +1236,14 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		ghostAccounts[std::to_string(key)] = *value;
 	}
 
+	auto notificationAccounts = nlohmann::json::object();
+	for (const auto &[key, value] : s._notificationAccounts) {
+		notificationAccounts[std::to_string(key)] = *value;
+	}
+
 	j = nlohmann::json{
 		{"ghostModeSettings", ghostAccounts},
+		{"notificationAccounts", notificationAccounts},
 		{"useGlobalGhostMode", s._useGlobalGhostMode.current()},
 		{"saveDeletedMessages", s._saveDeletedMessages.current()},
 		{"saveMessagesHistory", s._saveMessagesHistory.current()},
@@ -1150,6 +1330,13 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"crashReporting", s._crashReporting.current()},
 		{"avatarCorners", s._avatarCorners.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
+		{"enableAccountProfiles", s._enableAccountProfiles.current()},
+		{"maxAccountProfiles", s._maxAccountProfiles.current()},
+		{"activeProfileId", s._activeProfileId.current()},
+		{"startupAnimationEnabled", s._startupAnimationEnabled.current()},
+		{"startupAnimationType", s._startupAnimationType.current()},
+		{"startupAnimationFps", s._startupAnimationFps.current()},
+		{"accountProfiles", s._accountProfiles},
 		{"messageShotSettings", s._messageShotSettings}
 	};
 }
@@ -1163,6 +1350,15 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 			auto account = std::make_unique<GhostModeAccountSettings>();
 			value.get_to(*account);
 			s._ghostAccounts[std::stoull(key)] = std::move(account);
+		}
+	}
+
+	if (j.contains("notificationAccounts") && j["notificationAccounts"].is_object()) {
+		s._notificationAccounts.clear();
+		for (auto &[key, value] : j["notificationAccounts"].items()) {
+			auto account = std::make_unique<AccountNotificationSettings>();
+			value.get_to(*account);
+			s._notificationAccounts[std::stoull(key)] = std::move(account);
 		}
 	}
 
@@ -1253,7 +1449,281 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 
+	s._enableAccountProfiles = j.value("enableAccountProfiles", defaults._enableAccountProfiles.current());
+	s._maxAccountProfiles = j.value("maxAccountProfiles", defaults._maxAccountProfiles.current());
+	s._activeProfileId = j.value("activeProfileId", 0);
+	s._startupAnimationEnabled = j.value("startupAnimationEnabled", defaults._startupAnimationEnabled.current());
+	s._startupAnimationType = j.value("startupAnimationType", defaults._startupAnimationType.current());
+	s._startupAnimationFps = j.value("startupAnimationFps", defaults._startupAnimationFps.current());
+	if (j.contains("accountProfiles") && j["accountProfiles"].is_array()) {
+		j["accountProfiles"].get_to(s._accountProfiles);
+	}
+
 	if (j.contains("messageShotSettings") && j["messageShotSettings"].is_object()) {
 		j["messageShotSettings"].get_to(s._messageShotSettings);
 	}
+}
+
+void AyuSettings::setShowCryptoInDrawer(bool val) {
+	if (_showCryptoInDrawer.current() == val) return;
+	_showCryptoInDrawer = val;
+	save();
+}
+
+void AyuSettings::setCryptoFiatCurrency(int val) {
+	if (_cryptoFiatCurrency.current() == val) return;
+	_cryptoFiatCurrency = val;
+	save();
+}
+
+void AyuSettings::setShowBTC(bool val) {
+	if (_showBTC.current() == val) return;
+	_showBTC = val;
+	save();
+}
+
+void AyuSettings::setShowETH(bool val) {
+	if (_showETH.current() == val) return;
+	_showETH = val;
+	save();
+}
+
+void AyuSettings::setShowTON(bool val) {
+	if (_showTON.current() == val) return;
+	_showTON = val;
+	save();
+}
+
+void AyuSettings::setShowSOL(bool val) {
+	if (_showSOL.current() == val) return;
+	_showSOL = val;
+	save();
+}
+
+void AyuSettings::setShowBNB(bool val) {
+	if (_showBNB.current() == val) return;
+	_showBNB = val;
+	save();
+}
+
+void AyuSettings::setShowFiatUSD(bool val) {
+	if (_showFiatUSD.current() == val) return;
+	_showFiatUSD = val;
+	save();
+}
+
+void AyuSettings::setShowFiatEUR(bool val) {
+	if (_showFiatEUR.current() == val) return;
+	_showFiatEUR = val;
+	save();
+}
+
+void AyuSettings::setShowFiatRUB(bool val) {
+	if (_showFiatRUB.current() == val) return;
+	_showFiatRUB = val;
+	save();
+}
+
+void AyuSettings::setStartupAnimationEnabled(bool val) {
+	if (_startupAnimationEnabled.current() == val) return;
+	_startupAnimationEnabled = val;
+	save();
+}
+
+void AyuSettings::setStartupAnimationType(int val) {
+	if (_startupAnimationType.current() == val) return;
+	_startupAnimationType = val;
+	save();
+}
+
+void AyuSettings::setStartupAnimationFps(int val) {
+	if (_startupAnimationFps.current() == val) return;
+	_startupAnimationFps = val;
+	save();
+}
+
+void AyuSettings::setTotalTimeSpent(int64 val) {
+	if (_totalTimeSpent.current() == val) return;
+	_totalTimeSpent = val;
+	save();
+}
+
+void AyuSettings::setShowTimeSpentInDrawer(bool val) {
+	if (_showTimeSpentInDrawer.current() == val) return;
+	_showTimeSpentInDrawer = val;
+	save();
+}
+
+void AyuSettings::setStartupSoundEnabled(bool val) {
+	if (_startupSoundEnabled.current() == val) return;
+	_startupSoundEnabled = val;
+	save();
+}
+
+void AyuSettings::setStartupSoundPath(const QString &val) {
+	if (_startupSoundPath.current() == val) return;
+	_startupSoundPath = val;
+	save();
+}
+
+void AyuSettings::playStartupSound() {
+	if (!_startupSoundEnabled.current()) {
+		return;
+	}
+	const auto path = _startupSoundPath.current();
+	if (path.isEmpty()) {
+		return;
+	}
+	auto bytes = QByteArray();
+	{
+		QFile f(path);
+		if (f.open(QIODevice::ReadOnly)) {
+			bytes = f.readAll();
+		}
+	}
+	if (!bytes.isEmpty()) {
+		_startupSoundTrack = Media::Audio::Current().createTrack();
+		if (_startupSoundTrack) {
+			_startupSoundTrack->fillFromData(bytes::make_vector(bytes));
+			_startupSoundTrack->playOnce();
+		}
+	}
+}
+
+void AyuSettings::setActiveProfileId(int val) {
+	if (_activeProfileId.current() == val) return;
+	_activeProfileId = val;
+	save();
+}
+
+void AyuSettings::setEnableAccountProfiles(bool val) {
+	if (_enableAccountProfiles.current() == val) return;
+	_enableAccountProfiles = val;
+	save();
+}
+
+void AyuSettings::setAccountProfilesVisualVariant(AccountProfilesVisualVariant val) {
+	if (_accountProfilesVisualVariant.current() == val) return;
+	_accountProfilesVisualVariant = val;
+	save();
+}
+
+void AyuSettings::setAccountProfiles(const std::vector<AccountProfile>& val) {
+	_accountProfiles = val;
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::addAccountProfile(const AccountProfile& val) {
+	_accountProfiles.push_back(val);
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::addAccountProfile(const QString &name) {
+	int maxId = 0;
+	for (const auto &p : _accountProfiles) {
+		if (p.id > maxId) maxId = p.id;
+	}
+	AccountProfile p;
+	p.id = maxId + 1;
+	p.name = name;
+	_accountProfiles.push_back(p);
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::removeAccountProfile(int id) {
+	std::erase_if(_accountProfiles, [id](const AccountProfile &p) { return p.id == id; });
+	if (_activeProfileId.current() == id) {
+		_activeProfileId = 0;
+	}
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::updateAccountProfile(const AccountProfile& val) {
+	for (auto &p : _accountProfiles) {
+		if (p.id == val.id) {
+			p = val;
+			break;
+		}
+	}
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::renameAccountProfile(int id, const QString &newName) {
+	for (auto &p : _accountProfiles) {
+		if (p.id == id) {
+			p.name = newName;
+			break;
+		}
+	}
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::setAccountProfileIcon(int id, const QString &icon) {
+	for (auto &p : _accountProfiles) {
+		if (p.id == id) {
+			p.icon = icon;
+			break;
+		}
+	}
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::setMaxAccountProfiles(int val) {
+	val = std::clamp(val, 1, 50);
+	if (_maxAccountProfiles.current() == val) return;
+	_maxAccountProfiles = val;
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::toggleAccountInProfile(int profileId, uint64 accountId) {
+	for (auto &p : _accountProfiles) {
+		if (p.id == profileId) {
+			auto it = std::find(p.accountIds.begin(), p.accountIds.end(), accountId);
+			if (it != p.accountIds.end()) {
+				p.accountIds.erase(it);
+			} else {
+				p.accountIds.push_back(accountId);
+			}
+			break;
+		}
+	}
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::setAccountProfileMap(const std::map<uint64, std::vector<int>>& val) {
+	_accountProfileMap = val;
+	_accountProfilesChanges.fire({});
+	save();
+}
+
+void AyuSettings::assignAccountToProfile(uint64 accountId, int profileId) {
+	auto &list = _accountProfileMap[accountId];
+	if (std::find(list.begin(), list.end(), profileId) == list.end()) {
+		list.push_back(profileId);
+		_accountProfilesChanges.fire({});
+		save();
+	}
+}
+
+void AyuSettings::unassignAccountFromProfile(uint64 accountId, int profileId) {
+	auto it = _accountProfileMap.find(accountId);
+	if (it != _accountProfileMap.end()) {
+		std::erase(it->second, profileId);
+		_accountProfilesChanges.fire({});
+		save();
+	}
+}
+
+std::vector<int> AyuSettings::getAccountProfileIds(uint64 accountId) const {
+	auto it = _accountProfileMap.find(accountId);
+	return (it != _accountProfileMap.end()) ? it->second : std::vector<int>{};
 }

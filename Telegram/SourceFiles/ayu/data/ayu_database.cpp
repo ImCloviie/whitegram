@@ -141,6 +141,17 @@ auto storage = make_storage(
 		make_column("dialogId", &SpyMessageContentsRead::dialogId),
 		make_column("messageId", &SpyMessageContentsRead::messageId),
 		make_column("entityCreateDate", &SpyMessageContentsRead::entityCreateDate)
+	),
+	make_index("idx_cached_user_userId", column<CachedUser>(&CachedUser::userId)),
+	make_table<CachedUser>(
+		"CachedUser",
+		make_column("fakeId", &CachedUser::fakeId, primary_key().autoincrement()),
+		make_column("userId", &CachedUser::userId),
+		make_column("firstName", &CachedUser::firstName),
+		make_column("lastName", &CachedUser::lastName),
+		make_column("phone", &CachedUser::phone),
+		make_column("username", &CachedUser::username),
+		make_column("avatarPng", &CachedUser::avatarPng)
 	)
 );
 
@@ -565,6 +576,40 @@ bool hasPerDialogFilters() {
 		LOG(("Failed to check if there's any filters: %1").arg(ex.what()));
 		return false;
 	}
+}
+
+void updateCachedUser(const CachedUser &user) {
+	try {
+		storage.begin_transaction();
+		auto existing = storage.get_all<CachedUser>(where(c(&CachedUser::userId) == user.userId));
+		if (!existing.empty()) {
+			auto existingUser = existing.front();
+			existingUser.firstName = user.firstName;
+			existingUser.lastName = user.lastName;
+			existingUser.phone = user.phone;
+			existingUser.username = user.username;
+			if (!user.avatarPng.empty()) {
+				existingUser.avatarPng = user.avatarPng;
+			}
+			storage.update(existingUser);
+		} else {
+			storage.insert(user);
+		}
+		storage.commit();
+	} catch (...) {
+		storage.rollback();
+	}
+}
+
+std::optional<CachedUser> getCachedUser(ID userId) {
+	try {
+		auto existing = storage.get_all<CachedUser>(where(c(&CachedUser::userId) == userId), limit(1));
+		if (!existing.empty()) {
+			return existing.front();
+		}
+	} catch (...) {
+	}
+	return std::nullopt;
 }
 
 }

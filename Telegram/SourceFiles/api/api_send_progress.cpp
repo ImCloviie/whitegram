@@ -117,9 +117,8 @@ void SendProgressManager::send(const Key &key, int progress) {
 		return;
 	}
 
-	// AyuGram sendUploadProgress
 	const auto &ghost = AyuSettings::ghost(_session);
-	if (!ghost.sendUploadProgress())
+	if (!ghost.shouldSendUploadProgressForPeer(key.history->peer->id.value))
 	{
 		DEBUG_LOG(("[AyuGram] Don't send upload progress"));
 		return;

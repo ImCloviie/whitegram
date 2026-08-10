@@ -148,6 +148,8 @@ set(ayugram_files
         ayu/ui/utils/palette.h
         ayu/ui/utils/itunes_search.cpp
         ayu/ui/utils/itunes_search.h
+        ayu/ui/settings/account_profiles_box.cpp
+        ayu/ui/settings/account_profiles_box.h
         ayu/ui/settings/ayu_builder.cpp
         ayu/ui/settings/ayu_builder.h
         ayu/ui/settings/settings_appearance.cpp
@@ -196,6 +198,8 @@ set(ayugram_files
         ayu/ui/boxes/donate_qr_box.h
         ayu/ui/boxes/donate_info_box.cpp
         ayu/ui/boxes/donate_info_box.h
+        ayu/ui/boxes/account_notification_box.cpp
+        ayu/ui/boxes/account_notification_box.h
         ayu/ui/boxes/plugin_info_box.cpp
         ayu/ui/boxes/plugin_info_box.h
         ayu/ui/components/image_view.cpp
@@ -247,11 +251,17 @@ set(ayugram_files
         ayu/features/filters/filters_cache_controller.h
         ayu/features/filters/filters_utils.cpp
         ayu/features/filters/filters_utils.h
+        ayu/features/whitegram_crypto.cpp
+        ayu/features/whitegram_crypto.h
         ayu/data/messages_storage.cpp
         ayu/data/messages_storage.h
         ayu/data/entities.h
         ayu/data/ayu_database.cpp
         ayu/data/ayu_database.h
+        ayu/ui/ghost_profile_box.cpp
+        ayu/ui/ghost_profile_box.h
+        ayu/ui/whitegram_startup_animation.cpp
+        ayu/ui/whitegram_startup_animation.h
 
         info/profile/info_profile_music_button.cpp
         info/profile/info_profile_music_button.h
@@ -2272,7 +2282,7 @@ else()
         set(bundle_identifier "one.ayugram.AyuGramDesktop")
     endif()
     set(bundle_entitlements "Telegram.entitlements")
-    set(output_name "AyuGram")
+    set(output_name "Whitegram")
 endif()
 
 if (CMAKE_GENERATOR STREQUAL Xcode)

@@ -42,6 +42,8 @@ outChannelBadgeSelectedIcon: icon {{ "ayu/channel", msgOutDateFgSelected }};
 
 infoExteraOfficialBadge: icon {{ "ayu/extera_official", profileVerifiedCheckBg }};
 infoExteraSupporterBadge: icon {{ "ayu/extera_badge", profileVerifiedCheckBg }};
+infoWhitegramSponsorBadge: icon {{ "ayu/sponsor_icon", profileVerifiedCheckBg }};
+
 
 winEnterWithGuestIcon: icon {{ "ayu/ghost_tray", windowFg }};
 
@@ -73,6 +75,11 @@ dialogsExteraSupporterIcon: ThreeStateIcon {
 	over: icon {{ "ayu/dialogs_extera_supporter", dialogsVerifiedIconBgOver }};
 	active: icon {{ "ayu/dialogs_extera_supporter", dialogsVerifiedIconBgActive }};
 }
+dialogsWhitegramSponsorIcon: ThreeStateIcon {
+	icon: icon {{ "ayu/sponsor_icon", dialogsVerifiedIconBg }};
+	over: icon {{ "ayu/sponsor_icon", dialogsVerifiedIconBgOver }};
+	active: icon {{ "ayu/sponsor_icon", dialogsVerifiedIconBgActive }};
+}
 
 ayuHistoryFileInPlugin: icon {{ "ayu/history_file_plugin", historyFileInIconFg }};
 ayuHistoryFileInPluginSelected: icon {{ "ayu/history_file_plugin", historyFileInIconFgSelected }};
@@ -80,3 +87,10 @@ ayuHistoryFileOutPlugin: icon {{ "ayu/history_file_plugin", historyFileOutIconFg
 ayuHistoryFileOutPluginSelected: icon {{ "ayu/history_file_plugin", historyFileOutIconFgSelected }};
 
 menuIconClearAttention: icon {{ "menu/clear", menuIconAttentionColor }};
+
+/* force rebuild */
+
+
+// trigger rebuild
+
+// trigger rebuild 2

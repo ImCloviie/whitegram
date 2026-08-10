@@ -702,6 +702,7 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			.verified = &st::dialogsVerifiedIcon,
 			.exteraOfficial = &st::dialogsExteraOfficialIcon.icon,
 			.exteraSupporter = &st::dialogsExteraSupporterIcon.icon,
+			.whitegramSponsor = &st::dialogsWhitegramSponsorIcon.icon,
 			.premium = &st::dialogsPremiumIcon.icon,
 			.scam = &st::attentionButtonFg,
 			.direct = &st::windowSubTextFg,

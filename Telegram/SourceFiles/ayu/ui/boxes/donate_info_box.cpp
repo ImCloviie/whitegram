@@ -8,6 +8,7 @@
 
 #include "lang_auto.h"
 #include "ayu/utils/rc_manager.h"
+#include "ayu/utils/telegram_helpers.h"
 #include "core/ui_integration.h"
 #include "data/data_session.h"
 #include "info/channel_statistics/earn/earn_icons.h"
@@ -38,7 +39,13 @@
 namespace Ui {
 namespace {
 
-QImage MakeSupportLogo() {
+QImage MakeSupportLogo(DonateType type) {
+	if (type == DonateType::Whitegram) {
+		auto image = MakeWhitegramSponsorBadgeImage();
+		if (!image.isNull()) {
+			return image;
+		}
+	}
 	const auto s = Size(st::supportLogoSize);
 	auto svg = QSvgRenderer(QString(":/gui/icons/ayu/donates/support_logo.svg"));
 	auto image = QImage(
@@ -54,11 +61,12 @@ QImage MakeSupportLogo() {
 }
 
 object_ptr<Ui::RpWidget> CreateTopLogoWidget(
-	not_null<Ui::RpWidget*> parent) {
+	not_null<Ui::RpWidget*> parent,
+	DonateType type) {
 	auto w = object_ptr<Ui::RpWidget>(parent);
 	const auto raw = w.data();
 
-	const auto logo = MakeSupportLogo();
+	const auto logo = MakeSupportLogo(type);
 
 	raw->paintRequest(
 	) | rpl::on_next(
@@ -127,7 +135,16 @@ object_ptr<Ui::RpWidget> InfoRow(
 
 } // namespace
 
-void FillDonateInfoBox(not_null<Ui::GenericBox*> box, not_null<Window::SessionController*> controller) {
+void FillDonateInfoBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller) {
+	FillDonateInfoBox(box, controller, DonateType::Whitegram);
+}
+
+void FillDonateInfoBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller,
+	DonateType type) {
 	// box->setStyle(st::starrefFooterBox);
 	box->setStyle(st::giveawayGiftCodeBox);
 	box->setNoContentMargin(true);
@@ -140,7 +157,7 @@ void FillDonateInfoBox(not_null<Ui::GenericBox*> box, not_null<Window::SessionCo
 	Ui::AddSkip(box->verticalLayout());
 
 	const auto logoWidget = box->verticalLayout()->add(
-		CreateTopLogoWidget(box->verticalLayout()));
+		CreateTopLogoWidget(box->verticalLayout(), type));
 
 	logoWidget->resize(st::supportLogoSize, st::supportLogoSize);
 
@@ -200,7 +217,9 @@ void FillDonateInfoBox(not_null<Ui::GenericBox*> box, not_null<Window::SessionCo
 
 	Ui::AddSkip(box->verticalLayout());
 
-	const auto username = RCManager::getInstance().donateUsername();
+	const auto username = (type == DonateType::Extera)
+		? QString("@ayugramOwner")
+		: RCManager::getInstance().donateUsername();
 	auto usernameTrimmed = username;
 	if (usernameTrimmed.startsWith('@')) {
 		usernameTrimmed.remove(0, 1);

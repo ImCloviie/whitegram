@@ -58,6 +58,7 @@ public:
 		const style::icon *verified = nullptr;
 		const style::icon *exteraOfficial = nullptr;
 		const style::icon *exteraSupporter = nullptr;
+		const style::icon *whitegramSponsor = nullptr;
 		const style::icon *premium = nullptr;
 		const style::color *scam = nullptr;
 		const style::color *direct = nullptr;
@@ -95,6 +96,7 @@ private:
 	int drawExteraCustom(Painter &p, const Descriptor &descriptor);
 	int drawExteraOfficial(Painter &p, const Descriptor &descriptor);
 	int drawExteraSupporter(Painter &p, const Descriptor &descriptor);
+	int drawWhitegramSponsor(Painter &p, const Descriptor &descriptor);
 
 	std::unique_ptr<EmojiStatus> _emojiStatus;
 	std::unique_ptr<EmojiStatus> _exteraCustomStatus;

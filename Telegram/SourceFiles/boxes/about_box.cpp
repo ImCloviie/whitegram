@@ -52,7 +52,7 @@ rpl::producer<TextWithEntities> Text() {
 } // namespace
 
 void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controller) {
-	box->setTitle(rpl::single(u"AyuGram Desktop"_q));
+	box->setTitle(rpl::single(u"WhiteGram Desktop"_q));
 
 	auto layout = box->verticalLayout();
 
@@ -87,12 +87,12 @@ void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controll
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	box->addLeftButton(
-		rpl::single(QString("@AyuGramReleases")),
+		rpl::single(QString("@ImCloviie")),
 		[box, controller]
 		{
 			box->closeBox();
 			controller->showPeerByLink(Window::PeerByLinkInfo{
-				.usernameOrId = QString("ayugramreleases"),
+				.usernameOrId = QString("ImCloviie"),
 			});
 		});
 

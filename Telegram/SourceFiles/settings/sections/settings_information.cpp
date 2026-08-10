@@ -7,7 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_information.h"
 
+#include "ayu/ayu_settings.h"
+#include "ayu/ui/boxes/account_notification_box.h"
 #include "settings/sections/settings_main.h"
+#include "settings/sections/settings_notifications.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common_session.h"
 #include "ui/wrap/vertical_layout.h"
@@ -145,13 +148,19 @@ ComposedBadge::ComposedBadge(
 		nullptr,
 		std::move(animationPaused),
 		0,
-		Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom) {
+		Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor) {
 	if (hasUnread) {
 		_unread = Badge::CreateUnread(this, rpl::single(
 			rpl::empty
 		) | rpl::then(
 			session->data().unreadBadgeChanges()
+		) | rpl::then(
+			Core::App().domain().unreadBadgeChanges()
 		) | rpl::map([=] {
+			const auto &accountNotif = AyuSettings::accountNotifications(session);
+			if (accountNotif.completelyMute() || !accountNotif.showUnreadBadge()) {
+				return Badge::UnreadBadge{ 0, true };
+			}
 			auto &owner = session->data();
 			return Badge::UnreadBadge{
 				owner.unreadWithMentionsBadge(),
@@ -273,6 +282,8 @@ private:
 	int _reordering = 0;
 
 	rpl::event_stream<> _closeRequests;
+
+	Ui::VerticalLayout *_inner = nullptr;
 
 	base::binary_guard _accountSwitchGuard;
 
@@ -883,6 +894,13 @@ void SetupAccountsWrap(
 			QGuiApplication::clipboard()->setText(phone.current().text);
 		}, &st::menuIconCopy);
 
+		addAction(tr::lng_settings_section_notify(tr::now), [=] {
+			window->showSettings(Settings::NotificationsId());
+			window->show(Box([=](not_null<Ui::GenericBox*> box) {
+				FillAccountNotificationBox(box, window, session);
+			}));
+		}, &st::menuIconNotifications);
+
 		if (!locked) {
 			if (!isActive) {
 				addAction(tr::lng_menu_activate(tr::now), [=] {
@@ -893,6 +911,22 @@ void SetupAccountsWrap(
 				session,
 				window->uiShow(),
 				addAction);
+		}
+
+		if (AyuSettings::getInstance().accountProfilesEnabled()) {
+			const auto &profiles = AyuSettings::getInstance().accountProfiles();
+			if (!profiles.empty()) {
+				Window::AddSeparatorAndShiftUp(addAction);
+				const uint64 accId = session->uniqueId();
+				for (const auto &p : profiles) {
+					const bool inProfile = std::find(p.accountIds.begin(), p.accountIds.end(), accId) != p.accountIds.end();
+					const QString label = (inProfile ? QString::fromUtf8("✓ ") : QString("   ")) + p.name;
+					const int profId = p.id;
+					addAction(label, [=] {
+						AyuSettings::getInstance().toggleAccountInProfile(profId, accId);
+					}, &st::menuIconShowAll);
+				}
+			}
 		}
 
 		if (!isActive) {
@@ -980,6 +1014,17 @@ void AccountsList::setup() {
 		}
 		rebuild();
 	}, _outer->lifetime());
+
+	rpl::merge(
+		AyuSettings::getInstance().activeProfileIdChanges() | rpl::to_empty,
+		AyuSettings::getInstance().accountProfilesChanges() | rpl::to_empty,
+		AyuSettings::getInstance().accountProfilesEnabledChanges() | rpl::to_empty
+	) | rpl::on_next([=] {
+		for (auto i = _watched.begin(); i != _watched.end(); i++) {
+			i->second = nullptr;
+		}
+		rebuild();
+	}, _outer->lifetime());
 }
 
 
@@ -1053,9 +1098,15 @@ not_null<Ui::SlideWrap<Ui::SettingsButton>*> AccountsList::setupAdd() {
 }
 
 void AccountsList::rebuild() {
-	const auto inner = _outer->insert(
+	if (_inner) {
+		delete _inner;
+		_inner = nullptr;
+	}
+
+	_inner = _outer->insert(
 		_outerIndex,
 		object_ptr<Ui::VerticalLayout>(_outer.get()));
+	const auto inner = _inner;
 
 	_reorder = std::make_unique<Ui::VerticalLayoutReorder>(inner);
 	_reorder->updates(
@@ -1083,8 +1134,356 @@ void AccountsList::rebuild() {
 		}
 	}, inner->lifetime());
 
+	if (AyuSettings::getInstance().accountProfilesEnabled()) {
+		constexpr auto kPillHeight = 32;
+		constexpr auto kPillRadius = 16;
+		constexpr auto kPillHPad = 14;
+		constexpr auto kPillSpacing = 6;
+		constexpr auto kBarVPad = 8;
+		constexpr auto kIconTextGap = 4;
+
+		const int activeId = AyuSettings::getInstance().activeProfileId();
+		const auto &profiles = AyuSettings::getInstance().accountProfiles();
+
+		struct PillInfo {
+			int id = 0;
+			QString text;
+			QString icon;
+			Fn<void()> click;
+			bool active = false;
+		};
+		auto pills = std::vector<PillInfo>();
+		pills.push_back({
+			.id = 0,
+			.text = QString::fromUtf8("Все"),
+			.icon = QString(),
+			.click = [=] { AyuSettings::getInstance().setActiveProfileId(0); },
+			.active = (activeId == 0),
+		});
+		for (const auto &p : profiles) {
+			const int pId = p.id;
+			pills.push_back({
+				.id = pId,
+				.text = p.name,
+				.icon = p.icon,
+				.click = [=] { AyuSettings::getInstance().setActiveProfileId(pId); },
+				.active = (activeId == pId),
+			});
+		}
+		if (int(profiles.size()) < AyuSettings::getInstance().maxAccountProfiles()) {
+			pills.push_back({
+				.id = -1,
+				.text = QString::fromUtf8("+"),
+				.icon = QString(),
+				.click = [=] {
+					_controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+						box->setTitle(rpl::single(QString::fromUtf8("Новый профиль")));
+						const auto field = box->addRow(object_ptr<Ui::InputField>(
+							box,
+							st::defaultInputField,
+							rpl::single(QString::fromUtf8("Название профиля"))));
+						box->addButton(tr::lng_box_ok(), [=] {
+							const auto text = field->getLastText().trimmed();
+							if (!text.isEmpty()) {
+								AyuSettings::getInstance().addAccountProfile(text);
+							}
+							box->closeBox();
+						});
+						box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+					}));
+				},
+				.active = false,
+			});
+		}
+
+		const auto iconEmojiForPath = [](const QString &iconPath) -> QString {
+			struct Entry { QString path; QString emoji; };
+			static const auto map = std::vector<Entry>{
+				{ u"folders/folders_home"_q, u"🏠"_q },
+				{ u"folders/folders_work"_q, u"💼"_q },
+				{ u"folders/folders_game"_q, u"🎮"_q },
+				{ u"folders/folders_crown"_q, u"👑"_q },
+				{ u"folders/folders_favorite"_q, u"⭐"_q },
+				{ u"folders/folders_love"_q, u"❤️"_q },
+				{ u"folders/folders_cat"_q, u"🐱"_q },
+				{ u"folders/folders_book"_q, u"📖"_q },
+				{ u"folders/folders_note"_q, u"🎵"_q },
+				{ u"folders/folders_palette"_q, u"🎨"_q },
+				{ u"folders/folders_sport"_q, u"⚽"_q },
+				{ u"folders/folders_travel"_q, u"✈️"_q },
+				{ u"folders/folders_light"_q, u"💡"_q },
+				{ u"folders/folders_money"_q, u"💰"_q },
+				{ u"folders/folders_study"_q, u"🎓"_q },
+				{ u"folders/folders_flower"_q, u"🌸"_q },
+				{ u"folders/folders_party"_q, u"🎉"_q },
+				{ u"folders/folders_mask"_q, u"🎭"_q },
+				{ u"folders/folders_like"_q, u"👍"_q },
+				{ u"folders/folders_private"_q, u"🔒"_q },
+				{ u"folders/folders_trade"_q, u"📊"_q },
+				{ u"folders/folders_airplane"_q, u"🛫"_q },
+				{ u"folders/folders_custom"_q, u"📁"_q },
+			};
+			for (const auto &e : map) {
+				if (e.path == iconPath) return e.emoji;
+			}
+			return QString();
+		};
+
+		const int maxW = std::max(_outer->width() - 24, 220);
+		struct PillPos {
+			PillInfo info;
+			int x = 0;
+			int y = 0;
+			int w = 0;
+			QString emoji;
+		};
+		std::vector<PillPos> positions;
+		int curX = kPillSpacing + 4;
+		int curY = kBarVPad;
+
+		for (const auto &pill : pills) {
+			const auto font = st::semiboldFont;
+			const auto emoji = iconEmojiForPath(pill.icon);
+			const auto hasIcon = !emoji.isEmpty();
+			const int textW = font->width(pill.text);
+			const int iconW = hasIcon ? font->width(emoji) + kIconTextGap : 0;
+			const int pillW = textW + iconW + kPillHPad * 2;
+
+			if (curX + pillW > maxW && curX > kPillSpacing + 4) {
+				curX = kPillSpacing + 4;
+				curY += kPillHeight + kPillSpacing;
+			}
+			positions.push_back({
+				.info = pill,
+				.x = curX,
+				.y = curY,
+				.w = pillW,
+				.emoji = emoji,
+			});
+			curX += pillW + kPillSpacing;
+		}
+
+		const int totalBarHeight = curY + kPillHeight + kBarVPad;
+		const auto profilesWrap = inner->add(
+			object_ptr<Ui::FixedHeightWidget>(inner, totalBarHeight));
+
+		for (const auto &pos : positions) {
+			const auto isActive = pos.info.active;
+			const auto pillText = pos.info.text;
+			const auto pillId = pos.info.id;
+			const auto pillIcon = pos.info.icon;
+			const auto pillEmoji = pos.emoji;
+			const auto font = st::semiboldFont;
+			const auto isAdd = (pillId == -1);
+
+			const auto btn = Ui::CreateChild<Ui::AbstractButton>(profilesWrap);
+			btn->resize(pos.w, kPillHeight);
+			btn->move(pos.x, pos.y);
+			btn->setAcceptBoth(true);
+			btn->show();
+
+			btn->clicks(
+			) | rpl::on_next([=](Qt::MouseButton button) {
+				if (button == Qt::LeftButton) {
+					pos.info.click();
+				} else if (button == Qt::RightButton && pillId > 0) {
+					_contextMenu = base::make_unique_q<Ui::PopupMenu>(
+						btn,
+						st::popupMenuExpandedSeparator);
+					const auto addAction = Ui::Menu::CreateAddActionCallback(
+						_contextMenu);
+					addAction(QString::fromUtf8("Переименовать"), [=] {
+						_controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+							box->setTitle(rpl::single(QString::fromUtf8("Переименовать профиль")));
+							const auto field = box->addRow(object_ptr<Ui::InputField>(
+								box,
+								st::defaultInputField,
+								rpl::single(QString::fromUtf8("Название профиля")),
+								pillText));
+							box->addButton(tr::lng_box_ok(), [=] {
+								const auto text = field->getLastText().trimmed();
+								if (!text.isEmpty()) {
+									AyuSettings::getInstance().renameAccountProfile(pillId, text);
+								}
+								box->closeBox();
+							});
+							box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+						}));
+					}, &st::menuIconEdit);
+
+					addAction(QString::fromUtf8("Сменить иконку"), [=] {
+						_controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+							box->setTitle(rpl::single(QString::fromUtf8("Выберите иконку")));
+
+							constexpr auto kGridIconSize = 40;
+							constexpr auto kGridSpacing = 6;
+							constexpr auto kGridColumns = 6;
+							constexpr auto kGridPad = 8;
+
+							struct IconOption { QString path; QString emoji; };
+							static const auto icons = std::vector<IconOption>{
+								{ QString(), QString::fromUtf8("—") },
+								{ u"folders/folders_home"_q, u"🏠"_q },
+								{ u"folders/folders_work"_q, u"💼"_q },
+								{ u"folders/folders_game"_q, u"🎮"_q },
+								{ u"folders/folders_crown"_q, u"👑"_q },
+								{ u"folders/folders_favorite"_q, u"⭐"_q },
+								{ u"folders/folders_love"_q, u"❤️"_q },
+								{ u"folders/folders_cat"_q, u"🐱"_q },
+								{ u"folders/folders_book"_q, u"📖"_q },
+								{ u"folders/folders_note"_q, u"🎵"_q },
+								{ u"folders/folders_palette"_q, u"🎨"_q },
+								{ u"folders/folders_sport"_q, u"⚽"_q },
+								{ u"folders/folders_travel"_q, u"✈️"_q },
+								{ u"folders/folders_light"_q, u"💡"_q },
+								{ u"folders/folders_money"_q, u"💰"_q },
+								{ u"folders/folders_study"_q, u"🎓"_q },
+								{ u"folders/folders_flower"_q, u"🌸"_q },
+								{ u"folders/folders_party"_q, u"🎉"_q },
+								{ u"folders/folders_mask"_q, u"🎭"_q },
+								{ u"folders/folders_like"_q, u"👍"_q },
+								{ u"folders/folders_private"_q, u"🔒"_q },
+								{ u"folders/folders_trade"_q, u"📊"_q },
+								{ u"folders/folders_airplane"_q, u"🛫"_q },
+								{ u"folders/folders_custom"_q, u"📁"_q },
+							};
+
+							const auto gridRows = (int(icons.size()) + kGridColumns - 1) / kGridColumns;
+							const auto gridHeight = gridRows * (kGridIconSize + kGridSpacing) - kGridSpacing + kGridPad * 2;
+
+							const auto grid = box->addRow(
+								object_ptr<Ui::FixedHeightWidget>(box, gridHeight),
+								QMargins(kGridPad, kGridPad, kGridPad, 0));
+
+							for (int idx = 0; idx < int(icons.size()); ++idx) {
+								const auto &entry = icons[idx];
+								const auto col = idx % kGridColumns;
+								const auto row = idx / kGridColumns;
+								const auto isCurrent = (entry.path == pillIcon);
+								const auto iconPath = entry.path;
+								const auto iconEmoji = entry.emoji;
+
+								const auto ibtn = Ui::CreateChild<Ui::AbstractButton>(grid);
+								ibtn->resize(kGridIconSize, kGridIconSize);
+								ibtn->move(
+									col * (kGridIconSize + kGridSpacing),
+									row * (kGridIconSize + kGridSpacing));
+								ibtn->show();
+
+								ibtn->setClickedCallback([=] {
+									AyuSettings::getInstance().setAccountProfileIcon(pillId, iconPath);
+									box->closeBox();
+								});
+
+								ibtn->paintRequest(
+								) | rpl::on_next([=] {
+									auto ip = QPainter(ibtn);
+									ip.setRenderHint(QPainter::Antialiasing);
+									const auto ir = ibtn->rect();
+									if (isCurrent) {
+										ip.setPen(Qt::NoPen);
+										ip.setBrush(st::windowBgActive->b);
+										ip.drawRoundedRect(ir, 10, 10);
+										ip.setPen(st::windowFgActive->p);
+									} else if (ibtn->isOver()) {
+										auto hoverBg = st::windowBgOver->c;
+										hoverBg.setAlpha(120);
+										ip.setPen(Qt::NoPen);
+										ip.setBrush(hoverBg);
+										ip.drawRoundedRect(ir, 10, 10);
+										ip.setPen(st::windowFg->p);
+									} else {
+										ip.setPen(st::windowFg->p);
+									}
+									ip.setFont(st::semiboldFont->f);
+									ip.drawText(ir, iconEmoji, QTextOption(Qt::AlignCenter));
+								}, ibtn->lifetime());
+							}
+
+							box->addButton(tr::lng_cancel(), [box] { box->closeBox(); });
+						}));
+					}, &st::menuIconCustomize);
+
+					addAction(QString::fromUtf8("Удалить"), [=] {
+						_controller->show(Ui::MakeConfirmBox({
+							.text = QString::fromUtf8("Удалить профиль \"") + pillText + QString::fromUtf8("\"?"),
+							.confirmed = [=](Fn<void()> close) {
+								AyuSettings::getInstance().removeAccountProfile(pillId);
+								close();
+							},
+							.confirmText = tr::lng_box_delete(),
+							.confirmStyle = &st::attentionBoxButton,
+						}));
+					}, &st::menuIconDelete);
+
+					_contextMenu->popup(QCursor::pos());
+				}
+			}, btn->lifetime());
+
+			btn->paintRequest(
+			) | rpl::on_next([=] {
+				auto p = QPainter(btn);
+				p.setRenderHint(QPainter::Antialiasing);
+
+				const auto r = btn->rect();
+				if (isAdd) {
+					auto addBg = st::windowBgActive->c;
+					addBg.setAlpha(40);
+					p.setPen(Qt::NoPen);
+					p.setBrush(addBg);
+					p.drawRoundedRect(r, kPillRadius, kPillRadius);
+					p.setPen(st::windowBgActive->p);
+				} else if (isActive) {
+					const auto c1 = st::windowBgActive->c;
+					auto c2 = c1.lighter(115);
+					auto grad = QLinearGradient(r.topLeft(), r.topRight());
+					grad.setColorAt(0.0, c1);
+					grad.setColorAt(1.0, c2);
+					p.setPen(Qt::NoPen);
+					p.setBrush(grad);
+					p.drawRoundedRect(r, kPillRadius, kPillRadius);
+					p.setPen(st::windowFgActive->p);
+				} else {
+					auto bg = st::windowBgOver->c;
+					bg.setAlpha(btn->isOver() ? 120 : 60);
+					p.setPen(Qt::NoPen);
+					p.setBrush(bg);
+					p.drawRoundedRect(r, kPillRadius, kPillRadius);
+					p.setPen(st::windowFg->p);
+				}
+
+				p.setFont(font);
+				if (!pillEmoji.isEmpty() && !isAdd) {
+					const auto emojiW = font->width(pillEmoji);
+					const auto textW = font->width(pillText);
+					const auto totalW = emojiW + kIconTextGap + textW;
+					const auto startX = (r.width() - totalW) / 2;
+					p.drawText(startX, r.top() + (r.height() + font->ascent - font->descent) / 2, pillEmoji);
+					p.drawText(startX + emojiW + kIconTextGap, r.top() + (r.height() + font->ascent - font->descent) / 2, pillText);
+				} else {
+					p.drawText(r, pillText, QTextOption(Qt::AlignCenter));
+				}
+			}, btn->lifetime());
+		}
+		profilesWrap->show();
+	}
+
 	const auto premiumLimit = _controller->session().domain().maxAccounts();
 	const auto list = _controller->session().domain().orderedAccounts();
+	const int activeProfileId = AyuSettings::getInstance().accountProfilesEnabled()
+		? AyuSettings::getInstance().activeProfileId()
+		: 0;
+	const auto &allProfiles = AyuSettings::getInstance().accountProfiles();
+	const AccountProfile *currProf = nullptr;
+	if (activeProfileId != 0) {
+		for (const auto &p : allProfiles) {
+			if (p.id == activeProfileId) {
+				currProf = &p;
+				break;
+			}
+		}
+	}
+
 	for (const auto &account : list) {
 		auto i = _watched.find(account);
 		Assert(i != _watched.end());
@@ -1092,53 +1491,70 @@ void AccountsList::rebuild() {
 		auto &button = i->second;
 		if (!account->sessionExists() || list.size() == 1) {
 			button = nullptr;
-		} else if (!button) {
-			const auto nextIsLocked = (inner->count() >= premiumLimit);
-			auto callback = [=](Qt::KeyboardModifiers modifiers) {
-				if (_reordering) {
-					return;
+		} else {
+			if (currProf) {
+				const uint64 accId = account->session().uniqueId();
+				const bool matches = std::find(currProf->accountIds.begin(), currProf->accountIds.end(), accId) != currProf->accountIds.end();
+				if (!matches) {
+					button = nullptr;
+					continue;
 				}
-				if (account == &_controller->session().account()) {
-					_closeRequests.fire({});
-					return;
-				}
-				const auto newWindow = (modifiers & Qt::ControlModifier);
-				auto activate = [=, guard = _accountSwitchGuard.make_guard()]{
-					if (guard) {
-						_reorder->finishReordering();
-						if (newWindow) {
-							_closeRequests.fire({});
-							Core::App().ensureSeparateWindowFor(account);
+			}
+			if (!button) {
+				const auto nextIsLocked = (inner->count() >= premiumLimit);
+				auto callback = [=](Qt::KeyboardModifiers modifiers) {
+					if (_reordering) {
+						return;
+					}
+					if (account == &_controller->session().account()) {
+						_closeRequests.fire({});
+						return;
+					}
+					const auto newWindow = (modifiers & Qt::ControlModifier);
+					auto activate = [=, guard = _accountSwitchGuard.make_guard()]{
+						if (guard) {
+							_reorder->finishReordering();
+							if (newWindow) {
+								_closeRequests.fire({});
+								Core::App().ensureSeparateWindowFor(account);
+							}
+							Core::App().domain().maybeActivate(account);
 						}
-						Core::App().domain().maybeActivate(account);
+					};
+					if (const auto window = Core::App().separateWindowFor(
+							account)) {
+						_closeRequests.fire({});
+						window->activate();
+					} else {
+						base::call_delayed(
+							st::defaultRippleAnimation.hideDuration,
+							account,
+							std::move(activate));
 					}
 				};
-				if (const auto window = Core::App().separateWindowFor(
-						account)) {
-					_closeRequests.fire({});
-					window->activate();
-				} else {
-					base::call_delayed(
-						st::defaultRippleAnimation.hideDuration,
-						account,
-						std::move(activate));
-				}
-			};
-			button.reset(inner->add(MakeAccountButton(
-				inner,
-				_controller,
-				account,
-				std::move(callback),
-				nextIsLocked)));
+				button.reset(inner->add(MakeAccountButton(
+					inner,
+					_controller,
+					account,
+					std::move(callback),
+					nextIsLocked)));
+			}
 		}
 	}
 	inner->resizeToWidth(_outer->width());
 
 	const auto count = int(list.size());
 
-	_reorder->addPinnedInterval(
-		premiumLimit,
-		std::max(1, count - premiumLimit));
+	if (AyuSettings::getInstance().accountProfilesEnabled()) {
+		_reorder->addPinnedInterval(0, 1);
+		_reorder->addPinnedInterval(
+			1 + premiumLimit,
+			std::max(1, count - premiumLimit));
+	} else {
+		_reorder->addPinnedInterval(
+			premiumLimit,
+			std::max(1, count - premiumLimit));
+	}
 
 	_addAccount->toggle(
 		(count < ::Main::Domain::kPremiumMaxAccounts),

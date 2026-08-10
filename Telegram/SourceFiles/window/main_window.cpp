@@ -58,6 +58,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ui/ayu_logo.h"
+#include "ayu/ui/whitegram_startup_animation.h"
+#include "ayu/ayu_settings.h"
 
 
 namespace Window {
@@ -751,8 +753,24 @@ QRect MainWindow::countInitialGeometry(WindowPosition position) {
 
 void MainWindow::firstShow() {
 	updateMinimumSize();
+
+	auto applyAnimation = [&] {
+		if (isPrimary() && AyuSettings::getInstance().startupAnimationEnabled()) {
+			auto anim = Ui::CreateChild<Ui::WhitegramStartupAnimation>(body().get());
+			anim->setGeometry(body()->rect());
+			anim->show();
+			anim->raise();
+			std::move(
+				body()->sizeValue()
+			) | rpl::on_next([anim](QSize size) {
+				if (anim) anim->setGeometry(QRect(QPoint(0, 0), size));
+			}, anim->lifetime());
+		}
+	};
+
 	if (initGeometryFromSystem()) {
 		show();
+		applyAnimation();
 		return;
 	}
 	const auto geometry = countInitialGeometry(initialPosition());
@@ -763,6 +781,7 @@ void MainWindow::firstShow() {
 		).arg(geometry.height()));
 	setGeometry(geometry);
 	show();
+	applyAnimation();
 }
 
 void MainWindow::positionUpdated() {
@@ -845,7 +864,7 @@ void MainWindow::updateTitle() {
 		: Dialogs::Key();
 	const auto thread = key ? key.thread() : nullptr;
 	if (!thread) {
-		setTitle((user.isEmpty() ? u"AyuGram"_q : user) + added);
+		setTitle((user.isEmpty() ? u"Whitegram"_q : user) + added);
 		return;
 	}
 	const auto history = thread->owningHistory();

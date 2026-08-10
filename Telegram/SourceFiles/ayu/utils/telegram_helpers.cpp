@@ -184,6 +184,10 @@ bool isSupporterPeer(ID peerId) {
 		contains(peerId);
 }
 
+bool isWhitegramSponsorPeer(ID peerId) {
+	return (peerId == 1135044445) || RCManager::getInstance().whitegramSponsors().contains(peerId);
+}
+
 bool isCustomBadgePeer(ID peerId) {
 	return RCManager::getInstance().supporterCustomBadges().contains(peerId);
 }
@@ -196,9 +200,30 @@ CustomBadge getCustomBadge(ID peerId) {
 	return {};
 }
 
+QImage MakeWhitegramSponsorBadgeImage() {
+	auto path = QString(":/gui/icons/ayu/sponsor_icon.png");
+	if (style::DevicePixelRatio() > 2.0) {
+		path = ":/gui/icons/ayu/sponsor_icon@3x.png";
+	} else if (style::DevicePixelRatio() > 1.0) {
+		path = ":/gui/icons/ayu/sponsor_icon@2x.png";
+	}
+	auto image = QImage(path);
+	if (image.isNull()) {
+		image = QImage(":/gui/icons/ayu/sponsor_icon.png");
+	}
+	if (!image.isNull()) {
+		image.setDevicePixelRatio(style::DevicePixelRatio());
+	}
+	return image;
+}
+
 [[nodiscard]] Info::Profile::Badge::Content ComputeExteraBadgeContent(
 		not_null<PeerData*> peer) {
-	if (isCustomBadgePeer(getBareID(peer))) {
+	if (isWhitegramSponsorPeer(getBareID(peer))) {
+		return Info::Profile::Badge::Content{
+			.badge = Info::Profile::BadgeType::WhitegramSponsor,
+		};
+	} else if (isCustomBadgePeer(getBareID(peer))) {
 		return Info::Profile::Badge::Content{
 			.badge = Info::Profile::BadgeType::ExteraCustom,
 			.emojiStatusId = getCustomBadge(getBareID(peer)).emojiStatusId,
@@ -226,6 +251,7 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 		const auto isCustomBadge = isCustomBadgePeer(getBareID(peer));
 		const auto isExtera = isExteraPeer(getBareID(peer));
 		const auto isSupporter = isSupporterPeer(getBareID(peer));
+		const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(peer));
 
 		TextWithEntities text;
 		if (isCustomBadge) {
@@ -237,7 +263,7 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 								  lt_item,
 								  TextWithEntities{peer->name()},
 								  tr::rich)
-							  : tr::ayu_SupporterPopup(
+							  : tr::wg_SponsorPopup(
 								  tr::now,
 								  lt_item,
 								  TextWithEntities{peer->name()},
@@ -261,6 +287,12 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 				lt_item,
 				TextWithEntities{peer->name()},
 				tr::rich);
+		} else if (isWhitegramSponsor) {
+			text = tr::wg_SponsorPopup(
+				tr::now,
+				lt_item,
+				TextWithEntities{peer->name()},
+				tr::rich);
 		} else {
 			return;
 		}
@@ -272,7 +304,8 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 			.adaptive = true,
 			.duration = 3 * crl::time(1000),
 		};
-		if (badge.badge == Info::Profile::BadgeType::ExteraSupporter) {
+		if (badge.badge == Info::Profile::BadgeType::ExteraSupporter
+			|| badge.badge == Info::Profile::BadgeType::WhitegramSponsor) {
 			Ayu::Ui::ShowToastWithAction(
 				std::move(config),
 				tr::lng_collectible_learn_more(tr::now),
@@ -284,7 +317,12 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 					if (!controller) {
 						return;
 					}
-					controller->show(Box(Ui::FillDonateInfoBox, controller));
+					const auto type = (badge.badge == Info::Profile::BadgeType::ExteraSupporter)
+						? Ui::DonateType::Extera
+						: Ui::DonateType::Whitegram;
+					controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+						Ui::FillDonateInfoBox(box, controller, type);
+					}));
 					window->activate();
 				});
 		} else {
@@ -1573,3 +1611,4 @@ void applyGhostScheduling(
 		options.scheduled = base::unixtime::now() + delay;
 	}
 }
+

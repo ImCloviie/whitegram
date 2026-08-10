@@ -433,7 +433,8 @@ TopBar::TopBar(
 		const auto isCustomBadge = isCustomBadgePeer(getBareID(_peer));
 		const auto isExtera = isExteraPeer(getBareID(_peer));
 		const auto isSupporter = isSupporterPeer(getBareID(_peer));
-		if (isExtera || isSupporter || isCustomBadge) {
+		const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(_peer));
+		if (isExtera || isSupporter || isCustomBadge || isWhitegramSponsor) {
 			_exteraBadge->setPremiumClickCallback(badgeClickHandler(_peer));
 		}
 		badgeUpdates = rpl::merge(

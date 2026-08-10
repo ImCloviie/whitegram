@@ -37,7 +37,11 @@
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_item_base.h"
 #include "ui/wrap/vertical_layout.h"
+#include "ui/wrap/slide_wrap.h"
 #include "window/window_session_controller.h"
+#include "window/window_peer_menu.h"
+#include "data/data_peer.h"
+#include "data/data_thread.h"
 
 namespace Settings {
 
@@ -570,6 +574,121 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 				container->lifetime());
 			AddSkip(container);
 			AddDividerText(container, tr::ayu_SuggestGhostModeBeforeViewingStoryDescription());
+
+			AddSkip(container);
+			const auto targetOptions = std::vector<QString>{
+				tr::ayu_GhostTargetModeGlobal(tr::now),
+				tr::ayu_GhostTargetModeWhitelist(tr::now),
+				tr::ayu_GhostTargetModeBlacklist(tr::now),
+			};
+			const auto targetOptionText = state->selectedUserId.value(
+			) | rpl::map([=](uint64 id) {
+				return AyuSettings::ghost(id).ghostTargetModeValue(
+				) | rpl::map([=](GhostTargetMode value) {
+					return targetOptions[static_cast<int>(value)];
+				});
+			}) | rpl::flatten_latest();
+			const auto targetButton = AddButtonWithLabel(
+				container,
+				tr::ayu_GhostTargetMode(),
+				std::move(targetOptionText),
+				st::settingsButtonNoIcon);
+			targetButton->addClickHandler([=] {
+				controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+					const auto save = [=](int index) {
+						AyuSettings::ghost(state->selectedUserId.current()
+						).setGhostTargetMode(
+							static_cast<GhostTargetMode>(index));
+					};
+					SingleChoiceBox(box, {
+						.title = tr::ayu_GhostTargetMode(),
+						.options = targetOptions,
+						.initialSelection = static_cast<int>(
+							AyuSettings::ghost(state->selectedUserId.current()
+							).ghostTargetMode()),
+						.callback = save,
+					});
+				}));
+			});
+
+			const auto managePeersCountLabel = [=](uint64 id) -> QString {
+				auto &ghost = AyuSettings::ghost(id);
+				const auto mode = ghost.ghostTargetMode();
+				if (mode == GhostTargetMode::Whitelist) {
+					const auto count = int(ghost.ghostTargetPeers().size());
+					return count > 0
+						? tr::ayu_GhostTargetPeersCount(tr::now, lt_count, count)
+						: tr::ayu_GhostNoPeersSelected(tr::now);
+				} else if (mode == GhostTargetMode::Blacklist) {
+					const auto count = int(ghost.ghostExcludedPeers().size());
+					return count > 0
+						? tr::ayu_GhostExcludedPeersCount(tr::now, lt_count, count)
+						: tr::ayu_GhostNoPeersSelected(tr::now);
+				}
+				return QString();
+			};
+
+			auto managePeersLabelProducer = state->selectedUserId.value(
+			) | rpl::map([=](uint64 id) {
+				return AyuSettings::ghost(id).ghostTargetModeValue(
+				) | rpl::map([=](GhostTargetMode) {
+					return managePeersCountLabel(id);
+				});
+			}) | rpl::flatten_latest();
+
+			const auto manageWrap = container->add(
+				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+					container,
+					object_ptr<Ui::VerticalLayout>(container)));
+
+			const auto manageInner = manageWrap->entity();
+			const auto manageButton = AddButtonWithLabel(
+				manageInner,
+				tr::ayu_GhostManageTargetPeers(),
+				std::move(managePeersLabelProducer),
+				st::settingsButtonNoIcon);
+			manageButton->addClickHandler([=] {
+				Window::ShowChooseRecipientBox(
+					controller,
+					[=](not_null<Data::Thread*> thread) {
+						auto &ghost = AyuSettings::ghost(state->selectedUserId.current());
+						const auto peerId = thread->peer()->id.value;
+						const auto mode = ghost.ghostTargetMode();
+						if (mode == GhostTargetMode::Whitelist) {
+							ghost.togglePeerInTargetList(peerId);
+						} else if (mode == GhostTargetMode::Blacklist) {
+							ghost.togglePeerInExcludedList(peerId);
+						}
+						return true;
+					},
+					tr::ayu_GhostSelectChat());
+			});
+			AddSkip(manageInner);
+			AddDividerText(manageInner,
+				state->selectedUserId.value(
+				) | rpl::map([=](uint64 id) {
+					return AyuSettings::ghost(id).ghostTargetModeValue(
+					) | rpl::map([=](GhostTargetMode mode) {
+						return (mode == GhostTargetMode::Whitelist)
+							? tr::ayu_GhostManageTargetPeersDescription(tr::now)
+							: tr::ayu_GhostManageExcludedPeersDescription(tr::now);
+					});
+				}) | rpl::flatten_latest());
+
+			state->selectedUserId.value(
+			) | rpl::map([=](uint64 id) {
+				return AyuSettings::ghost(id).ghostTargetModeValue();
+			}) | rpl::flatten_latest(
+			) | rpl::on_next([=](GhostTargetMode mode) {
+				manageWrap->toggle(mode != GhostTargetMode::Global, anim::type::normal);
+			}, container->lifetime());
+			manageWrap->toggle(
+				AyuSettings::ghost(state->selectedUserId.current()).ghostTargetMode() != GhostTargetMode::Global,
+				anim::type::instant);
+			manageWrap->finishAnimating();
+
+			AddSkip(container);
+			AddDividerText(container, tr::ayu_GhostTargetModeDescription());
 
 			auto showMenu = [=] {
 				state->menu = base::make_unique_q<Ui::PopupMenu>(

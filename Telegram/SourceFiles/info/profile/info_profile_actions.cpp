@@ -6,6 +6,8 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_actions.h"
+#include "ayu/ui/ghost_profile_box.h"
+#include "ayu/data/ayu_database.h"
 
 #include "api/api_blocked_peers.h"
 #include "api/api_chat_participants.h"
@@ -1279,6 +1281,7 @@ private:
 	void addBotCommandActions(not_null<UserData*> user);
 	void addFastButtonsMode(not_null<UserData*> user);
 	void addReportAction();
+	void addGhostProfileAction(not_null<UserData*> user);
 	void addBlockAction(not_null<UserData*> user);
 	void addLeaveChannelAction(not_null<ChannelData*> channel);
 	void addJoinChannelAction(not_null<ChannelData*> channel);
@@ -2906,6 +2909,31 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 		&st::infoIconPrivacyPolicy);
 }
 
+void ActionsFiller::addGhostProfileAction(not_null<UserData*> user) {
+	auto cachedUser = AyuDatabase::getCachedUser(user->id.value);
+	if (!cachedUser) {
+		// FALLBACK FOR TESTING: If the user was already deleted before this feature, mock the data
+		CachedUser dummy;
+		dummy.userId = user->id.value;
+		dummy.firstName = "Unknown";
+		dummy.lastName = "";
+		dummy.username = "";
+		dummy.phone = "";
+		cachedUser = dummy;
+	}
+	const auto controller = _controller->parentController();
+	auto showProfile = [=] {
+		controller->uiShow()->showBox(Box<Ayu::Ui::GhostProfileBox>(*cachedUser));
+	};
+	
+	AddActionButton(
+		_wrap,
+		rpl::single(QString("View Ghost Profile")),
+		rpl::single(true),
+		showProfile,
+		&st::infoIconInformation);
+}
+
 void ActionsFiller::addReportAction() {
 	const auto peer = _peer;
 	const auto controller = _controller->parentController();
@@ -3013,6 +3041,7 @@ void ActionsFiller::addJoinChannelAction(
 }
 
 void ActionsFiller::fillUserActions(not_null<UserData*> user) {
+	addGhostProfileAction(user);
 	if (user->isBot()) {
 		addAffiliateProgram(user);
 		addBalanceActions(user);

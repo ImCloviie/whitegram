@@ -188,14 +188,20 @@ int PeerBadge::drawGetWidth(Painter &p, Descriptor &&descriptor) {
 	const auto paintExteraDev = isExteraPeer(getBareID(peer))
 		&& !paintExteraCustom
 		&& !hidePremiumStatuses;
-	const auto paintExteraSupporter = !paintExteraDev
+	const auto paintWhitegramSponsor = !paintExteraDev
+		&& isWhitegramSponsorPeer(getBareID(peer))
+		&& !paintExteraCustom
+		&& !hidePremiumStatuses;
+	const auto paintExteraSupporter = !paintExteraDev && !paintWhitegramSponsor
 		&& isSupporterPeer(getBareID(peer))
 		&& !paintExteraCustom
 		&& !hidePremiumStatuses;
-	const auto paintExtera = paintExteraDev || paintExteraSupporter;
+	const auto paintExtera = paintExteraDev || paintExteraSupporter || paintWhitegramSponsor;
 	auto exteraWidth = 0;
 	if (paintExteraDev) {
 		exteraWidth = descriptor.exteraOfficial->width();
+	} else if (paintWhitegramSponsor && descriptor.whitegramSponsor) {
+		exteraWidth = descriptor.whitegramSponsor->width();
 	} else if (paintExteraSupporter) {
 		exteraWidth = descriptor.exteraSupporter->width();
 	}
@@ -262,6 +268,8 @@ int PeerBadge::drawGetWidth(Painter &p, Descriptor &&descriptor) {
 		}
 		if (paintExteraDev) {
 			result += drawExteraOfficial(p, descriptor);
+		} else if (paintWhitegramSponsor) {
+			result += drawWhitegramSponsor(p, descriptor);
 		} else {
 			result += drawExteraSupporter(p, descriptor);
 		}
@@ -433,6 +441,30 @@ int PeerBadge::drawExteraSupporter(Painter &p, const Descriptor &descriptor) {
 		rectForName.x() + qMin(nameWidth, rectForName.width() - iconw),
 		rectForName.y(),
 		descriptor.outerWidth);
+	return iconw;
+}
+
+int PeerBadge::drawWhitegramSponsor(Painter &p, const Descriptor &descriptor) {
+	const auto icon = descriptor.whitegramSponsor ? descriptor.whitegramSponsor : descriptor.exteraSupporter;
+	const auto iconw = icon->width();
+	const auto rectForName = descriptor.rectForName;
+	const auto nameWidth = descriptor.nameWidth;
+	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
+	const auto py = rectForName.y();
+	
+	static const auto image = MakeWhitegramSponsorBadgeImage();
+	if (!image.isNull()) {
+		p.drawImage(
+			QRect(px, py, iconw, icon->height()),
+			image);
+	} else {
+		icon->paint(
+			p,
+			px,
+			py,
+			descriptor.outerWidth);
+	}
+	
 	return iconw;
 }
 

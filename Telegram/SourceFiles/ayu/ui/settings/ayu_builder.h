@@ -63,6 +63,7 @@ public:
 		Fn<void(int)> setter;
 		IconDescriptor icon;
 		QStringList keywords;
+		rpl::producer<bool> shown;
 	};
 	void addChooseButton(ChooseButtonArgs &&args);
 

@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qt/qt_key_modifiers.h"
 #include "platform/platform_notifications_manager.h"
 #include "window/notifications_manager_default.h"
+#include "ayu/ayu_settings.h"
 #include "media/audio/media_audio_track.h"
 #include "media/audio/media_audio.h"
 #include "mtproto/mtproto_config.h"
@@ -319,6 +320,10 @@ System::SkipState System::computeSkipState(
 	const auto item = notification.item;
 	const auto thread = item->notificationThread();
 	const auto notifySettings = &thread->owner().notifySettings();
+	const auto &accountNotif = AyuSettings::accountNotifications(&thread->session());
+	if (accountNotif.completelyMute() || !accountNotif.enabled()) {
+		return { SkipState::Skip };
+	}
 	const auto messageType = (type == Data::ItemNotificationType::Message);
 	const auto withSilent = [&](
 			SkipState::Value value,
@@ -328,6 +333,7 @@ System::SkipState System::computeSkipState(
 			.silent = (forceSilent
 				|| !messageType
 				|| item->isSilent()
+				|| !accountNotif.soundEnabled()
 				|| notifySettings->sound(thread).none),
 		};
 	};

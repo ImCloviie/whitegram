@@ -89,6 +89,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ui/settings/settings_main.h"
+#include "ayu/ui/settings/settings_general.h"
 #include "ayu/ui/utils/ayu_profile_values.h"
 #include "ayu/utils/telegram_helpers.h"
 
@@ -170,7 +171,7 @@ Cover::Cover(
 			Window::GifPauseReason::Layer);
 	},
 	0, // customStatusLoopsLimit
-	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom)
+	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor)
 , _userpic(
 	this,
 	controller,
@@ -233,7 +234,8 @@ Cover::Cover(
 	const auto isCustomBadge = isCustomBadgePeer(getBareID(_user));
 	const auto isExtera = isExteraPeer(getBareID(_user));
 	const auto isSupporter = isSupporterPeer(getBareID(_user));
-	if (isExtera || isSupporter || isCustomBadge) {
+	const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(_user));
+	if (isExtera || isSupporter || isCustomBadge || isWhitegramSponsor) {
 		_exteraBadge.setPremiumClickCallback(badgeClickHandler(_user));
 	}
 	rpl::merge(
@@ -382,10 +384,16 @@ void BuildSectionButtons(SectionBuilder &builder) {
 	const auto showOther = builder.showOther();
 
 	builder.addSectionButton({
-		.title = tr::ayu_AyuPreferences(),
+		.title = rpl::single(QString::fromUtf8("Настройки AyuGram")),
 		.targetSection = AyuMain::Id(),
 		.icon = { &st::menuIconPremium },
-		.keywords = { u"ayu"_q },
+		.keywords = { u"ayugram"_q },
+	});
+	builder.addSectionButton({
+		.title = rpl::single(QString::fromUtf8("Настройки Whitegram")),
+		.targetSection = WhitegramMain::Id(),
+		.icon = { &st::menuIconPremium },
+		.keywords = { u"whitegram"_q },
 	});
 	builder.addSkip();
 	builder.addDivider();

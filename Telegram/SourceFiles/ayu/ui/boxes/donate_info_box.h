@@ -14,6 +14,18 @@ namespace Ui {
 
 class GenericBox;
 
-void FillDonateInfoBox(not_null<Ui::GenericBox*> box, not_null<Window::SessionController*> controller);
+enum class DonateType {
+	Whitegram,
+	Extera,
+};
+
+void FillDonateInfoBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller);
+
+void FillDonateInfoBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller,
+	DonateType type);
 
 } // namespace Ui

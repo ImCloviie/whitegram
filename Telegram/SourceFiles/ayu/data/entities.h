@@ -135,3 +135,15 @@ public:
 	int messageId;
 	int entityCreateDate;
 };
+
+class CachedUser
+{
+public:
+	ID fakeId;
+	ID userId;
+	std::string firstName;
+	std::string lastName;
+	std::string phone;
+	std::string username;
+	std::vector<char> avatarPng;
+};

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "main/main_domain.h"
 
+#include "ayu/ayu_settings.h"
+
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/shortcuts.h"
@@ -246,6 +248,10 @@ void Domain::updateUnreadBadge() {
 	_unreadBadgeMuted = true;
 	for (const auto &[index, account] : _accounts) {
 		if (const auto session = account->maybeSession()) {
+			const auto &accountNotif = AyuSettings::accountNotifications(session);
+			if (accountNotif.completelyMute() || !accountNotif.includeInUnreadCounter()) {
+				continue;
+			}
 			const auto data = &session->data();
 			_unreadBadge += data->unreadBadge();
 			if (!data->unreadBadgeMuted()) {

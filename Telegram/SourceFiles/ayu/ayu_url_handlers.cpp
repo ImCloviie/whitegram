@@ -138,9 +138,9 @@ bool HandleSupport(
 	if (!controller) {
 		return false;
 	}
-	auto box = Box(
-		Ui::FillDonateInfoBox,
-		controller);
+	auto box = Box([=](not_null<Ui::GenericBox*> box) {
+		Ui::FillDonateInfoBox(box, controller);
+	});
 	Ui::show(std::move(box));
 	return true;
 }

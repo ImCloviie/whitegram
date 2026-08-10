@@ -57,4 +57,7 @@ bool hasPerDialogFilters();
 
 void moveCurrentDatabase();
 
+void updateCachedUser(const CachedUser &user);
+std::optional<CachedUser> getCachedUser(ID userId);
+
 }

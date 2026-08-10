@@ -824,6 +824,10 @@ void PaintRow(
 				st::dialogsExteraSupporterIcon,
 				context.active,
 				context.selected),
+			.whitegramSponsor = &ThreeStateIcon(
+				st::dialogsWhitegramSponsorIcon,
+				context.active,
+				context.selected),
 			.premium = &ThreeStateIcon(
 				st::dialogsPremiumIcon,
 				context.active,

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_notifications.h"
 
+#include "ayu/ayu_settings.h"
+#include "ayu/ui/boxes/account_notification_box.h"
 #include "settings/settings_common_session.h"
 
 #include "api/api_authorizations.h"
@@ -18,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "data/data_chat_filters.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
 #include "data/notify/data_notify_settings.h"
 #include "data/notify/data_peer_notify_volume.h"
 #include "lang/lang_keys.h"
@@ -514,7 +517,7 @@ void NotificationsCount::prepareNotificationSampleLarge() {
 		p.setPen(st::dialogsNameFg);
 		p.setFont(st::msgNameFont);
 
-		auto notifyTitle = st::msgNameFont->elided(u"AyuGram Desktop"_q, rectForName.width());
+		auto notifyTitle = st::msgNameFont->elided(u"Whitegram Desktop"_q, rectForName.width());
 		p.drawText(rectForName.left(), rectForName.top() + st::msgNameFont->ascent, notifyTitle);
 
 		st::notifyClose.icon.paint(p, w - st::notifyClosePos.x() - st::notifyClose.width + st::notifyClose.iconPosition.x(), st::notifyClosePos.y() + st::notifyClose.iconPosition.y(), w);
@@ -930,7 +933,8 @@ constexpr auto kDefaultDisplayIndex = -1;
 using NotifyView = Core::Settings::NotifyView;
 
 void BuildMultiAccountSection(SectionBuilder &builder) {
-	if (Core::App().domain().accounts().size() < 2) {
+	const auto &accounts = Core::App().domain().accounts();
+	if (accounts.size() < 2) {
 		return;
 	}
 
@@ -940,33 +944,43 @@ void BuildMultiAccountSection(SectionBuilder &builder) {
 		.keywords = { u"accounts"_q, u"multiple"_q },
 	});
 
-	const auto fromAll = builder.addButton({
-		.id = u"notifications/accounts"_q,
-		.title = tr::lng_settings_notify_all(),
-		.st = &st::settingsButtonNoIcon,
-		.toggled = rpl::single(Core::App().settings().notifyFromAll()),
-		.keywords = { u"all accounts"_q, u"multiple"_q },
-	});
+	for (const auto &[index, account] : accounts) {
+		const auto session = account->maybeSession();
+		if (!session) {
+			continue;
+		}
+		const auto user = session->user();
+		const auto name = user ? user->name() : QString::number(session->userId().bare);
 
-	if (fromAll) {
-		fromAll->toggledChanges(
-		) | rpl::filter([](bool checked) {
-			return (checked != Core::App().settings().notifyFromAll());
-		}) | rpl::on_next([=](bool checked) {
-			Core::App().settings().setNotifyFromAll(checked);
-			Core::App().saveSettingsDelayed();
-			if (!checked) {
-				auto &notifications = Core::App().notifications();
-				const auto &list = Core::App().domain().accounts();
-				for (const auto &[index, account] : list) {
-					if (account.get() == &Core::App().domain().active()) {
-						continue;
-					} else if (const auto session = account->maybeSession()) {
-						notifications.clearFromSession(session);
-					}
-				}
+		auto &accountNotif = AyuSettings::accountNotifications(session);
+
+		auto labelValue = rpl::combine(
+			accountNotif.completelyMuteValue(),
+			accountNotif.enabledValue(),
+			accountNotif.soundEnabledValue()
+		) | rpl::map([](bool mute, bool enabled, bool sound) {
+			if (mute) {
+				return QString::fromUtf8("Заглушен");
+			} else if (!enabled) {
+				return QString::fromUtf8("Выкл.");
+			} else if (!sound) {
+				return QString::fromUtf8("Без звука");
 			}
-		}, fromAll->lifetime());
+			return QString::fromUtf8("Вкл.");
+		});
+
+		builder.addButton({
+			.id = u"notifications/account_"_q + QString::number(session->userId().bare),
+			.title = rpl::single(name),
+			.st = &st::settingsButtonNoIcon,
+			.label = std::move(labelValue),
+			.onClick = [builder, session] {
+				builder.controller()->show(Box([=](not_null<Ui::GenericBox*> box) {
+					FillAccountNotificationBox(box, builder.controller(), session);
+				}));
+			},
+			.keywords = { u"account"_q, name },
+		});
 	}
 
 	builder.addSkip();

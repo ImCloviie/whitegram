@@ -1239,7 +1239,7 @@ void Stories::markAsRead(FullStoryId id, bool viewed) {
 	}
 
 	const auto &ghost = AyuSettings::ghost(&_owner->session());
-	if (!ghost.sendReadStories()) {
+	if (!ghost.shouldSendReadStoriesForPeer(id.peer.value)) {
 		return;
 	}
 
@@ -1398,7 +1398,7 @@ void Stories::sendMarkAsReadRequest(
 		not_null<PeerData*> peer,
 		StoryId tillId) {
 	const auto &ghost = AyuSettings::ghost(&_owner->session());
-	if (!ghost.sendReadStories()) {
+	if (!ghost.shouldSendReadStoriesForPeer(peer->id.value)) {
 		return;
 	}
 
@@ -1433,12 +1433,12 @@ void Stories::sendMarkAsReadRequests() {
 	_markReadTimer.cancel();
 
 	const auto &ghost = AyuSettings::ghost(&_owner->session());
-	if (!ghost.sendReadStories()) {
-		return;
-	}
-
 	for (auto i = begin(_markReadPending); i != end(_markReadPending);) {
 		const auto peerId = *i;
+		if (!ghost.shouldSendReadStoriesForPeer(peerId.value)) {
+			i = _markReadPending.erase(i);
+			continue;
+		}
 		if (_markReadRequests.contains(peerId)) {
 			++i;
 			continue;
@@ -1452,12 +1452,15 @@ void Stories::sendMarkAsReadRequests() {
 }
 
 void Stories::sendIncrementViewsRequests() {
-	if (_incrementViewsPending.empty()) {
-		return;
-	}
-
 	const auto &ghost = AyuSettings::ghost(&_owner->session());
-	if (!ghost.sendReadStories()) {
+	for (auto i = begin(_incrementViewsPending); i != end(_incrementViewsPending);) {
+		if (!ghost.shouldSendReadStoriesForPeer(i->first.value)) {
+			i = _incrementViewsPending.erase(i);
+		} else {
+			++i;
+		}
+	}
+	if (_incrementViewsPending.empty()) {
 		return;
 	}
 

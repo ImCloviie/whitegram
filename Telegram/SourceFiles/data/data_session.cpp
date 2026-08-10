@@ -6,6 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
+#include "ayu/data/ayu_database.h"
+#include "data/data_peer.h"
+#include <QBuffer>
 
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -543,6 +546,31 @@ not_null<UserData*> Session::processUser(const MTPUser &data) {
 	const auto result = user(data.match([](const auto &data) {
 		return data.vid().v;
 	}));
+	
+	const bool isNowDeleted = data.match([](const MTPDuserEmpty&) { return true; }, [](const MTPDuser& d) { return d.is_deleted(); });
+	if (isNowDeleted && !(result->flags() & UserDataFlag::Deleted) && !result->firstName.isEmpty()) {
+		CachedUser cached;
+		cached.userId = result->id.value;
+		cached.firstName = result->firstName.toStdString();
+		cached.lastName = result->lastName.toStdString();
+		cached.phone = result->phone().toStdString();
+		cached.username = result->username().toStdString();
+		
+		auto view = result->createUserpicView();
+		if (!result->useEmptyUserpic(view)) {
+			QImage img = PeerData::GenerateUserpicImage(result, view, 160);
+			if (!img.isNull()) {
+				QByteArray ba;
+				QBuffer buffer(&ba);
+				buffer.open(QIODevice::WriteOnly);
+				img.save(&buffer, "PNG");
+				cached.avatarPng = std::vector<char>(ba.begin(), ba.end());
+			}
+		}
+		
+		AyuDatabase::updateCachedUser(cached);
+	}
+
 	auto minimal = false;
 	const MTPUserStatus *status = nullptr;
 	const MTPUserStatus emptyStatus = MTP_userStatusEmpty();

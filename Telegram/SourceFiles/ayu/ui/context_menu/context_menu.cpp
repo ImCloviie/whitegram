@@ -230,7 +230,10 @@ void AddAyuGramActions(PeerData *peerData,
 	const auto showFilters = settings.filtersEnabled()
 		&& (!user || user->isBot());
 	const auto saveDeletedMessages = settings.saveDeletedMessages();
-	if (!showFilters && !saveDeletedMessages) {
+	const auto &ghost = AyuSettings::ghost(&sessionController->session());
+	const auto ghostMode = ghost.ghostTargetMode();
+	const auto showGhostAction = (ghostMode != GhostTargetMode::Global);
+	if (!showFilters && !saveDeletedMessages && !showGhostAction) {
 		return;
 	}
 
@@ -243,6 +246,33 @@ void AddAyuGramActions(PeerData *peerData,
 		.icon = &st::menuIconGroupReactions,
 		.fillSubmenu = [=](not_null<Ui::PopupMenu*> menu) {
 			const auto addAction = Ui::Menu::CreateAddActionCallback(menu);
+			if (showGhostAction) {
+				const auto peerId = peerData->id.value;
+				if (ghostMode == GhostTargetMode::Blacklist) {
+					const auto isExcluded = ghost.isPeerInExcludedList(peerId);
+					addAction(
+						isExcluded
+							? tr::ayu_GhostRemoveFromExceptions(tr::now)
+							: tr::ayu_GhostAddToExceptions(tr::now),
+						[=] {
+							AyuSettings::ghost(&sessionController->session()).togglePeerInExcludedList(peerId);
+						},
+						&st::menuIconShowInChat);
+				} else if (ghostMode == GhostTargetMode::Whitelist) {
+					const auto isTarget = ghost.isPeerInTargetList(peerId);
+					addAction(
+						isTarget
+							? tr::ayu_GhostDisableForChat(tr::now)
+							: tr::ayu_GhostEnableForChat(tr::now),
+						[=] {
+							AyuSettings::ghost(&sessionController->session()).togglePeerInTargetList(peerId);
+						},
+						&st::menuIconShowInChat);
+				}
+				if (showFilters || saveDeletedMessages) {
+					addAction({ .isSeparator = true });
+				}
+			}
 			if (showFilters) {
 				addAction(
 					tr::ayu_ViewFiltersMenuText(tr::now),

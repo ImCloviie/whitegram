@@ -153,20 +153,40 @@ void AyuSectionBuilder::addChooseButton(ChooseButtonArgs &&args) {
 	auto altIds = std::move(args.altIds);
 	auto keywords = std::move(args.keywords);
 	auto icon = std::move(args.icon);
+	auto shown = std::move(args.shown);
 	auto resolvedTitle = ResolveTitle(rpl::duplicate(args.title));
 
 	_builder.add([&](const Builder::BuildContext &ctx) {
 		v::match(ctx, [&](const Builder::WidgetContext &wctx) {
-			AddChooseButtonWithIconAndRightTextInner(
-				wctx.container,
-				wctx.controller,
-				initialSelection,
-				options,
-				std::move(args.title),
-				std::move(args.boxTitle),
-				icon.icon ? st::settingsButton : st::settingsButtonNoIcon,
-				std::move(icon),
-				setter);
+			if (shown) {
+				auto wrap = wctx.container->add(object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+					wctx.container,
+					object_ptr<Ui::VerticalLayout>(wctx.container)));
+				std::move(shown) | rpl::on_next([wrap](bool isShown) {
+					wrap->toggle(isShown, anim::type::normal);
+				}, wrap->lifetime());
+				AddChooseButtonWithIconAndRightTextInner(
+					wrap->entity(),
+					wctx.controller,
+					initialSelection,
+					options,
+					std::move(args.title),
+					std::move(args.boxTitle),
+					icon.icon ? st::settingsButton : st::settingsButtonNoIcon,
+					std::move(icon),
+					setter);
+			} else {
+				AddChooseButtonWithIconAndRightTextInner(
+					wctx.container,
+					wctx.controller,
+					initialSelection,
+					options,
+					std::move(args.title),
+					std::move(args.boxTitle),
+					icon.icon ? st::settingsButton : st::settingsButtonNoIcon,
+					std::move(icon),
+					setter);
+			}
 		}, [&](const Builder::SearchContext &sctx) {
 			if (!id.isEmpty()) {
 				sctx.entries->push_back({

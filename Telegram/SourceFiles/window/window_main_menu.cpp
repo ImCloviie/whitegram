@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_main_menu.h"
 
+#include "ayu/ayu_settings.h"
+
 #include "apiwrap.h"
 #include "base/event_filter.h"
 #include "base/qt_signal_producer.h"
@@ -88,6 +90,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_ayu_icons.h"
 #include "lang_auto.h"
 #include "ayu/ui/settings/settings_main.h"
+#include "ayu/features/whitegram_crypto.h"
 
 namespace Window {
 namespace {
@@ -330,7 +333,7 @@ MainMenu::MainMenu(
 	nullptr,
 	[=] { return controller->isGifPausedAtLeastFor(GifPauseReason::Layer); },
 	0,
-	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom))
+	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor))
 , _scroll(this, st::defaultSolidScroll)
 , _inner(_scroll->setOwnedWidget(
 	object_ptr<Ui::VerticalLayout>(_scroll.data())))
@@ -391,7 +394,7 @@ MainMenu::MainMenu(
 	parentResized();
 
 	_telegram->setMarkedText(tr::link(
-		u"AyuGram Desktop"_q,
+		u"Whitegram"_q,
 		u"https://ayugram.one"_q));
 	_telegram->setLinksTrusted();
 	_version->setMarkedText(
@@ -429,7 +432,8 @@ MainMenu::MainMenu(
 		const auto isCustomBadge = isCustomBadgePeer(getBareID(user));
 		const auto isExtera = isExteraPeer(getBareID(user));
 		const auto isSupporter = isSupporterPeer(getBareID(user));
-		if (isExtera || isSupporter || isCustomBadge) {
+		const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(user));
+		if (isExtera || isSupporter || isCustomBadge || isWhitegramSponsor) {
 			_exteraBadge->setPremiumClickCallback(badgeClickHandler(user));
 		}
 	}
@@ -924,6 +928,156 @@ void MainMenu::setupMenu() {
 			},
 			streamerModeToggle->lifetime());
 	}
+
+	if (settings.showCryptoInDrawer()) {
+		_menu->add(
+			object_ptr<Ui::PlainShadow>(_menu),
+			{ 0, st::mainMenuSkip, 0, st::mainMenuSkip });
+
+		auto &crypto = Whitegram::CryptoProvider::instance();
+		crypto.start();
+
+		const auto cryptoContainer = _menu->add(
+			object_ptr<Ui::VerticalLayout>(_menu));
+
+		const auto rebuild = [=] {
+			while (cryptoContainer->count()) {
+				delete cryptoContainer->widgetAt(0);
+			}
+
+			const auto &s = AyuSettings::getInstance();
+			const auto fiat = s.cryptoFiatCurrency();
+			const auto &prices = Whitegram::CryptoProvider::instance().currentPrices();
+
+			for (const auto &coin : prices) {
+				const auto show =
+					(coin.symbol == u"BTC"_q && s.showBTC())
+					|| (coin.symbol == u"ETH"_q && s.showETH())
+					|| (coin.symbol == u"TON"_q && s.showTON())
+					|| (coin.symbol == u"SOL"_q && s.showSOL())
+					|| (coin.symbol == u"BNB"_q && s.showBNB());
+				if (!show) {
+					continue;
+				}
+
+				auto price = 0.0;
+				switch (fiat) {
+				case 1: price = coin.priceEur; break;
+				case 2: price = coin.priceRub; break;
+				default: price = coin.priceUsd; break;
+				}
+
+				const auto text = coin.symbol
+					+ u"  "_q
+					+ Whitegram::CryptoProvider::formatPrice(price, fiat);
+
+				const auto changeText = (coin.change24h >= 0 ? u"+"_q : QString())
+					+ QString::number(coin.change24h, 'f', 1)
+					+ u"%"_q;
+
+				const auto label = Ui::CreateChild<Ui::FlatLabel>(
+					cryptoContainer,
+					rpl::single(text + u"  "_q + changeText),
+					st::defaultFlatLabel);
+				cryptoContainer->add(
+					object_ptr<Ui::FlatLabel>::fromRaw(label),
+					{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+			}
+			
+			// Fiat calculation hack using BTC as the bridge
+			if (!prices.empty()) {
+				const auto &btc = prices.front();
+				if (btc.priceUsd > 0.0) {
+					const auto usdToRub = btc.priceRub / btc.priceUsd;
+					const auto eurToRub = btc.priceRub / btc.priceEur;
+					const auto usdToEur = btc.priceEur / btc.priceUsd;
+					const auto eurToUsd = btc.priceUsd / btc.priceEur;
+					
+					if (s.showFiatUSD()) {
+						QString text;
+						switch (fiat) {
+						case 1: text = u"USD  "_q + Whitegram::CryptoProvider::formatPrice(usdToEur, 1); break;
+						case 2: text = u"USD  "_q + Whitegram::CryptoProvider::formatPrice(usdToRub, 2); break;
+						default: text = u"USD  "_q + Whitegram::CryptoProvider::formatPrice(1.0, 0); break;
+						}
+						
+						const auto label = Ui::CreateChild<Ui::FlatLabel>(
+							cryptoContainer,
+							rpl::single(text),
+							st::defaultFlatLabel);
+						cryptoContainer->add(
+							object_ptr<Ui::FlatLabel>::fromRaw(label),
+							{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+					}
+					
+					if (s.showFiatEUR()) {
+						QString text;
+						switch (fiat) {
+						case 0: text = u"EUR  "_q + Whitegram::CryptoProvider::formatPrice(eurToUsd, 0); break;
+						case 2: text = u"EUR  "_q + Whitegram::CryptoProvider::formatPrice(eurToRub, 2); break;
+						default: text = u"EUR  "_q + Whitegram::CryptoProvider::formatPrice(1.0, 1); break;
+						}
+						
+						const auto label = Ui::CreateChild<Ui::FlatLabel>(
+							cryptoContainer,
+							rpl::single(text),
+							st::defaultFlatLabel);
+						cryptoContainer->add(
+							object_ptr<Ui::FlatLabel>::fromRaw(label),
+							{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+					}
+
+					if (s.showFiatRUB()) {
+						QString text;
+						switch (fiat) {
+						case 0: text = u"RUB  "_q + Whitegram::CryptoProvider::formatPrice(1.0 / usdToRub, 0); break;
+						case 1: text = u"RUB  "_q + Whitegram::CryptoProvider::formatPrice(1.0 / eurToRub, 1); break;
+						default: text = u"RUB  "_q + Whitegram::CryptoProvider::formatPrice(1.0, 2); break;
+						}
+						
+						const auto label = Ui::CreateChild<Ui::FlatLabel>(
+							cryptoContainer,
+							rpl::single(text),
+							st::defaultFlatLabel);
+						cryptoContainer->add(
+							object_ptr<Ui::FlatLabel>::fromRaw(label),
+							{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+					}
+				}
+			}
+			
+			cryptoContainer->resizeToWidth(cryptoContainer->width());
+		};
+
+		rebuild();
+
+		std::move(
+			crypto.pricesValue()
+		) | rpl::on_next([=](const std::vector<Whitegram::CoinPrice> &) {
+			rebuild();
+		}, cryptoContainer->lifetime());
+	}
+
+	if (settings.showTimeSpentInDrawer()) {
+		_menu->add(
+			object_ptr<Ui::PlainShadow>(_menu),
+			{ 0, st::mainMenuSkip + 8, 0, st::mainMenuSkip + 8 });
+
+		auto timeText = AyuSettings::getInstance().totalTimeSpent() | rpl::map([](int64 minutes) {
+			int hours = minutes / 60;
+			int mins = minutes % 60;
+			return QString::fromUtf8("В приложении: %1 ч. %2 мин.").arg(hours).arg(mins);
+		});
+
+		const auto timeLabel = Ui::CreateChild<Ui::FlatLabel>(
+			_menu,
+			std::move(timeText),
+			st::defaultFlatLabel);
+			
+		_menu->add(
+			object_ptr<Ui::FlatLabel>::fromRaw(timeLabel),
+			{ st::mainMenuButton.padding.left(), 8, 0, 8 });
+	}
 }
 
 void MainMenu::resizeEvent(QResizeEvent *e) {
@@ -1078,6 +1232,10 @@ OthersUnreadState OtherAccountsUnreadStateCurrent(
 		if (account.get() == current) {
 			continue;
 		} else if (const auto session = account->maybeSession()) {
+			const auto &accountNotif = AyuSettings::accountNotifications(session);
+			if (accountNotif.completelyMute() || !accountNotif.includeInUnreadCounter()) {
+				continue;
+			}
 			counter += session->data().unreadWithMentionsBadge();
 			if (!session->data().unreadWithMentionsBadgeMuted()) {
 				allMuted = false;

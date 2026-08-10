@@ -679,12 +679,13 @@ void Histories::reportPendingDeliveries() {
 void Histories::sendReadRequests() {
 	DEBUG_LOG(("Reading: send requests with count %1.").arg(_states.size()));
 
-	// AyuGram sendReadMessages
 	const auto &ghost = AyuSettings::ghost(&_owner->session());
-	if (!ghost.sendReadMessages()) {
-		DEBUG_LOG(("[AyuGram] Don't read messages"));
-		_states.clear();
-		return;
+	for (auto it = _states.begin(); it != _states.end();) {
+		if (!ghost.shouldSendReadMessagesForPeer(it->first->peer->id.value)) {
+			it = _states.erase(it);
+		} else {
+			++it;
+		}
 	}
 
 	if (_states.empty()) {

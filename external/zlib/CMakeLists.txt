@@ -20,10 +20,22 @@ if (WIN32)
     set(zlib_lib_loc ${libs_loc}/zlib)
     target_compile_definitions(external_zlib INTERFACE ZLIB_WINAPI)
     target_include_directories(external_zlib SYSTEM INTERFACE ${zlib_lib_loc})
-    set_target_properties(external_zlib PROPERTIES
-        IMPORTED_LOCATION "${zlib_lib_loc}/Release/libzs.lib"
-        IMPORTED_LOCATION_DEBUG "${zlib_lib_loc}/Debug/libzsd.lib"
-    )
+    if (EXISTS "${zlib_lib_loc}/Release/zlibstatic.lib")
+        set_target_properties(external_zlib PROPERTIES
+            IMPORTED_LOCATION "${zlib_lib_loc}/Release/zlibstatic.lib"
+            IMPORTED_LOCATION_DEBUG "${zlib_lib_loc}/Debug/zlibstaticd.lib"
+        )
+    elseif (EXISTS "${zlib_lib_loc}/Release/libzs.lib")
+        set_target_properties(external_zlib PROPERTIES
+            IMPORTED_LOCATION "${zlib_lib_loc}/Release/libzs.lib"
+            IMPORTED_LOCATION_DEBUG "${zlib_lib_loc}/Debug/libzsd.lib"
+        )
+    else()
+        set_target_properties(external_zlib PROPERTIES
+            IMPORTED_LOCATION "${zlib_lib_loc}/Release/zlib.lib"
+            IMPORTED_LOCATION_DEBUG "${zlib_lib_loc}/Debug/zlibd.lib"
+        )
+    endif()
 elseif (APPLE)
     set_target_properties(external_zlib PROPERTIES
         IMPORTED_LOCATION ${libs_loc}/local/lib/libz.a

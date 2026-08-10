@@ -91,6 +91,7 @@ not_null<RpWidget*> Widget::rp() const {
 // Interface cast.
 
 void *Widget::interface_cast(QAccessible::InterfaceType type) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	if (type == QAccessible::SelectionInterface
 		&& rp()->accessibilitySelectionList()) {
 		return static_cast<QAccessibleSelectionInterface*>(this);
@@ -99,6 +100,7 @@ void *Widget::interface_cast(QAccessible::InterfaceType type) {
 		&& rp()->accessibilityOrientation().has_value()) {
 		return static_cast<QAccessibleAttributesInterface*>(this);
 	}
+#endif
 	return QAccessibleWidget::interface_cast(type);
 }
 
@@ -235,12 +237,14 @@ QAccessibleInterface* Widget::focusChild() const {
 	// focus - if a specific item has keyboard focus, fall through so it is
 	// reported. Opt-in, so plain lists (e.g. message history, which tracks a
 	// separate focused item) are not affected.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	if (rp()->accessibilitySelectionList()
 		&& widget()->hasFocus()) {
 		if (const auto selected = selectedItem(0)) {
 			return selected;
 		}
 	}
+#endif
 
 	// Only handle focus child for widgets with custom accessibility children.
 	// For other widgets (containers, scroll areas), delegate to Qt immediately.
@@ -272,11 +276,12 @@ QStringList Widget::actionNames() const {
 }
 
 void Widget::doAction(const QString &actionName) {
-	// The items of a selection list are real widgets and it is they, not the
-	// container, that keep the keyboard focus: they handle the arrow keys and
-	// carry the list's single Tab-stop. So a container SetFocus has to land on
-	// the selected item - taking focus there announces it by itself. Opt-in,
-	// so only a selection list (the folder strip) is affected.
+	// On Qt 5 the Windows UIA bridge redirects a container's SetFocus to
+	// focusChild() only for an element exposing a table interface, not for a
+	// List - so focus would land on the inert container. Forward SetFocus to
+	// the selected item's widget directly instead (no extra Qt patch needed).
+	// Opt-in, so only a selection list (the folder strip) is affected.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	if (actionName == QAccessibleActionInterface::setFocusAction()
 		&& rp()->accessibilitySelectionList()) {
 		if (const auto selected = selectedItem(0)) {
@@ -286,12 +291,14 @@ void Widget::doAction(const QString &actionName) {
 			}
 		}
 	}
+#endif
 	QAccessibleWidget::doAction(actionName);
 	base::Integration::Instance().enterFromEventLoop([&] {
 		rp()->accessibilityDoAction(actionName);
 	});
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 // Selection. A selection item is a child with the ListItem (or PageTab, for
 // a strip of tabs) role reporting selected = active; the selected one
 // resolves independently of focus. Plain buttons among the children are
@@ -390,5 +397,6 @@ QVariant Widget::attributeValue(QAccessible::Attribute key) const {
 	}
 	return QVariant();
 }
+#endif // Qt >= 6.0.0
 
 } // namespace Ui::Accessible

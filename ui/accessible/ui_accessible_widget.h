@@ -16,8 +16,11 @@ namespace Ui::Accessible {
 
 class Widget
 	: public QAccessibleWidget
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	, public QAccessibleSelectionInterface
-	, public QAccessibleAttributesInterface {
+	, public QAccessibleAttributesInterface
+#endif
+{
 public:
 	explicit Widget(not_null<RpWidget*> widget);
 
@@ -47,6 +50,7 @@ public:
 	QStringList actionNames() const override;
 	void doAction(const QString &actionName) override;
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	// Selection. Exposed (via interface_cast) only for a List container, so UI
 	// Automation drives SelectionItem.Select() through pressAction() (a list
 	// item only implements pressAction, not toggleAction) and resolves the
@@ -65,6 +69,7 @@ public:
 	// vertical orientation.
 	QList<QAccessible::Attribute> attributeKeys() const override;
 	QVariant attributeValue(QAccessible::Attribute key) const override;
+#endif
 
 };
 

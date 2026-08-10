@@ -646,20 +646,6 @@ public:
   [[nodiscard]] rpl::producer<bool> accountProfilesEnabledChanges() const {
     return enableAccountProfilesChanges();
   }
-	[[nodiscard]] bool saveDeletedMessages() const { return _saveDeletedMessages.current(); }
-	[[nodiscard]] bool saveMessagesHistory() const { return _saveMessagesHistory.current(); }
-	[[nodiscard]] bool saveForBots() const { return _saveForBots.current(); }
-	[[nodiscard]] bool filtersEnabled() const { return _filtersEnabled.current(); }
-	[[nodiscard]] bool filtersEnabledInChats() const { return _filtersEnabledInChats.current(); }
-	[[nodiscard]] bool hideFromBlocked() const { return _hideFromBlocked.current(); }
-	[[nodiscard]] bool semiTransparentDeletedMessages() const { return _semiTransparentDeletedMessages.current(); }
-	[[nodiscard]] bool disableAds() const { return _disableAds.current(); }
-	[[nodiscard]] bool disableStories() const { return _disableStories.current(); }
-	[[nodiscard]] bool disableCustomBackgrounds() const { return _disableCustomBackgrounds.current(); }
-	[[nodiscard]] bool hidePremiumStatuses() const { return _hidePremiumStatuses.current(); }
-	[[nodiscard]] bool showOnlyAddedEmojisAndStickers() const { return _showOnlyAddedEmojisAndStickers.current(); }
-	[[nodiscard]] bool collapseSimilarChannels() const { return _collapseSimilarChannels.current(); }
-	[[nodiscard]] bool hideSimilarChannels() const { return _hideSimilarChannels.current(); }
 	[[nodiscard]] int messageBubbleRadius() const { return _messageBubbleRadius.current(); }
 	[[nodiscard]] bool disableOpenLinkWarning() const { return _disableOpenLinkWarning.current(); }
 	[[nodiscard]] double wideMultiplier() const { return _wideMultiplier.current(); }
@@ -994,7 +980,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> singleCornerRadiusChanges() const { return _singleCornerRadius.changes(); }
 	[[nodiscard]] rpl::producer<bool> streamerModeValue() const { return _streamerMode.value(); }
 	[[nodiscard]] rpl::producer<bool> streamerModeChanges() const { return _streamerMode.changes(); }
->>>>>>> v7.0.9
+
 
   [[nodiscard]] AccountProfilesVisualVariant accountProfilesVisualVariant() const {
     return _accountProfilesVisualVariant.current();

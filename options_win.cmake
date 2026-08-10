@@ -31,8 +31,8 @@ if (MSVC)
         # /Qspectre
         /utf-8
         /W4
-        /MP     # Enable multi process build.
-        /Zm250  # Increase MSVC PCH internal heap limit to prevent C1076/C3859 errors.
+        /MP4    # Limit parallel compilations to prevent PCH heap exhaustion.
+        /Zm500  # Increase MSVC PCH internal heap limit to prevent C1076/C3859 errors.
         /EHsc   # Catch C++ exceptions only, extern C functions never throw a C++ exception.
         /w15038 # wrong initialization order
         /w14265 # class has virtual functions, but destructor is not virtual

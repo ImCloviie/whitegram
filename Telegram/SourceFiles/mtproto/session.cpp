@@ -238,7 +238,7 @@ void Session::restart() {
 }
 
 void Session::refreshOptions() {
-	auto &settings = Core::App().settings().proxy();
+	const auto &settings = Core::App().settings().proxy();
 	const auto &selected = settings.selected();
 	const auto isEnabled = settings.isEnabled();
 	auto proxy = (isEnabled ? selected : ProxyData());
@@ -250,7 +250,8 @@ void Session::refreshOptions() {
 	const auto useTcp = (proxyType != ProxyData::Type::Http);
 	const auto useHttp = details::PreferWebSocket()
 		? false
-		: (proxyType != ProxyData::Type::Mtproto);
+		: (proxyType != ProxyData::Type::Mtproto
+			&& proxyType != ProxyData::Type::Web);
 	const auto useIPv4 = true;
 	const auto useIPv6 = settings.tryIPv6();
 	_data->setOptions(SessionOptions(

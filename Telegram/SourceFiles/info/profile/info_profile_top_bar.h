@@ -62,6 +62,7 @@ class FlatLabel;
 class IconButton;
 class InputField;
 class LabelWithNumbers;
+class MarqueeLabel;
 class PopupMenu;
 class RoundButton;
 class StarsRating;
@@ -144,8 +145,7 @@ public:
 	void setLocalEmojiStatusId(EmojiStatusId emojiStatusId);
 	void addTopBarEditButton(
 		not_null<Window::SessionController*> controller,
-		Wrap wrap,
-		bool shouldUseColored);
+		Wrap wrap);
 
 	rpl::producer<std::optional<QColor>> edgeColor() const;
 	void setCustomBackgroundDetailsHeight(int height);
@@ -155,8 +155,12 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 
 private:
-	void paintEdges(QPainter &p, const QBrush &brush) const;
-	void paintEdges(QPainter &p) const;
+	[[nodiscard]] bool clipTouchesRoundedCorners(const QRect &clip) const;
+	void paintEdges(
+		QPainter &p,
+		const QRect &clip,
+		const QBrush &brush) const;
+	void paintEdges(QPainter &p, const QRect &clip) const;
 	void updateLabelsPosition();
 	[[nodiscard]] int titleMostLeft() const;
 	[[nodiscard]] int statusMostLeft() const;
@@ -189,7 +193,7 @@ private:
 	void setupAnimatedPattern(const QRect &userpicGeometry = QRect());
 	void paintAnimatedPattern(
 		QPainter &p,
-		const QRect &rect,
+		const QRect &clip,
 		const QRect &userpicGeometry);
 	void setupPinnedToTopGifts(
 		not_null<Window::SessionController*> controller);
@@ -198,7 +202,7 @@ private:
 		const std::vector<Data::SavedStarGift> &gifts);
 	void paintPinnedToTopGifts(
 		QPainter &p,
-		const QRect &rect,
+		const QRect &clip,
 		const QRect &userpicGeometry);
 	[[nodiscard]] QPointF calculateGiftPosition(
 		int position,
@@ -237,6 +241,8 @@ private:
 	void bindStatus();
 	[[nodiscard]] TopBarActionButtonStyle mapActionStyle(
 		std::optional<QColor> c) const;
+	[[nodiscard]] std::optional<QColor> buttonsColorOverride() const;
+	void updateButtonsColorOverride();
 
 	[[nodiscard]] rpl::producer<QString> nameValue() const;
 
@@ -251,6 +257,7 @@ private:
 	rpl::variable<Wrap> _wrap;
 	const style::InfoTopBar &_st;
 	const Source _source;
+	const bool _savedMessages = false;
 
 	std::unique_ptr<base::Timer> _badgeTooltipHide;
 	const std::unique_ptr<Badge> _botVerify;
@@ -267,7 +274,7 @@ private:
 	std::vector<std::unique_ptr<BadgeTooltip>> _badgeOldTooltips;
 	uint64 _badgeCollectibleId = 0;
 
-	object_ptr<Ui::FlatLabel> _title;
+	object_ptr<Ui::MarqueeLabel> _title;
 	std::unique_ptr<Ui::StarsRating> _starsRating;
 	std::unique_ptr<Ui::AnimatedString> _tabSubtitle;
 	QString _tabSubtitleText;

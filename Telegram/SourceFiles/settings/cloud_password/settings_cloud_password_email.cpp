@@ -88,6 +88,9 @@ void Email::setupContent() {
 		content,
 		tr::lng_cloud_password_email(),
 		currentStepDataEmail);
+	newInput->setInputMethodHints(Qt::ImhEmailCharactersOnly
+		| Qt::ImhNoAutoUppercase
+		| Qt::ImhNoPredictiveText);
 	const auto error = AddError(content, nullptr);
 	newInput->changes(
 	) | rpl::on_next([=] {
@@ -100,7 +103,6 @@ void Email::setupContent() {
 		if (_requestLifetime) {
 			_requestLifetime.destroy();
 		}
-		// Expects(!_requestLifetime);
 
 		const auto data = stepData();
 

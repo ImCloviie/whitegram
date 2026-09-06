@@ -74,6 +74,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_interactions.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
+#include "core/core_screenshot_protection.h"
 #include "core/click_handler_types.h"
 #include "core/file_utilities.h"
 #include "core/ui_integration.h"
@@ -566,8 +567,10 @@ void SessionNavigation::resolveChannelById(
 		ChannelId channelId,
 		Fn<void(not_null<ChannelData*>)> done) {
 	if (const auto channel = _session->data().channelLoaded(channelId)) {
-		done(channel);
-		return;
+		if (!channel->isForbidden() || channel->isPublic()) {
+			done(channel);
+			return;
+		}
 	}
 	const auto fail = crl::guard(this, [=] {
 		uiShow()->showToast(tr::lng_error_post_link_invalid(tr::now));
@@ -581,7 +584,12 @@ void SessionNavigation::resolveChannelById(
 		result.match([&](const auto &data) {
 			const auto peer = _session->data().processChats(data.vchats());
 			if (peer && peer->id == peerFromChannel(channelId)) {
-				done(peer->asChannel());
+				const auto channel = peer->asChannel();
+				if (channel->isForbidden() && !channel->isPublic()) {
+					fail();
+				} else {
+					done(channel);
+				}
 			} else {
 				fail();
 			}
@@ -1288,7 +1296,7 @@ void SessionNavigation::showRepliesForMessage(
 			if (comments && !item) {
 				return;
 			}
-			auto &groups = _session->data().groups();
+			const auto &groups = _session->data().groups();
 			if (const auto group = item ? groups.find(item) : nullptr) {
 				item = group->items.front();
 			}
@@ -1919,6 +1927,18 @@ void SessionController::init() {
 		handleDrawToReplyRequest(std::move(request));
 	}, lifetime());
 	setupShortcuts();
+	setupScreenshotProtection();
+}
+
+void SessionController::setupScreenshotProtection() {
+	Core::App().screenshotProtection().addAmbientReason(activeChatValue(
+	) | rpl::map([](Dialogs::Key key) {
+		const auto peer = key.peer();
+		return peer
+			? (Data::AllowsForwardingValue(peer)
+				| rpl::map(!rpl::mappers::_1))
+			: (rpl::single(false) | rpl::type_erased);
+	}) | rpl::flatten_latest(), lifetime());
 }
 
 void SessionController::setupShortcuts() {
@@ -2874,7 +2894,8 @@ void SessionController::showPeer(not_null<PeerData*> peer, MsgId msgId) {
 		const auto clickedChannel = peer->asChannel();
 		if (!clickedChannel->isPublic()
 			&& !clickedChannel->amIn()
-			&& (!currentPeer->isChannel()
+			&& (!currentPeer
+				|| !currentPeer->isChannel()
 				|| currentPeer->asChannel()->discussionLink()
 					!= clickedChannel)) {
 			MainWindowShow(this).showToast(peer->isMegagroup()
@@ -3234,7 +3255,7 @@ void SessionController::cancelUploadLayer(not_null<HistoryItem*> item) {
 		if (const auto item = data.message(itemId)) {
 			if (!item->isEditingMedia()) {
 				const auto history = item->history();
-				item->destroy();
+				data.destroyMessageWithCacheCleanup(item);
 				history->requestChatListMessage();
 			} else {
 				item->returnSavedMedia();

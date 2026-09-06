@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/ui_integration.h"
 #include "lang/lang_keys.h"
 #include "history/history_item_components.h"
+#include "history/history_item_helpers.h"
 #include "history/history_item.h"
 #include "history/history.h"
 #include "history/view/media/history_view_media.h"
@@ -443,7 +444,7 @@ void BottomInfo::paintEffect(
 		x += width + add;
 		widthLeft -= width + add;
 	}
-	if (!animations.empty()) {
+	if (!animations.empty() && context.reactionInfo) {
 		const auto now = context.now;
 		context.reactionInfo->effectPaint = [
 			now,
@@ -489,9 +490,11 @@ void BottomInfo::layout() {
 }
 
 void BottomInfo::layoutDateText() {
-	const auto &settings = AyuSettings::getInstance();
-	const auto editedPrimary = (_data.flags & Data::Flag::EditedPrimary)
+	const auto updated = (_data.flags & Data::Flag::Updated);
+	const auto editedPrimary = !updated
+		&& (_data.flags & Data::Flag::EditedPrimary)
 		&& !(_data.flags & Data::Flag::ForwardedDate);
+	const auto &settings = AyuSettings::getInstance();
 
 	if (!settings.replaceBottomInfoWithIcons()) {
 		const auto deleted = (_data.flags & Data::Flag::AyuDeleted)
@@ -499,6 +502,8 @@ void BottomInfo::layoutDateText() {
 			: QString();
 		const auto edited = editedPrimary
 			? QString()
+			: updated
+			? (tr::lng_ephemeral_updated(tr::now) + ' ')
 			: (_data.flags & Data::Flag::Edited)
 			? (settings.editedMark() + ' ')
 			: (_data.flags & Data::Flag::EstimateDate)
@@ -506,6 +511,7 @@ void BottomInfo::layoutDateText() {
 			: _data.scheduleRepeatPeriod
 			? (SchedulePeriodText(_data.scheduleRepeatPeriod) + ' ')
 			: QString();
+
 		const auto author = settings.filterZalgo() ? filterZalgo(_data.author) : _data.author;
 		const auto prefix = !author.isEmpty() ? u", "_q : QString();
 		const auto date = editedPrimary
@@ -513,6 +519,7 @@ void BottomInfo::layoutDateText() {
 			: edited + ((_data.flags & Data::Flag::ForwardedDate)
 			? Ui::FormatDateTimeSavedFrom(_data.date)
 			: formatMessageTime(_data.date.time()));
+
 		const auto afterAuthor = prefix + date;
 		const auto afterAuthorWidth = st::msgDateFont->width(afterAuthor);
 		const auto authorWidth = st::msgDateFont->width(author);
@@ -522,6 +529,7 @@ void BottomInfo::layoutDateText() {
 		const auto name = _authorElided
 			? st::msgDateFont->elided(author, maxWidth - afterAuthorWidth)
 			: author;
+
 		const auto full = (_data.flags & Data::Flag::Sponsored)
 			? QString()
 			: (_data.flags & Data::Flag::Imported)
@@ -529,6 +537,7 @@ void BottomInfo::layoutDateText() {
 			: name.isEmpty()
 			? (deleted + date)
 			: (deleted + name + afterAuthor);
+
 		auto helper = Ui::Text::CustomEmojiHelper(
 			Core::TextContext({ .session = &_reactionsOwner->session() }));
 		auto marked = TextWithEntities();
@@ -572,6 +581,8 @@ void BottomInfo::layoutDateText() {
 			edited = TextWithEntities{ tr::lng_approximate(tr::now) + ' ' };
 		} else if (!editedPrimary && _data.scheduleRepeatPeriod) {
 			edited = TextWithEntities{ SchedulePeriodText(_data.scheduleRepeatPeriod) + ' ' };
+		} else if (updated) {
+			edited = TextWithEntities{ tr::lng_ephemeral_updated(tr::now) + ' ' };
 		}
 
 		TextWithEntities burnt;
@@ -655,6 +666,7 @@ void BottomInfo::layoutDateText() {
 			Ui::NameTextOptions(),
 			helper.context());
 	}
+}
 }
 
 void BottomInfo::layoutViewsText() {
@@ -801,6 +813,9 @@ BottomInfo::Data BottomInfoDataFromMessage(not_null<Message*> message) {
 			result.flags |= Flag::EditedPrimary;
 			result.editedDate = base::unixtime::parse(editedDate);
 		}
+	}
+	if (IsAnchoredEphemeral(item)) {
+		result.flags |= Flag::Updated;
 	}
 	if (const auto views = item->Get<HistoryMessageViews>()) {
 		if (views->views.count >= 0) {

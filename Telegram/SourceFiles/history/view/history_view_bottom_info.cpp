@@ -667,7 +667,6 @@ void BottomInfo::layoutDateText() {
 			helper.context());
 	}
 }
-}
 
 void BottomInfo::layoutViewsText() {
 	if (!_data.views || (_data.flags & Data::Flag::Sending)) {

@@ -1036,7 +1036,7 @@ void SessionPrivate::connectToServer(bool afterConfig) {
 			return;
 		}
 	}
-	if (_options->proxy.type == ProxyData::Type::Mtproto
+	if ((_options->proxy.type == ProxyData::Type::Mtproto
 		|| _options->proxy.type == ProxyData::Type::Web)
 		&& !details::PreferWebSocket()) {
 		// host, port, secret for mtproto proxy are taken from proxy.

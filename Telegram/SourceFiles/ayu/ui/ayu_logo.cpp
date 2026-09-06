@@ -8,8 +8,10 @@
 
 #include "ayu/ayu_settings.h"
 #include "styles/style_ayu_styles.h"
+#include "ui/painter.h"
 #include "ui/rect.h"
 
+#include <QPainterPath>
 #include <QSvgRenderer>
 
 static QString LAST_LOADED_NAME;

@@ -9,10 +9,12 @@
 #include "lang_auto.h"
 #include "mainwindow.h"
 #include "ayu/ui/settings/settings_main.h"
+#include "ayu/features/whitegram_e2ee/whitegram_view_once_box.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "base/qthelp_url.h"
 #include "boxes/abstract_box.h"
 #include "core/application.h"
+#include "core/click_handler_types.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "main/main_session.h"
@@ -233,4 +235,34 @@ bool TryHandleSpotify(const QString &url) {
 	return false;
 }
 
+bool HandleViewOnce(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto params = qthelp::url_parse_params(
+		match->captured(1),
+		qthelp::UrlParamNameTransform::ToLower);
+	const auto peerId = params.value(u"peer"_q).toLongLong();
+	const auto msgId = params.value(u"id"_q).toInt();
+	if (!msgId) {
+		return false;
+	}
+	const auto contextItemId = context.value<ClickHandlerContext>().itemId;
+	const auto targetMsgId = (contextItemId && contextItemId.peer == PeerId(peerId))
+		? contextItemId.msg
+		: MsgId(msgId);
+	const auto item = controller->session().data().message(
+		PeerId(peerId),
+		targetMsgId);
+	if (item) {
+		Whitegram::E2EE::ShowViewOnceBox(controller, item);
+		return true;
+	}
+	return false;
 }
+
+}
+

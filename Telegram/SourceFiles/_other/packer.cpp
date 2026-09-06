@@ -13,17 +13,17 @@ bool OnlyAlphaKey = false;
 
 const char *PublicKey = "\
 -----BEGIN RSA PUBLIC KEY-----\n\
-MIGJAoGBAOIENxe1sfT2t7b+HUMpnT6RnN/sCqY0JjK7/1A/59daDc6i/K4023jw\n\
-Us+187Pa2VSaPh3kDywp9PfLDFgFiPTD9BsBvpaSK9p3zyG8k6an3+GbUTlUgmFv\n\
-eI0pg7vmceIl0Lcy9nndfEx27UQId3Y3dQTMuwwFYGtjJAMHNNq5AgMBAAE=\n\
+MIGJAoGBALsDi98qGcTuFrjF02qokRGduEdlqKFugU4ZWO1ONwrsSLxXwdwiLPlR\n\
+/jZBK31xnKg8UaxKLxkYqo/L/97DlxY/k6ZB5pdeF/5H8L6dzS2UEq95CR0A/isc\n\
+xdNOiJwdXfaJJ+DLSG31UQmQJi5WKBffwvgTOoduvi0MbCBMwUrJAgMBAAE=\n\
 -----END RSA PUBLIC KEY-----\
 ";
 
 const char *PublicBetaKey = "\
 -----BEGIN RSA PUBLIC KEY-----\n\
-MIGJAoGBALWu9GGs0HED7KG7BM73CFZ6o0xufKBRQsdnq3lwA8nFQEvmdu+g/I1j\n\
-0LQ+0IQO7GW4jAgzF/4+soPDb6uHQeNFrlVx1JS9DZGhhjZ5rf65yg11nTCIHZCG\n\
-w/CVnbwQOw0g5GBwwFV3r0uTTvy44xx8XXxk+Qknu4eBCsmrAFNnAgMBAAE=\n\
+MIGJAoGBALsDi98qGcTuFrjF02qokRGduEdlqKFugU4ZWO1ONwrsSLxXwdwiLPlR\n\
+/jZBK31xnKg8UaxKLxkYqo/L/97DlxY/k6ZB5pdeF/5H8L6dzS2UEq95CR0A/isc\n\
+xdNOiJwdXfaJJ+DLSG31UQmQJi5WKBffwvgTOoduvi0MbCBMwUrJAgMBAAE=\n\
 -----END RSA PUBLIC KEY-----\
 ";
 
@@ -33,6 +33,7 @@ extern const char *PrivateBetaKey;
 // AyuGram includes
 #include "packer_private.h" // RSA PRIVATE KEYS for update signing
 
+static const char *AlphaPrivateKey = "";
 
 QString countAlphaVersionSignature(quint64 version);
 

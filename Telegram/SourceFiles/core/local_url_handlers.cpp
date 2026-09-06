@@ -1851,6 +1851,10 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
 			AyuUrlHandlers::HandleSupport
 		},
 		{
+			u"^whitegram_view_once/?\\?(.+)(#|$)"_q,
+			AyuUrlHandlers::HandleViewOnce
+		},
+		{
 			u"^([^\\?]+)(\\?|#|$)"_q,
 			HandleUnknown
 		},

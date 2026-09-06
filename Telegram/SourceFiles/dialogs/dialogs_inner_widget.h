@@ -152,6 +152,7 @@ public:
 	void clearSelection();
 
 	void changeOpenedFolder(Data::Folder *folder);
+	void changeOpenedCustomArchive(int archiveId);
 	void changeOpenedForum(Data::Forum *forum);
 	void changeOpenedCommunity(Data::CommunityInfo *community);
 	void showSavedSublists();
@@ -475,6 +476,12 @@ private:
 	void setCommunityPressed(int pressed);
 	[[nodiscard]] int skipTopHeight() const;
 	[[nodiscard]] int collapsedRowsOffset() const;
+	[[nodiscard]] int collapsedRowHeight(
+		not_null<const CollapsedRow*> row) const;
+	[[nodiscard]] int collapsedRowsHeight() const;
+	[[nodiscard]] int collapsedRowTop(int index) const;
+	[[nodiscard]] int collapsedRowFromY(int y) const;
+	void updateCollapsedRow(int index);
 	[[nodiscard]] int dialogsOffset() const;
 	[[nodiscard]] int shownHeight(int till = -1) const;
 	[[nodiscard]] int fixedOnTopCount() const;
@@ -649,6 +656,7 @@ private:
 	Qt::MouseButton _pressButton = Qt::LeftButton;
 
 	Data::Folder *_openedFolder = nullptr;
+	int _openedCustomArchiveId = 0;
 	Data::Forum *_openedForum = nullptr;
 	rpl::lifetime _openedForumLifetime;
 	Data::CommunityInfo *_openedCommunity = nullptr;

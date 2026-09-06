@@ -85,6 +85,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
+#include "ayu/features/custom_archives/custom_archives.h"
 
 
 namespace {
@@ -2465,6 +2466,18 @@ void History::setFolderPointer(Data::Folder *folder) {
 
 		owner().chatsListChanged(was);
 		owner().chatsListChanged(folder);
+	} else if (shouldBeInChatList()) {
+		if (chatListTimeId() || fixedOnTopIndex()) {
+			updateChatListSortPosition();
+			owner().chatsFilters().refreshHistory(this);
+			updateChatListEntry();
+		} else {
+			owner().histories().requestDialogEntry(this);
+		}
+		if (wasKnown) {
+			owner().chatsListChanged(was);
+			owner().chatsListChanged(folder);
+		}
 	} else if (!wasKnown) {
 		updateChatListSortPosition();
 	}
@@ -3387,6 +3400,10 @@ bool History::trackUnreadMessages() const {
 
 bool History::shouldBeInChatList() const {
 	if (peer->migrateTo() || !folderKnown()) {
+		return false;
+	} else if (!folder()
+		&& AyuFeatures::CustomArchives::ShouldHidePeerFromMainList(
+			peer->id.value)) {
 		return false;
 	} else if (const auto community = peer->asChannel()
 		; community && community->isCommunity()) {

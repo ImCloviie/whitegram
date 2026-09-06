@@ -43,6 +43,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_url_handlers.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
+#include "ayu/features/whitegram_e2ee/whitegram_one_time_view.h"
 
 
 namespace Core {
@@ -332,6 +333,9 @@ std::shared_ptr<ClickHandler> UiIntegration::createLinkHandler(
 			: Integration::createLinkHandler(data, context);
 
 	case EntityType::CustomUrl:
+		if (data.data.startsWith(u"tg://whitegram_view_once"_q)) {
+			return Whitegram::E2EE::MakeViewOnceClickHandler(data.data);
+		}
 		return !data.data.isEmpty()
 			? std::make_shared<HiddenUrlClickHandler>(data.data)
 			: Integration::createLinkHandler(data, context);

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 
 #include "apiwrap.h"
+#include "ayu/features/custom_archives/custom_archives.h"
 #include "api/api_cloud_password.h"
 #include "api/api_text_entities.h"
 #include "boxes/peers/add_bot_to_chat_box.h"
@@ -1429,6 +1430,12 @@ void SessionNavigation::showByInitialId(
 		clearSectionStack(instant);
 		parent->openFolder(id.folder());
 		break;
+	case SeparateType::CustomFolder:
+		clearSectionStack(instant);
+		AyuFeatures::CustomArchives::OpenArchive(
+			parent,
+			id.customFolderId);
+		break;
 	case SeparateType::Forum:
 		clearSectionStack(instant);
 		parent->showForum(id.forum(), instant);
@@ -2080,6 +2087,7 @@ void SessionController::openFolder(not_null<Data::Folder*> folder) {
 		clearSectionStack(SectionShow::Way::ClearStack);
 	}
 	closeForum();
+	closeCustomArchive();
 	_openedFolder = folder.get();
 }
 
@@ -2090,6 +2098,51 @@ void SessionController::closeFolder() {
 		return;
 	}
 	_openedFolder = nullptr;
+}
+
+void SessionController::openCustomArchive(int archiveId) {
+	if (archiveId <= 0) {
+		closeCustomArchive();
+		return;
+	}
+	auto separateId = SeparateId(SeparateType::CustomFolder, &session());
+	separateId.customFolderId = archiveId;
+	if (const auto separate = Core::App().separateWindowFor(separateId)) {
+		if (separate != _window) {
+			separate->sessionController()->showByInitialId();
+			separate->activate();
+			return;
+		}
+	}
+	if (_openedCustomArchive.current() != archiveId) {
+		resetFakeUnreadWhileOpened();
+	}
+	if (activeChatsFilterCurrent() != 0) {
+		setActiveChatsFilter(0);
+	} else if (adaptive().isOneColumn()) {
+		clearSectionStack(SectionShow::Way::ClearStack);
+	}
+	closeForum();
+	closeCommunity();
+	_openedFolder = nullptr;
+	if (const auto was = _openedCustomArchive.current()) {
+		if (was != archiveId) {
+			AyuFeatures::CustomArchives::LockArchive(was);
+		}
+	}
+	_openedCustomArchive = archiveId;
+}
+
+void SessionController::closeCustomArchive() {
+	if (const auto id = _openedCustomArchive.current()) {
+		AyuFeatures::CustomArchives::LockArchive(id);
+	}
+	if (_openedCustomArchive.current()
+		&& windowId().type == SeparateType::CustomFolder) {
+		Core::App().closeWindow(_window);
+		return;
+	}
+	_openedCustomArchive = 0;
 }
 
 bool SessionController::openCommunityInDifferentWindow(
@@ -2305,6 +2358,10 @@ void SessionController::setupPremiumToast() {
 
 const rpl::variable<Data::Folder*> &SessionController::openedFolder() const {
 	return _openedFolder;
+}
+
+const rpl::variable<int> &SessionController::openedCustomArchive() const {
+	return _openedCustomArchive;
 }
 
 const rpl::variable<Data::Forum*> &SessionController::shownForum() const {

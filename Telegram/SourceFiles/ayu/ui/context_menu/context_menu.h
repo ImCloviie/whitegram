@@ -26,6 +26,16 @@ void AddAyuGramActions(PeerData *peerData,
 							   not_null<Window::SessionController*> sessionController,
 							   const Window::PeerMenuCallback &addCallback);
 
+void AddCustomArchiveActions(PeerData *peerData,
+							 not_null<Window::SessionController*> sessionController,
+							 const Window::PeerMenuCallback &addCallback);
+
+void FillCustomFolderContextMenu(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<Window::SessionController*> controller,
+	int folderId,
+	bool opened = false);
+
 void AddJumpToBeginningAction(PeerData *peerData,
 							  Data::Thread *thread,
 							  not_null<Window::SessionController*> sessionController,

@@ -45,6 +45,7 @@ class IconButton;
 class PopupMenu;
 class DropdownMenu;
 class FlatButton;
+class FlatLabel;
 class InputField;
 class CrossButton;
 class PlainShadow;
@@ -54,6 +55,7 @@ class RequestsBar;
 class MoreChatsBar;
 class JumpDownButton;
 class ElasticScroll;
+class RpWidget;
 template <typename Widget>
 class FadeWrapScaled;
 template <typename Widget>
@@ -259,10 +261,13 @@ private:
 		bool fromRight,
 		anim::type animated);
 	void changeOpenedFolder(Data::Folder *folder, anim::type animated);
+	void changeOpenedCustomArchive(int archiveId, anim::type animated);
 	void changeOpenedForum(Data::Forum *forum, anim::type animated);
 	void changeOpenedCommunity(
 		Data::CommunityInfo *community,
 		anim::type animated);
+	[[nodiscard]] bool hasOpenedSubsection() const;
+	void refreshCustomFolderTopBar();
 	void hideChildList();
 	void destroyChildListCanvas();
 	[[nodiscard]] QPixmap grabForFolderSlideAnimation();
@@ -327,6 +332,11 @@ private:
 
 	object_ptr<Ui::RpWidget> _searchControls;
 	object_ptr<HistoryView::TopBarWidget> _subsectionTopBar = { nullptr };
+	object_ptr<Ui::RpWidget> _customFolderTopBar = { nullptr };
+	object_ptr<Ui::IconButton> _customFolderBack = { nullptr };
+	object_ptr<Ui::IconButton> _customFolderMenu = { nullptr };
+	base::unique_qptr<Ui::PopupMenu> _customFolderPopup;
+	QString _customFolderTitleText;
 	struct {
 		object_ptr<Ui::IconButton> toggle;
 		object_ptr<Ui::AbstractButton> under;
@@ -371,6 +381,7 @@ private:
 	class BottomButton;
 	object_ptr<BottomButton> _updateTelegram = { nullptr };
 	object_ptr<BottomButton> _loadMoreChats = { nullptr };
+	bool _updatePending = false;
 	std::unique_ptr<Ui::DownloadBar> _downloadBar;
 	std::unique_ptr<Window::ConnectionState> _connecting;
 
@@ -387,6 +398,7 @@ private:
 	bool _searchWithPostsPreview = false;
 
 	Data::Folder *_openedFolder = nullptr;
+	int _openedCustomArchiveId = 0;
 	Data::Forum *_openedForum = nullptr;
 	Data::CommunityInfo *_openedCommunity = nullptr;
 	SearchState _searchState;

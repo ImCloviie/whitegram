@@ -11,11 +11,17 @@
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ayu_worker.h"
 #include "ayu/data/ayu_database.h"
+#include "ayu/features/connection_bypass/connection_bypass.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "ayu/ui/ayu_logo.h"
 #include "features/translator/ayu_translator.h"
 #include "lang/lang_instance.h"
+#include "lang/lang_keys.h"
 #include "ui/chat/chat_style_radius.h"
 #include "utils/rc_manager.h"
+
+#include "rpl/lifetime.h"
 
 #ifdef Q_OS_WIN
 #include "ayu/utils/windows_utils.h"
@@ -23,15 +29,39 @@
 
 namespace AyuInfra {
 
+rpl::lifetime &langLifetime() {
+	static rpl::lifetime lifetime;
+	return lifetime;
+}
+
 void initLang() {
-	QString id = Lang::GetInstance().id();
-	QString baseId = Lang::GetInstance().baseId();
-	if (id.isEmpty()) {
-		LOG(("Language is not loaded"));
-		return;
-	}
 	AyuLanguage::init();
-	AyuLanguage::currentInstance()->fetchLanguage(id, baseId);
+
+	const auto syncLangSettings = [=](const QString &langId, bool force) {
+		const auto curId = Lang::LanguageIdOrDefault(langId);
+		const auto baseId = Lang::GetInstance().baseId();
+		const auto isRu = curId.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+		AyuSettings::getInstance().setCryptoFiatCurrencyFromLanguage(
+			isRu ? 2 : 0,
+			force);
+	};
+
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	if (!id.isEmpty()) {
+		AyuLanguage::currentInstance()->fetchLanguage(id, baseId);
+	}
+
+	syncLangSettings(id, false);
+
+	Lang::GetInstance().idChanges(
+	) | rpl::on_next([=](const QString &newId) {
+		const auto baseId = Lang::GetInstance().baseId();
+		if (!newId.isEmpty()) {
+			AyuLanguage::currentInstance()->fetchLanguage(newId, baseId);
+		}
+		syncLangSettings(newId, true);
+	}, langLifetime());
 }
 
 void initUiSettings() {
@@ -67,6 +97,10 @@ void initIcon() {
 #endif
 }
 
+void initConnectionBypass() {
+	AyuFeatures::ConnectionBypass::init();
+}
+
 void init() {
 	initLang();
 	initDatabase();
@@ -75,6 +109,10 @@ void init() {
 	initWorker();
 	initRCManager();
 	initTranslator();
+	initConnectionBypass();
+	Whitegram::Backend::InitClientInfo();
+	(void)Whitegram::E2EE::GetOrGenerateIdentityKeyPair();
+	AyuSettings::initTimeSpentTracker();
 }
 
 }

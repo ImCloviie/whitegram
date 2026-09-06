@@ -23,6 +23,19 @@ void SingleChoiceBox(
 
 	const auto group = std::make_shared<Ui::RadiobuttonGroup>(
 		args.initialSelection);
+	const auto finished = std::make_shared<bool>(false);
+	const auto callback = args.callback.value();
+	const auto finish = [=](int value) {
+		if (*finished) {
+			return;
+		}
+		*finished = true;
+		const auto weak = base::make_weak(box);
+		callback(value);
+		if (weak) {
+			box->closeBox();
+		}
+	};
 
 	const auto layout = box->verticalLayout();
 	layout->add(object_ptr<Ui::FixedHeightWidget>(
@@ -30,7 +43,7 @@ void SingleChoiceBox(
 		st::boxOptionListPadding.top() + st::autolockButton.margin.top()));
 	auto &&ints = ranges::views::ints(0, ranges::unreachable);
 	for (const auto &[i, text] : ranges::views::zip(ints, args.options)) {
-		layout->add(
+		const auto button = layout->add(
 			object_ptr<Ui::Radiobutton>(
 				layout,
 				group,
@@ -43,13 +56,13 @@ void SingleChoiceBox(
 				0,
 				st::boxPadding.right(),
 				st::boxOptionListSkip));
+		button->addClickHandler([=] {
+			if (group->hasValue() && group->current() == i) {
+				finish(i);
+			}
+		});
 	}
-	const auto callback = args.callback.value();
 	group->setChangedCallback([=](int value) {
-		const auto weak = base::make_weak(box);
-		callback(value);
-		if (weak) {
-			box->closeBox();
-		}
+		finish(value);
 	});
 }

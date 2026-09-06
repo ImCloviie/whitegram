@@ -17,6 +17,23 @@ bool equal(const wstring &a, const wstring &b) {
 	return !_wcsicmp(a.c_str(), b.c_str());
 }
 
+bool isLegacyBinaryName(const wstring &name) {
+	return equal(name, L"AyuGram.exe")
+		|| equal(name, L"Whitegram.exe")
+		|| equal(name, L"Telegram.exe");
+}
+
+void writeLog(const wstring &msg);
+
+void remapLegacyBinaryTarget(wstring &tofname, const wstring &packBaseName) {
+	if (!isLegacyBinaryName(packBaseName) || equal(packBaseName, exeName)) {
+		return;
+	}
+	const auto fullBinaryPath = updateTo + exeName;
+	writeLog(L"Target binary found: '" + tofname + L"', changing to '" + fullBinaryPath + L"'");
+	tofname = fullBinaryPath;
+}
+
 void updateError(const WCHAR *msg, DWORD errorCode) {
 	WCHAR errMsg[2048];
 	LPWSTR errorTextFormatted = nullptr;
@@ -204,10 +221,12 @@ bool update() {
 					writeLog(L"Error: bad update, has Updater.exe! '" + tofname + L"' equal '" + updaterName + L"'");
 					delFolder();
 					return false;
-				} else if (equal(tofname, updateTo + L"AyuGram.exe") && exeName != L"AyuGram.exe") {
-					wstring fullBinaryPath = updateTo + exeName;
-					writeLog(L"Target binary found: '" + tofname + L"', changing to '" + fullBinaryPath + L"'");
-					tofname = fullBinaryPath;
+				} else {
+					const auto slash = fname.find_last_of(L"\\/");
+					const auto packBaseName = (slash == wstring::npos)
+						? fname
+						: fname.substr(slash + 1);
+					remapLegacyBinaryTarget(tofname, packBaseName);
 				}
 				if (equal(fname, readyFilePath)) {
 					writeLog(L"Skipped ready file '" + fname + L"'");
@@ -377,14 +396,14 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prevInstance, LPWSTR cmdPara
 				exeName = args[i];
 				for (int j = 0, l = exeName.size(); j < l; ++j) {
 					if (exeName[j] == L'/' || exeName[j] == L'\\') {
-						exeName = L"AyuGram.exe";
+						exeName = L"Whitegram.exe";
 						break;
 					}
 				}
 			}
 		}
 		if (exeName.empty()) {
-			exeName = L"AyuGram.exe";
+			exeName = L"Whitegram.exe";
 		}
 		if (needupdate) writeLog(L"Need to update!");
 		if (autostart) writeLog(L"From autostart!");

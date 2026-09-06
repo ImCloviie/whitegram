@@ -39,6 +39,7 @@ dialogsInstallUpdateIconSize: 20px;
 dialogsInstallUpdateIconInnerMargin: 5px;
 dialogsInstallUpdateIconSide1: 5px;
 dialogsInstallUpdateIconSide2: 3px;
+dialogsUpdateProgressHeight: 3px;
 dialogsLoadMoreButton: FlatButton(dialogsUpdateButton) {
 	color: lightButtonFg;
 	overColor: lightButtonFg;

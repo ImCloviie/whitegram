@@ -36,3 +36,121 @@ filtersExcludeIcon: IconButton(infoLayerTopBarClose) {
 	iconOver: icon {{ "menu/tag_remove", boxTitleCloseFgOver }};
 	iconPosition: point(8px, -1px);
 }
+
+whitegramBypassSlider: SettingsSlider(defaultSettingsSlider) {
+	padding: 10px;
+	height: 56px;
+	barTop: 8px;
+	barSkip: 4px;
+	barStroke: 6px;
+	barRadius: 3px;
+	barFg: windowBgOver;
+	barFgActive: windowActiveTextFg;
+	labelTop: 26px;
+	labelStyle: semiboldTextStyle;
+	labelFg: windowSubTextFg;
+	labelFgActive: windowActiveTextFg;
+	ripple: defaultRippleAnimation;
+	rippleBg: windowBgOver;
+	rippleBgActive: windowBgOver;
+}
+
+whitegramBypassSliderMargin: margins(16px, 8px, 16px, 8px);
+
+whitegramBypassMirrorCardRadius: 14px;
+whitegramBypassMirrorCardMargin: margins(16px, 4px, 16px, 8px);
+whitegramBypassMirrorCardPadding: margins(16px, 19px, 16px, 16px);
+whitegramBypassMirrorIconSize: 36px;
+whitegramBypassMirrorField: InputField(defaultInputField) {
+	textBg: windowBg;
+	textBgActive: windowBg;
+	borderRadius: 10px;
+	border: 1px;
+	borderFg: windowBgRipple;
+	borderFgActive: windowActiveTextFg;
+	heightMin: 44px;
+	heightMax: 44px;
+	textMargins: margins(14px, 12px, 14px, 12px);
+	placeholderFg: placeholderFg;
+	placeholderFgActive: placeholderFgActive;
+	placeholderMargins: margins(0px, 0px, 0px, 0px);
+	placeholderAlign: align(topleft);
+	placeholderScale: 0.;
+	placeholderShift: 0px;
+	placeholderFont: font(13px);
+	style: defaultTextStyle;
+}
+whitegramBypassMirrorFieldMargin: margins(0px, 8px, 0px, 0px);
+whitegramBypassMirrorHint: FlatLabel(defaultFlatLabel) {
+	minWidth: 0px;
+	textFg: windowSubTextFg;
+	style: TextStyle(defaultTextStyle) {
+		font: font(13px);
+		lineHeight: 18px;
+	}
+}
+whitegramBypassMirrorStatus: FlatLabel(defaultFlatLabel) {
+	minWidth: 0px;
+	textFg: windowSubTextFg;
+	style: TextStyle(defaultTextStyle) {
+		font: font(13px);
+		lineHeight: 18px;
+	}
+}
+whitegramBypassMirrorButton: RoundButton(defaultBoxButton) {
+	height: 40px;
+	radius: 10px;
+	textTop: 11px;
+	padding: margins(16px, 0px, 16px, 0px);
+	style: TextStyle(semiboldTextStyle) {
+		font: font(13px semibold);
+	}
+}
+whitegramBypassMirrorButtonSkip: 12px;
+
+whitegramUpdatesCardRadius: 16px;
+whitegramUpdatesCardAccentHeight: 3px;
+whitegramUpdatesCardMargin: margins(12px, 8px, 12px, 8px);
+whitegramUpdatesCardPadding: margins(20px, 24px, 20px, 24px);
+whitegramUpdatesLogoSize: 88px;
+whitegramUpdatesLogoInnerInset: 10px;
+whitegramUpdatesLogoSkip: 18px;
+whitegramUpdatesBadgePadding: margins(12px, 5px, 12px, 5px);
+whitegramUpdatesBadgeRadius: 12px;
+whitegramUpdatesBaseVersionSkip: 6px;
+whitegramUpdatesStatusSkip: 12px;
+whitegramUpdatesProgressHeight: 6px;
+whitegramUpdatesProgressRadius: 3px;
+whitegramUpdatesProgressSkip: 12px;
+whitegramUpdatesButtonSkip: 4px;
+
+whitegramUpdatesStatus: FlatLabel(centeredBoxLabel) {
+	minWidth: 280px;
+	align: align(center);
+	textFg: windowSubTextFg;
+}
+
+whitegramUpdatesVersionTitle: FlatLabel(boxTitle) {
+	minWidth: 280px;
+	align: align(center);
+	textFg: activeButtonFg;
+	style: TextStyle(semiboldTextStyle) {
+		font: font(15px semibold);
+	}
+}
+
+whitegramUpdatesBaseVersion: FlatLabel(centeredBoxLabel) {
+	minWidth: 280px;
+	align: align(center);
+	textFg: windowSubTextFg;
+}
+
+whitegramUpdatesActionButton: RoundButton(defaultActiveButton) {
+	height: 42px;
+	radius: 21px;
+	textTop: 12px;
+	padding: margins(20px, 0px, 20px, 0px);
+	style: TextStyle(semiboldTextStyle) {
+		font: font(14px semibold);
+	}
+}

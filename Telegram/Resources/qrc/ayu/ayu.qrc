@@ -22,6 +22,8 @@
         <file alias="art/ayu/spotify/app_icon.ico">../../art/ayu/spotify/app_icon.ico</file>
         <file alias="art/ayu/win95/app.png">../../art/ayu/win95/app.png</file>
         <file alias="art/ayu/win95/app_icon.ico">../../art/ayu/win95/app_icon.ico</file>
+        <file alias="art/ayu/whitegram/app.png">../../art/ayu/whitegram/app.png</file>
+        <file alias="art/ayu/whitegram/app_icon.ico">../../art/ayu/whitegram/app_icon.ico</file>
         <file alias="art/ayu/yaplus/app.svg">../../art/ayu/yaplus/app.svg</file>
         <file alias="art/ayu/yaplus/app_icon.ico">../../art/ayu/yaplus/app_icon.ico</file>
         <file alias="icons/ayu/nocover.svg">../../icons/ayu/nocover.svg</file>
@@ -35,6 +37,9 @@
         <file alias="icons/ayu/sponsor_icon.png">../../icons/ayu/sponsor_icon.png</file>
         <file alias="icons/ayu/sponsor_icon@2x.png">../../icons/ayu/sponsor_icon@2x.png</file>
         <file alias="icons/ayu/sponsor_icon@3x.png">../../icons/ayu/sponsor_icon@3x.png</file>
+        <file alias="icons/ayu/sponsor_logo.png">../../icons/ayu/sponsor_logo.png</file>
+        <file alias="icons/ayu/sponsor_logo@2x.png">../../icons/ayu/sponsor_logo@2x.png</file>
+        <file alias="icons/ayu/sponsor_logo@3x.png">../../icons/ayu/sponsor_logo@3x.png</file>
     </qresource>
 </RCC>
 

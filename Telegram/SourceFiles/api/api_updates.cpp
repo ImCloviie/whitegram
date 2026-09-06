@@ -1000,10 +1000,9 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 	});
 
 	// AyuGram sendOnlinePackets
-	const auto &ghost = AyuSettings::ghost(_session);
 	const auto& config = _session->serverConfig();
 	bool isOnlineOrig = Core::App().hasActiveWindow(&session());
-	bool isOnline = ghost.sendOnlinePackets() && isOnlineOrig;
+	bool isOnline = AyuSettings::ghost(_session).sendOnlinePackets() && isOnlineOrig;
 
 	int updateIn = config.onlineUpdatePeriod;
 	Assert(updateIn >= 0);
@@ -1035,9 +1034,9 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 		} else {
 			_onlineRequest = api().request(MTPaccount_UpdateStatus(
 				MTP_bool(!isOnline)
-			)).done([=] {
+			)).done([] {
 				Core::App().quitPreventFinished();
-			}).fail([=] {
+			}).fail([] {
 				Core::App().quitPreventFinished();
 			}).send();
 		}

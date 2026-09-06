@@ -8,12 +8,14 @@
 
 #include "ayu/libs/json.hpp"
 #include "ayu/libs/json_ext.hpp"
+#include "crl/crl_time.h"
 #include "rpl/lifetime.h"
 #include "rpl/producer.h"
 #include "rpl/variable.h"
 #include <map>
 #include <memory>
 #include <unordered_set>
+#include <vector>
 
 
 namespace base {
@@ -54,6 +56,104 @@ inline void from_json(const nlohmann::json &j, AccountProfile &p) {
   p.name = QString::fromStdString(j.value("name", ""));
   p.icon = QString::fromStdString(j.value("icon", ""));
   p.accountIds = j.value("accountIds", std::vector<uint64>{});
+}
+
+struct CustomArchive {
+  int id = 0;
+  QString name;
+  QString icon;
+  std::vector<uint64> peerIds;
+  std::vector<uint64> pinnedPeerIds;
+  bool muted = true;
+  bool hideFromMainList = true;
+  bool showInMainMenu = false;
+  bool showInChatList = true;
+  bool collapsed = false;
+  int order = 0;
+  QString pinSalt;
+  QString pinHash;
+  QString passwordSalt;
+  QString passwordHash;
+
+  [[nodiscard]] bool hasPin() const {
+    return !pinHash.isEmpty() && !pinSalt.isEmpty();
+  }
+  [[nodiscard]] bool hasPassword() const {
+    return !passwordHash.isEmpty() && !passwordSalt.isEmpty();
+  }
+  [[nodiscard]] bool isLocked() const {
+    return hasPin() || hasPassword();
+  }
+};
+
+inline void to_json(nlohmann::json &j, const CustomArchive &a) {
+  j = nlohmann::json{
+    {"id", a.id},
+    {"name", a.name.toStdString()},
+    {"icon", a.icon.toStdString()},
+    {"peerIds", a.peerIds},
+    {"pinnedPeerIds", a.pinnedPeerIds},
+    {"muted", a.muted},
+    {"hideFromMainList", a.hideFromMainList},
+    {"useTelegramArchive", a.hideFromMainList},
+    {"showInMainMenu", a.showInMainMenu},
+    {"showInChatList", a.showInChatList},
+    {"collapsed", a.collapsed},
+    {"order", a.order},
+    {"pinSalt", a.pinSalt.toStdString()},
+    {"pinHash", a.pinHash.toStdString()},
+    {"passwordSalt", a.passwordSalt.toStdString()},
+    {"passwordHash", a.passwordHash.toStdString()},
+  };
+}
+inline void from_json(const nlohmann::json &j, CustomArchive &a) {
+  a.id = j.value("id", 0);
+  a.name = QString::fromStdString(j.value("name", ""));
+  a.icon = QString::fromStdString(j.value("icon", ""));
+  a.peerIds = j.value("peerIds", std::vector<uint64>{});
+  a.pinnedPeerIds = j.value("pinnedPeerIds", std::vector<uint64>{});
+  a.muted = j.value("muted", true);
+  a.hideFromMainList = j.value(
+	  "hideFromMainList",
+	  j.value("useTelegramArchive", true));
+  a.showInMainMenu = j.value("showInMainMenu", false);
+  a.showInChatList = j.value("showInChatList", true);
+  a.collapsed = j.value("collapsed", false);
+  a.order = j.value("order", 0);
+  a.pinSalt = QString::fromStdString(j.value("pinSalt", ""));
+  a.pinHash = QString::fromStdString(j.value("pinHash", ""));
+  a.passwordSalt = QString::fromStdString(j.value("passwordSalt", ""));
+  a.passwordHash = QString::fromStdString(j.value("passwordHash", ""));
+}
+
+struct CustomProfileBackground {
+  enum class Zone {
+    Top = 0,
+    Bottom = 1,
+    Full = 2,
+  };
+
+  uint64 peerId = 0;
+  Zone zone = Zone::Full;
+  QString path;
+  bool isVideo = false;
+};
+
+inline void to_json(nlohmann::json &j, const CustomProfileBackground &b) {
+  j = nlohmann::json{
+    {"peerId", b.peerId},
+    {"zone", int(b.zone)},
+    {"path", b.path.toStdString()},
+    {"isVideo", b.isVideo},
+  };
+}
+inline void from_json(const nlohmann::json &j, CustomProfileBackground &b) {
+  b.peerId = j.value("peerId", uint64(0));
+  b.path = QString::fromStdString(j.value("path", ""));
+  b.isVideo = j.value("isVideo", false);
+  b.zone = j.contains("zone")
+    ? CustomProfileBackground::Zone(j.value("zone", int(CustomProfileBackground::Zone::Full)))
+    : CustomProfileBackground::Zone::Full;
 }
 
 NLOHMANN_JSON_SERIALIZE_ENUM(AccountProfilesVisualVariant, {
@@ -143,9 +243,47 @@ NLOHMANN_JSON_SERIALIZE_ENUM(GhostTargetMode,
                                  {GhostTargetMode::Blacklist, 2},
                              })
 
+struct GhostScheduleEntry {
+  int from = 540;
+  int to = 1080;
+  int weekdays = 0x7F;
+};
+
+inline void to_json(nlohmann::json &j, const GhostScheduleEntry &e) {
+  j = nlohmann::json{
+    {"from", e.from},
+    {"to", e.to},
+    {"weekdays", e.weekdays}
+  };
+}
+inline void from_json(const nlohmann::json &j, GhostScheduleEntry &e) {
+  e.from = j.value("from", 540);
+  e.to = j.value("to", 1080);
+  e.weekdays = j.value("weekdays", 0x7F);
+}
+
+enum class ConnectionBypassMode {
+  Off = 0,
+  Auto = 1,
+  Always = 2,
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(ConnectionBypassMode,
+                             {
+                                 {ConnectionBypassMode::Off, 0},
+                                 {ConnectionBypassMode::Auto, 1},
+                                 {ConnectionBypassMode::Always, 2},
+                             })
+
 class GhostModeAccountSettings {
 public:
   GhostModeAccountSettings();
+  ~GhostModeAccountSettings();
+
+  GhostModeAccountSettings(const GhostModeAccountSettings &) = delete;
+  GhostModeAccountSettings &operator=(const GhostModeAccountSettings &) = delete;
+  GhostModeAccountSettings(GhostModeAccountSettings &&) = default;
+  GhostModeAccountSettings &operator=(GhostModeAccountSettings &&) = default;
 
   [[nodiscard]] bool sendReadMessages() const {
     return _sendReadMessages.current();
@@ -301,6 +439,31 @@ public:
   void togglePeerInExcludedList(uint64 peerId);
 
   [[nodiscard]] bool isGhostActiveForPeer(uint64 peerId) const;
+
+  [[nodiscard]] bool ghostScheduleEnabled() const {
+    return _ghostScheduleEnabled.current();
+  }
+  [[nodiscard]] const std::vector<GhostScheduleEntry> &ghostScheduleEntries() const {
+    return _ghostScheduleEntries;
+  }
+  void setGhostScheduleEnabled(bool val);
+  void setGhostScheduleEntries(const std::vector<GhostScheduleEntry> &entries);
+  void addGhostScheduleEntry(const GhostScheduleEntry &entry);
+  void removeGhostScheduleEntry(int index);
+  void updateGhostScheduleEntry(int index, const GhostScheduleEntry &entry);
+  [[nodiscard]] bool isInScheduleWindow() const;
+  void checkSchedule();
+  void startScheduleTimer();
+  void stopScheduleTimer();
+  [[nodiscard]] rpl::producer<bool> ghostScheduleEnabledValue() const {
+    return _ghostScheduleEnabled.value();
+  }
+  [[nodiscard]] rpl::producer<bool> ghostScheduleEnabledChanges() const {
+    return _ghostScheduleEnabled.changes();
+  }
+  [[nodiscard]] rpl::producer<> ghostScheduleEntriesChanges() const {
+    return _ghostScheduleEntriesChanges.events();
+  }
   [[nodiscard]] bool shouldSendReadMessagesForPeer(uint64 peerId) const;
   [[nodiscard]] bool shouldSendReadStoriesForPeer(uint64 peerId) const;
   [[nodiscard]] bool shouldSendUploadProgressForPeer(uint64 peerId) const;
@@ -384,6 +547,12 @@ private:
   rpl::variable<GhostTargetMode> _ghostTargetMode = GhostTargetMode::Global;
   rpl::variable<std::vector<uint64>> _ghostTargetPeers;
   rpl::variable<std::vector<uint64>> _ghostExcludedPeers;
+
+  rpl::variable<bool> _ghostScheduleEnabled = false;
+  std::vector<GhostScheduleEntry> _ghostScheduleEntries;
+  rpl::event_stream<> _ghostScheduleEntriesChanges;
+  std::unique_ptr<base::Timer> _scheduleTimer;
+  bool _scheduleAppliedGhost = false;
 };
 
 void to_json(nlohmann::json &j, const GhostModeAccountSettings &s);
@@ -552,6 +721,7 @@ public:
   static void load();
   static void save();
   static void reset();
+  static void initTimeSpentTracker();
 
   [[nodiscard]] static GhostModeAccountSettings &
   ghost(not_null<Main::Session *> session);
@@ -646,6 +816,64 @@ public:
   [[nodiscard]] rpl::producer<bool> accountProfilesEnabledChanges() const {
     return enableAccountProfilesChanges();
   }
+
+  [[nodiscard]] bool enableCustomArchives() const {
+    return _enableCustomArchives.current();
+  }
+  void setEnableCustomArchives(bool val);
+  [[nodiscard]] rpl::producer<bool> enableCustomArchivesValue() const {
+    return _enableCustomArchives.value();
+  }
+  [[nodiscard]] rpl::producer<bool> enableCustomArchivesChanges() const {
+    return _enableCustomArchives.changes();
+  }
+  [[nodiscard]] bool customArchivesEnabled() const {
+    return enableCustomArchives();
+  }
+  void setCustomArchivesEnabled(bool val) {
+    setEnableCustomArchives(val);
+  }
+  [[nodiscard]] bool confirmFolderChanges() const {
+    return _confirmFolderChanges.current();
+  }
+  void setConfirmFolderChanges(bool val);
+  [[nodiscard]] const std::vector<CustomArchive> &customArchives() const {
+    return _customArchives;
+  }
+  void setCustomArchives(const std::vector<CustomArchive> &val);
+  void addCustomArchive(const CustomArchive &val);
+  void addCustomArchive(const QString &name);
+  void removeCustomArchive(int id);
+  void updateCustomArchive(const CustomArchive &val);
+  void setCustomArchiveIcon(int id, const QString &icon);
+  [[nodiscard]] CustomArchive *findCustomArchive(int id);
+  [[nodiscard]] const CustomArchive *findCustomArchive(int id) const;
+  [[nodiscard]] int findCustomArchiveIdForPeer(uint64 peerId) const;
+  [[nodiscard]] bool isPeerInCustomArchive(uint64 peerId) const;
+  void addPeerToCustomArchive(int archiveId, uint64 peerId);
+  void removePeerFromCustomArchive(int archiveId, uint64 peerId);
+  void removePeerFromAllCustomArchives(uint64 peerId);
+  void setPeerPinnedInCustomArchive(int archiveId, uint64 peerId, bool pinned);
+  [[nodiscard]] rpl::producer<> customArchivesChanges() const {
+    return _customArchivesChanges.events();
+  }
+
+  [[nodiscard]] const CustomProfileBackground *customProfileBackground(
+      uint64 peerId,
+      CustomProfileBackground::Zone zone) const;
+  void setCustomProfileBackground(
+      uint64 peerId,
+      CustomProfileBackground::Zone zone,
+      const QString &path,
+      bool isVideo);
+  void clearCustomProfileBackground(
+      uint64 peerId,
+      CustomProfileBackground::Zone zone);
+  void clearAllCustomProfileBackgrounds(uint64 peerId);
+  [[nodiscard]] rpl::producer<> customProfileBackgroundChanges() const {
+    return _customProfileBackgroundChanges.events();
+  }
+
 	[[nodiscard]] int messageBubbleRadius() const { return _messageBubbleRadius.current(); }
 	[[nodiscard]] bool disableOpenLinkWarning() const { return _disableOpenLinkWarning.current(); }
 	[[nodiscard]] double wideMultiplier() const { return _wideMultiplier.current(); }
@@ -718,6 +946,21 @@ public:
 	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
+	[[nodiscard]] bool musicIslandEnabled() const { return _musicIslandEnabled.current(); }
+	[[nodiscard]] int musicIslandPosition() const { return _musicIslandPosition.current(); }
+	[[nodiscard]] bool musicIslandHideTopBar() const { return _musicIslandHideTopBar.current(); }
+	[[nodiscard]] int musicIslandExpandMode() const { return _musicIslandExpandMode.current(); }
+	[[nodiscard]] bool musicIslandCoverColors() const { return _musicIslandCoverColors.current(); }
+	[[nodiscard]] bool musicIslandBlurCover() const { return _musicIslandBlurCover.current(); }
+	[[nodiscard]] bool musicIslandEqualizer() const { return _musicIslandEqualizer.current(); }
+	[[nodiscard]] bool musicIslandClickOpensTrack() const { return _musicIslandClickOpensTrack.current(); }
+
+	[[nodiscard]] ConnectionBypassMode connectionBypassMode() const {
+		return _connectionBypassMode.current();
+	}
+	[[nodiscard]] const QString &connectionBypassSecret() const {
+		return _connectionBypassSecret.current();
+	}
 
 	void setSaveDeletedMessages(bool val);
 	void setSaveMessagesHistory(bool val);
@@ -805,6 +1048,37 @@ public:
 	void setAvatarCorners(int val);
 	void setSingleCornerRadius(bool val);
 	void setStreamerMode(bool val);
+	void setMusicIslandEnabled(bool val);
+	void setMusicIslandPosition(int val);
+	void setMusicIslandHideTopBar(bool val);
+	void setMusicIslandExpandMode(int val);
+	void setMusicIslandCoverColors(bool val);
+	void setMusicIslandBlurCover(bool val);
+	void setMusicIslandEqualizer(bool val);
+	void setMusicIslandClickOpensTrack(bool val);
+  void setConnectionBypassMode(ConnectionBypassMode val);
+  void setConnectionBypassSecret(const QString &val);
+
+  [[nodiscard]] QString bypassLastGoodHost() const;
+  void setBypassLastGoodHost(const QString &host);
+  [[nodiscard]] crl::time bypassBadHostUntil(const QString &host) const;
+  [[nodiscard]] std::map<QString, crl::time> bypassBadHostsSnapshot() const;
+  void markBypassBadHost(const QString &host, crl::time untilUnixMs);
+  void clearBypassBadHost(const QString &host);
+  [[nodiscard]] std::vector<QString> bypassServerMirrors() const;
+  void setBypassServerMirrors(const std::vector<QString> &mirrors);
+  [[nodiscard]] std::vector<QString> bypassServerMirrorHosts() const;
+  void setBypassServerMirrorHosts(const std::vector<QString> &hosts);
+
+  [[nodiscard]] rpl::producer<ConnectionBypassMode> connectionBypassModeValue() const {
+		return _connectionBypassMode.value();
+	}
+  [[nodiscard]] rpl::producer<ConnectionBypassMode> connectionBypassModeChanges() const {
+		return _connectionBypassMode.changes();
+	}
+  [[nodiscard]] rpl::producer<QString> connectionBypassSecretValue() const {
+		return _connectionBypassSecret.value();
+	}
 
 	[[nodiscard]] rpl::producer<bool> useGlobalGhostModeValue() const { return _useGlobalGhostMode.value(); }
 	[[nodiscard]] rpl::producer<bool> useGlobalGhostModeChanges() const { return _useGlobalGhostMode.changes(); }
@@ -970,6 +1244,17 @@ public:
 	[[nodiscard]] rpl::producer<TranslationProvider> translationProviderChanges() const { return _translationProvider.changes(); }
 	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorValue() const { return _adaptiveCoverColor.value(); }
 	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorChanges() const { return _adaptiveCoverColor.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandEnabledValue() const { return _musicIslandEnabled.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandEnabledChanges() const { return _musicIslandEnabled.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandPositionValue() const { return _musicIslandPosition.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandPositionChanges() const { return _musicIslandPosition.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandHideTopBarValue() const { return _musicIslandHideTopBar.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandHideTopBarChanges() const { return _musicIslandHideTopBar.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandExpandModeValue() const { return _musicIslandExpandMode.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandExpandModeChanges() const { return _musicIslandExpandMode.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCoverColorsChanges() const { return _musicIslandCoverColors.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandBlurCoverChanges() const { return _musicIslandBlurCover.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandEqualizerChanges() const { return _musicIslandEqualizer.changes(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsValue() const { return _improveLinkPreviews.value(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsChanges() const { return _improveLinkPreviews.changes(); }
 	[[nodiscard]] rpl::producer<bool> crashReportingValue() const { return _crashReporting.value(); }
@@ -1035,8 +1320,20 @@ public:
   [[nodiscard]] bool showCryptoInDrawer() const {
     return _showCryptoInDrawer.current();
   }
+  [[nodiscard]] bool showSendBotInDrawer() const {
+    return _showSendBotInDrawer.current();
+  }
   [[nodiscard]] int cryptoFiatCurrency() const {
     return _cryptoFiatCurrency.current();
+  }
+  [[nodiscard]] bool cryptoFiatCurrencyManual() const {
+    return _cryptoFiatCurrencyManual.current();
+  }
+  [[nodiscard]] rpl::producer<int> cryptoFiatCurrencyValue() const {
+    return _cryptoFiatCurrency.value();
+  }
+  [[nodiscard]] rpl::producer<int> cryptoFiatCurrencyChanges() const {
+    return _cryptoFiatCurrency.changes();
   }
   [[nodiscard]] bool showBTC() const { return _showBTC.current(); }
   [[nodiscard]] bool showETH() const { return _showETH.current(); }
@@ -1050,7 +1347,9 @@ public:
 
 
   void setShowCryptoInDrawer(bool val);
+  void setShowSendBotInDrawer(bool val);
   void setCryptoFiatCurrency(int val);
+  void setCryptoFiatCurrencyFromLanguage(int val, bool force = false);
   void setShowBTC(bool val);
   void setShowETH(bool val);
   void setShowTON(bool val);
@@ -1064,6 +1363,13 @@ public:
     return _startupAnimationEnabled.current();
   }
   void setStartupAnimationEnabled(bool val);
+  [[nodiscard]] bool startupAnimationShowIcon() const {
+    return _startupAnimationShowIcon.current();
+  }
+  void setStartupAnimationShowIcon(bool val);
+  [[nodiscard]] rpl::producer<bool> startupAnimationShowIconValue() const {
+    return _startupAnimationShowIcon.value();
+  }
   [[nodiscard]] int startupAnimationType() const {
     return _startupAnimationType.current();
   }
@@ -1094,6 +1400,57 @@ public:
   }
   void setShowTimeSpentInDrawer(bool val);
 
+  [[nodiscard]] bool whitegramAutoUpdate() const {
+    return _whitegramAutoUpdate.current();
+  }
+  [[nodiscard]] rpl::producer<bool> whitegramAutoUpdateValue() const {
+    return _whitegramAutoUpdate.value();
+  }
+  [[nodiscard]] rpl::producer<bool> whitegramAutoUpdateChanges() const {
+    return _whitegramAutoUpdate.changes();
+  }
+  void setWhitegramAutoUpdate(bool val);
+
+  [[nodiscard]] bool hasSelfDestructPassword() const {
+    return _hasSelfDestructPassword.current();
+  }
+  [[nodiscard]] rpl::producer<bool> hasSelfDestructPasswordValue() const {
+    return _hasSelfDestructPassword.value();
+  }
+  [[nodiscard]] bool checkSelfDestructPassword(const QString &password) const;
+  void setSelfDestructPassword(const QString &password);
+  void clearSelfDestructPassword();
+
+  [[nodiscard]] bool isSelfDestructPasswordLockedOut() const;
+  [[nodiscard]] crl::time selfDestructPasswordLockoutRemaining() const;
+  [[nodiscard]] int selfDestructPasswordAttemptsRemaining() const;
+  void registerSelfDestructPasswordFailure();
+  void resetSelfDestructPasswordLockout();
+  void syncSelfDestructPasswordLockout();
+
+  [[nodiscard]] bool hasTotalDestructPassword() const {
+    return _hasTotalDestructPassword.current();
+  }
+  [[nodiscard]] rpl::producer<bool> hasTotalDestructPasswordValue() const {
+    return _hasTotalDestructPassword.value();
+  }
+  [[nodiscard]] bool checkTotalDestructPassword(const QString &password) const;
+  void setTotalDestructPassword(const QString &password);
+  void clearTotalDestructPassword();
+
+  void setTotalDestructCloudPassword(
+      uint64 userId,
+      const QString &encryptedPassword);
+  void clearTotalDestructCloudPasswords();
+  [[nodiscard]] std::map<uint64, QString> totalDestructCloudPasswords() const;
+
+  [[nodiscard]] bool isTotalDestructPasswordLockedOut() const;
+  [[nodiscard]] crl::time totalDestructPasswordLockoutRemaining() const;
+  [[nodiscard]] int totalDestructPasswordAttemptsRemaining() const;
+  void registerTotalDestructPasswordFailure();
+  void resetTotalDestructPasswordLockout();
+  void syncTotalDestructPasswordLockout();
+
   [[nodiscard]] bool startupSoundEnabled() const {
     return _startupSoundEnabled.current();
   }
@@ -1115,7 +1472,22 @@ public:
     return _startupSoundPath.changes();
   }
   void setStartupSoundPath(const QString &val);
+  [[nodiscard]] int startupSoundVolume() const {
+    return _startupSoundVolume.current();
+  }
+  [[nodiscard]] rpl::producer<int> startupSoundVolumeValue() const {
+    return _startupSoundVolume.value();
+  }
+  [[nodiscard]] rpl::producer<int> startupSoundVolumeChanges() const {
+    return _startupSoundVolume.changes();
+  }
+  void setStartupSoundVolume(int val);
   void playStartupSound();
+  void previewStartupSound();
+  void stopStartupSound();
+  [[nodiscard]] bool isStartupSoundPlaying() const;
+  [[nodiscard]] static QString startupSoundBuiltinPath();
+  [[nodiscard]] QString startupSoundEffectivePath() const;
 
   friend void to_json(nlohmann::json &j, const AyuSettings &s);
   friend void from_json(const nlohmann::json &j, AyuSettings &s);
@@ -1123,6 +1495,9 @@ public:
 private:
   AyuSettings();
   ~AyuSettings();
+
+  void normalizeSelfDestructPasswordLockout();
+  void normalizeTotalDestructPasswordLockout();
 
   [[nodiscard]] uint64 getOverriddenGhostUserId(uint64 userId) const {
     return _useGlobalGhostMode.current() ? 0 : userId;
@@ -1215,6 +1590,17 @@ private:
   rpl::variable<int> _avatarCorners = 23;
   rpl::variable<bool> _singleCornerRadius = false;
   rpl::variable<bool> _streamerMode = false;
+  rpl::variable<bool> _musicIslandEnabled = true;
+  rpl::variable<int> _musicIslandPosition = 3;
+  rpl::variable<bool> _musicIslandHideTopBar = true;
+  rpl::variable<int> _musicIslandExpandMode = 2;
+  rpl::variable<bool> _musicIslandCoverColors = true;
+  rpl::variable<bool> _musicIslandBlurCover = true;
+  rpl::variable<bool> _musicIslandEqualizer = true;
+  rpl::variable<bool> _musicIslandClickOpensTrack = true;
+  rpl::variable<ConnectionBypassMode> _connectionBypassMode =
+	  ConnectionBypassMode::Auto;
+  rpl::variable<QString> _connectionBypassSecret;
 
   rpl::variable<bool> _enableAccountProfiles = true;
   rpl::variable<AccountProfilesVisualVariant> _accountProfilesVisualVariant = AccountProfilesVisualVariant::Folders;
@@ -1224,10 +1610,20 @@ private:
   rpl::variable<int> _maxAccountProfiles = 10;
   rpl::event_stream<> _accountProfilesChanges;
 
+  rpl::variable<bool> _enableCustomArchives = true;
+  rpl::variable<bool> _confirmFolderChanges = true;
+  std::vector<CustomArchive> _customArchives;
+  rpl::event_stream<> _customArchivesChanges;
+
+  std::vector<CustomProfileBackground> _customProfileBackgrounds;
+  rpl::event_stream<> _customProfileBackgroundChanges;
+
 
 
   rpl::variable<bool> _showCryptoInDrawer = true;
+  rpl::variable<bool> _showSendBotInDrawer = false;
   rpl::variable<int> _cryptoFiatCurrency = 0;
+  rpl::variable<bool> _cryptoFiatCurrencyManual = false;
   rpl::variable<bool> _showBTC = true;
   rpl::variable<bool> _showETH = true;
   rpl::variable<bool> _showTON = true;
@@ -1239,14 +1635,34 @@ private:
 
   rpl::variable<int64> _totalTimeSpent = 0;
   rpl::variable<bool> _showTimeSpentInDrawer = false;
+  rpl::variable<bool> _whitegramAutoUpdate = false;
+  rpl::variable<bool> _hasSelfDestructPassword = false;
+  QString _selfDestructSalt;
+  QString _selfDestructHash;
+  int _selfDestructFailedAttempts = 0;
+  int _selfDestructLockoutLevel = 0;
+  crl::time _selfDestructLockoutUntilUnixMs = 0;
+
+  rpl::variable<bool> _hasTotalDestructPassword = false;
+  QString _totalDestructSalt;
+  QString _totalDestructHash;
+  int _totalDestructFailedAttempts = 0;
+  int _totalDestructLockoutLevel = 0;
+  crl::time _totalDestructLockoutUntilUnixMs = 0;
+  std::map<uint64, QString> _totalDestructCloudPasswords;
+  QString _bypassLastGoodHost;
+  std::map<QString, crl::time> _bypassBadHostsUntil;
+  std::vector<QString> _bypassServerMirrors;
+  std::vector<QString> _bypassServerMirrorHosts;
   std::unique_ptr<base::Timer> _timeSpentTimer;
 
   rpl::variable<bool> _startupSoundEnabled = false;
-  rpl::variable<QString> _startupSoundPath = QString::fromUtf8(
-      "C:\\Users\\ImCloviie\\Downloads\\yooooooooooo (mp3cut.net).mp3");
+  rpl::variable<QString> _startupSoundPath;
+  rpl::variable<int> _startupSoundVolume = 80;
   std::unique_ptr<Media::Audio::Track> _startupSoundTrack;
 
   rpl::variable<bool> _startupAnimationEnabled = true;
+  rpl::variable<bool> _startupAnimationShowIcon = true;
   rpl::variable<int> _startupAnimationType = 4;
   rpl::variable<int> _startupAnimationFps = 240;
 

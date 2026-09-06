@@ -18,6 +18,8 @@
 #include "window/notifications_manager.h"
 #include "window/window_session_controller.h"
 
+#include "lang/lang_instance.h"
+
 void FillAccountNotificationBox(
 	not_null<Ui::GenericBox*> box,
 	not_null<Window::SessionController*> controller,
@@ -27,13 +29,19 @@ void FillAccountNotificationBox(
 	const auto user = session->user();
 	const auto name = user ? user->name() : QString::number(session->userId().bare);
 
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+
 	box->setTitle(rpl::single(tr::lng_settings_section_notify(tr::now) + u": "_q + name));
 
 	auto &accountNotif = AyuSettings::accountNotifications(session);
 
 	const auto muteToggle = box->addRow(object_ptr<Ui::SettingsButton>(
 		box,
-		rpl::single(QString::fromUtf8("Полностью глушить аккаунт")),
+		rpl::single(isRu
+			? QString::fromUtf8("Полностью глушить аккаунт")
+			: QString("Completely mute account")),
 		st::defaultSettingsButton
 	))->toggleOn(rpl::single(accountNotif.completelyMute()));
 	muteToggle->toggledChanges(
@@ -75,7 +83,9 @@ void FillAccountNotificationBox(
 
 	const auto includeUnreadToggle = box->addRow(object_ptr<Ui::SettingsButton>(
 		box,
-		rpl::single(QString::fromUtf8("Учитывать в общем счётчике")),
+		rpl::single(isRu
+			? QString::fromUtf8("Учитывать в общем счётчике")
+			: QString("Include in unread counter")),
 		st::defaultSettingsButton
 	))->toggleOn(rpl::single(accountNotif.includeInUnreadCounter()));
 	includeUnreadToggle->toggledChanges(
@@ -87,7 +97,9 @@ void FillAccountNotificationBox(
 
 	const auto badgeToggle = box->addRow(object_ptr<Ui::SettingsButton>(
 		box,
-		rpl::single(QString::fromUtf8("Показывать бейдж на иконке")),
+		rpl::single(isRu
+			? QString::fromUtf8("Показывать бейдж на иконке")
+			: QString("Show unread badge on icon")),
 		st::defaultSettingsButton
 	))->toggleOn(rpl::single(accountNotif.showUnreadBadge()));
 	badgeToggle->toggledChanges(

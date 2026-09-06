@@ -423,12 +423,13 @@ void Sandbox::socketError(QLocalSocket::LocalSocketError e) {
 	}
 #endif // !Q_OS_WINRT
 
-	if (!Core::UpdaterDisabled()
-		&& !cNoStartUpdate()
-		&& Core::checkReadyUpdate()) {
-		cSetRestartingUpdate(true);
-		DEBUG_LOG(("Sandbox Info: installing update instead of starting app..."));
-		return Quit();
+	if (!Core::UpdaterDisabled() && !cNoStartUpdate()) {
+		Core::RecoverStuckUpdates();
+		if (Core::checkReadyUpdate()) {
+			cSetRestartingUpdate(true);
+			DEBUG_LOG(("Sandbox Info: installing update instead of starting app..."));
+			return Quit();
+		}
 	}
 
 	if (cQuit()) {

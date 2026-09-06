@@ -1,0 +1,9 @@
+{
+  "id": "test-js-plugin",
+  "name": "Тестовый JavaScript Плагин",
+  "version": "1.0.0",
+  "author": "Whitegram",
+  "description": "Тестовый плагин на JavaScript (Node.js). Реагирует на команду /jstest.",
+  "type": "js",
+  "main": "main.js"
+}

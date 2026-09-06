@@ -87,6 +87,9 @@ private:
 
 	void drawName(Painter &p);
 
+	void updateFooterLayout();
+	void setupFooterBetaBadge();
+
 	const not_null<SessionController*> _controller;
 	object_ptr<Ui::UserpicButton> _userpicButton;
 	Ui::Text::String _name;
@@ -105,6 +108,7 @@ private:
 	not_null<Ui::VerticalLayout*> _menu;
 	not_null<Ui::RpWidget*> _footer;
 	not_null<Ui::FlatLabel*> _telegram;
+	not_null<Ui::FlatLabel*> _betaBadge;
 	not_null<Ui::FlatLabel*> _version;
 	QPointer<Ui::SettingsButton> _nightThemeToggle;
 	rpl::event_stream<bool> _nightThemeSwitches;

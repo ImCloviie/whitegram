@@ -111,6 +111,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ui/ayu_userpic.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 
 
 namespace Info::Profile {
@@ -376,8 +379,23 @@ TopBar::TopBar(
 	});
 	return owned;
 }())
-, _backToggles(std::move(descriptor.backToggles)) {
+, _backToggles(std::move(descriptor.backToggles))
+, _customBackground([this] { update(); }) {
 	_peer->updateFull();
+	AyuFeatures::CustomProfileBackground::EnsureRemoteBackgrounds(_peer->id.value);
+	reloadCustomBackground();
+	AyuSettings::getInstance().customProfileBackgroundChanges(
+	) | rpl::on_next([=] {
+		reloadCustomBackground();
+		update();
+	}, lifetime());
+	Whitegram::Backend::profileBackgroundUpdates(
+	) | rpl::filter([=](uint64 userId) {
+		return userId == _peer->id.value;
+	}) | rpl::on_next([=] {
+		reloadCustomBackground();
+		update();
+	}, lifetime());
 	_communityEffect = (_source == Source::Community);
 	if (const auto broadcast = _peer->monoforumBroadcast()) {
 		broadcast->updateFull();
@@ -2776,8 +2794,16 @@ void TopBar::paintUserpic(QPainter &p, const QRect &geometry) {
 void TopBar::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
 	const auto geometry = userpicGeometry();
+	const auto hasCustomBg = _customBackground.active();
 
-	if (_hasGradientBg && _cachedGradient.isNull()) {
+	if (hasCustomBg) {
+		const auto isFull = AyuFeatures::CustomProfileBackground::UsesFullBackground(
+			_peer->id.value);
+		const auto coverHeight = isFull
+			? (maximumHeight() + _customBackgroundDetailsHeight)
+			: maximumHeight();
+		_customBackground.paint(p, rect(), coverHeight, 0);
+	} else if (_hasGradientBg && _cachedGradient.isNull()) {
 		const auto collectible = effectiveCollectible();
 		const auto colorProfile = effectiveColorProfile();
 		const auto offset = QPoint(
@@ -2801,33 +2827,35 @@ void TopBar::paintEvent(QPaintEvent *e) {
 				offset);
 		}
 	}
-	if (!_hasGradientBg) {
-		paintEdges(p);
-	} else {
-		const auto x = (width()
-			- _cachedGradient.width() / style::DevicePixelRatio())
-				/ 2;
-		const auto y = (height()
-			- _cachedGradient.height() / style::DevicePixelRatio())
-				/ 2;
-		if (_roundEdges) {
-			if (_cachedClipPath.isEmpty()) {
-				const auto radius = st::boxRadius;
-				_cachedClipPath.addRoundedRect(
-					rect() + QMargins{ 0, 0, 0, radius + 1 },
-					radius,
-					radius);
-			}
-			auto hq = PainterHighQualityEnabler(p);
-			p.setPen(Qt::NoPen);
-			p.setClipPath(_cachedClipPath);
-			p.drawImage(x, y, _cachedGradient);
+	if (!hasCustomBg) {
+		if (!_hasGradientBg) {
+			paintEdges(p);
 		} else {
-			p.drawImage(x, y, _cachedGradient);
+			const auto x = (width()
+				- _cachedGradient.width() / style::DevicePixelRatio())
+					/ 2;
+			const auto y = (height()
+				- _cachedGradient.height() / style::DevicePixelRatio())
+					/ 2;
+			if (_roundEdges) {
+				if (_cachedClipPath.isEmpty()) {
+					const auto radius = st::boxRadius;
+					_cachedClipPath.addRoundedRect(
+						rect() + QMargins{ 0, 0, 0, radius + 1 },
+						radius,
+						radius);
+				}
+				auto hq = PainterHighQualityEnabler(p);
+				p.setPen(Qt::NoPen);
+				p.setClipPath(_cachedClipPath);
+				p.drawImage(x, y, _cachedGradient);
+			} else {
+				p.drawImage(x, y, _cachedGradient);
+			}
 		}
-	}
-	if (_patternEmoji && _patternEmoji->ready()) {
-		paintAnimatedPattern(p, rect(), geometry);
+		if (_patternEmoji && _patternEmoji->ready()) {
+			paintAnimatedPattern(p, rect(), geometry);
+		}
 	}
 
 	const auto clipBounds = e->region().boundingRect();
@@ -3868,6 +3896,23 @@ TopBarActionButtonStyle TopBar::mapActionStyle(
 				? std::nullopt
 				: std::make_optional(st::windowShadowFgFallback->c),
 		};
+	}
+}
+
+void TopBar::setCustomBackgroundDetailsHeight(int height) {
+	if (_customBackgroundDetailsHeight != height) {
+		_customBackgroundDetailsHeight = height;
+		update();
+	}
+}
+
+void TopBar::reloadCustomBackground() {
+	const auto peerId = _peer->id.value;
+	if (const auto zone = AyuFeatures::CustomProfileBackground::TopRendererZone(
+			peerId)) {
+		_customBackground.setPeer(peerId, *zone);
+	} else {
+		_customBackground.clear();
 	}
 }
 

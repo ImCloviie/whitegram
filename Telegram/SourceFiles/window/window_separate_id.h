@@ -32,6 +32,7 @@ namespace Window {
 enum class SeparateType {
 	Primary,
 	Archive,
+	CustomFolder,
 	Chat,
 	Forum,
 	Community,
@@ -59,6 +60,7 @@ struct SeparateId {
 	Storage::SharedMediaType sharedMediaType = {};
 	Main::Account *account = nullptr;
 	Data::Thread *thread = nullptr; // For types except Main and Archive.
+	int customFolderId = 0;
 	[[nodiscard]] bool valid() const {
 		return account != nullptr;
 	}

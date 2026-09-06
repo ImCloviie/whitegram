@@ -10,6 +10,7 @@
 #include "tray.h"
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ayu_worker.h"
+#include "ayu/features/connection_bypass/connection_bypass.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/ui/ayu_logo.h"
 #include "core/application.h"
@@ -22,8 +23,18 @@
 #include "rpl/combine.h"
 #include "window/window_controller.h"
 
+#include <array>
+#include <algorithm>
 #include <fstream>
 #include <QApplication>
+#include <QFile>
+#include <QTime>
+#include <QDate>
+#include <QDateTime>
+#include "base/timer.h"
+#include "base/random.h"
+
+#include <QCryptographicHash>
 
 using json = nlohmann::json;
 
@@ -271,6 +282,132 @@ bool GhostModeAccountSettings::shouldSendUploadProgressForPeer(uint64 peerId) co
 	return sendUploadProgress();
 }
 
+GhostModeAccountSettings::~GhostModeAccountSettings() = default;
+
+bool GhostModeAccountSettings::isInScheduleWindow() const {
+	if (!_ghostScheduleEnabled.current() || _ghostScheduleEntries.empty()) {
+		return false;
+	}
+	const auto nowTime = QTime::currentTime();
+	const auto currentMinutes = nowTime.hour() * 60 + nowTime.minute();
+	const auto today = QDate::currentDate();
+	const auto todayDayOfWeek = today.dayOfWeek();
+	const auto todayDayBit = 1 << (todayDayOfWeek - 1);
+	const auto yesterdayDayOfWeek = (todayDayOfWeek == 1) ? 7 : (todayDayOfWeek - 1);
+	const auto yesterdayDayBit = 1 << (yesterdayDayOfWeek - 1);
+
+	for (const auto &entry : _ghostScheduleEntries) {
+		if (entry.from <= entry.to) {
+			if ((entry.weekdays & todayDayBit) != 0) {
+				if (currentMinutes >= entry.from && currentMinutes < entry.to) {
+					return true;
+				}
+			}
+		} else {
+			if (currentMinutes >= entry.from) {
+				if ((entry.weekdays & todayDayBit) != 0) {
+					return true;
+				}
+			}
+			if (currentMinutes < entry.to) {
+				if ((entry.weekdays & yesterdayDayBit) != 0) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+void GhostModeAccountSettings::checkSchedule() {
+	if (!_ghostScheduleEnabled.current()) {
+		return;
+	}
+	const auto shouldBeActive = isInScheduleWindow();
+	const auto currentlyActive = isGhostModeActive();
+
+	if (shouldBeActive && !currentlyActive) {
+		_scheduleAppliedGhost = true;
+		setGhostModeEnabled(true);
+	} else if (!shouldBeActive && currentlyActive && _scheduleAppliedGhost) {
+		_scheduleAppliedGhost = false;
+		setGhostModeEnabled(false);
+	}
+}
+
+void GhostModeAccountSettings::startScheduleTimer() {
+	if (!_scheduleTimer) {
+		_scheduleTimer = std::make_unique<base::Timer>([=] {
+			checkSchedule();
+		});
+	}
+	if (!_scheduleTimer->isActive()) {
+		_scheduleTimer->callEach(30 * crl::time(1000));
+	}
+	checkSchedule();
+}
+
+void GhostModeAccountSettings::stopScheduleTimer() {
+	if (_scheduleTimer) {
+		_scheduleTimer->cancel();
+	}
+}
+
+void GhostModeAccountSettings::setGhostScheduleEnabled(bool val) {
+	if (_ghostScheduleEnabled.current() == val) return;
+	_ghostScheduleEnabled = val;
+	if (val) {
+		if (_ghostScheduleEntries.empty()) {
+			_ghostScheduleEntries.push_back(GhostScheduleEntry{ 540, 1080, 0x7F });
+			_ghostScheduleEntriesChanges.fire({});
+		}
+		startScheduleTimer();
+	} else {
+		stopScheduleTimer();
+	}
+	AyuSettings::save();
+}
+
+void GhostModeAccountSettings::setGhostScheduleEntries(const std::vector<GhostScheduleEntry> &entries) {
+	_ghostScheduleEntries = entries;
+	_ghostScheduleEntriesChanges.fire({});
+	if (_ghostScheduleEnabled.current()) {
+		checkSchedule();
+	}
+	AyuSettings::save();
+}
+
+void GhostModeAccountSettings::addGhostScheduleEntry(const GhostScheduleEntry &entry) {
+	_ghostScheduleEntries.push_back(entry);
+	_ghostScheduleEntriesChanges.fire({});
+	if (_ghostScheduleEnabled.current()) {
+		checkSchedule();
+	}
+	AyuSettings::save();
+}
+
+void GhostModeAccountSettings::removeGhostScheduleEntry(int index) {
+	if (index >= 0 && index < int(_ghostScheduleEntries.size())) {
+		_ghostScheduleEntries.erase(_ghostScheduleEntries.begin() + index);
+		_ghostScheduleEntriesChanges.fire({});
+		if (_ghostScheduleEnabled.current()) {
+			checkSchedule();
+		}
+		AyuSettings::save();
+	}
+}
+
+void GhostModeAccountSettings::updateGhostScheduleEntry(int index, const GhostScheduleEntry &entry) {
+	if (index >= 0 && index < int(_ghostScheduleEntries.size())) {
+		_ghostScheduleEntries[index] = entry;
+		_ghostScheduleEntriesChanges.fire({});
+		if (_ghostScheduleEnabled.current()) {
+			checkSchedule();
+		}
+		AyuSettings::save();
+	}
+}
+
 void to_json(nlohmann::json &j, const GhostModeAccountSettings &s) {
 	j = nlohmann::json{
 		{"sendReadMessages", s._sendReadMessages.current()},
@@ -289,7 +426,9 @@ void to_json(nlohmann::json &j, const GhostModeAccountSettings &s) {
 		{"sendOfflinePacketAfterOnlineLocked", s._sendOfflinePacketAfterOnlineLocked.current()},
 		{"ghostTargetMode", s._ghostTargetMode.current()},
 		{"ghostTargetPeers", s._ghostTargetPeers.current()},
-		{"ghostExcludedPeers", s._ghostExcludedPeers.current()}
+		{"ghostExcludedPeers", s._ghostExcludedPeers.current()},
+		{"ghostScheduleEnabled", s._ghostScheduleEnabled.current()},
+		{"ghostScheduleEntries", s._ghostScheduleEntries}
 	};
 }
 
@@ -318,6 +457,13 @@ void from_json(const nlohmann::json &j, GhostModeAccountSettings &s) {
 	s._ghostTargetMode = j.value("ghostTargetMode", GhostTargetMode::Global);
 	s._ghostTargetPeers = j.value("ghostTargetPeers", std::vector<uint64>{});
 	s._ghostExcludedPeers = j.value("ghostExcludedPeers", std::vector<uint64>{});
+	s._ghostScheduleEnabled = j.value("ghostScheduleEnabled", false);
+	if (j.contains("ghostScheduleEntries") && j["ghostScheduleEntries"].is_array()) {
+		j["ghostScheduleEntries"].get_to(s._ghostScheduleEntries);
+	}
+	if (s._ghostScheduleEnabled.current()) {
+		s.startScheduleTimer();
+	}
 }
 
 AccountNotificationSettings::AccountNotificationSettings() {
@@ -504,11 +650,13 @@ void from_json(const nlohmann::json &j, MessageShotSettings &s) {
 }
 
 AyuSettings::AyuSettings()
-: _appIcon(AyuAssets::DEFAULT_ICON)
+: _appIcon(AyuAssets::WHITEGRAM_ICON)
 , _editedMark(Core::IsAppLaunched() ? tr::lng_edited(tr::now) : QString("edited")) {
 }
 
-AyuSettings::~AyuSettings() = default;
+AyuSettings::~AyuSettings() {
+	stopStartupSound();
+}
 
 AyuSettings &AyuSettings::getInstance() {
 	static AyuSettings instance;
@@ -565,6 +713,7 @@ void AyuSettings::load() {
 	}
 
 	settings.validate();
+	settings.syncSelfDestructPasswordLockout();
 }
 
 void AyuSettings::save() {
@@ -574,12 +723,26 @@ void AyuSettings::save() {
 	std::ofstream file;
 	file.open(getSettingsPath());
 	file << p.dump(4);
+	file.flush();
 	file.close();
 }
 
 void AyuSettings::reset() {
 	getInstance() = AyuSettings();
 	save();
+}
+
+void AyuSettings::initTimeSpentTracker() {
+	auto &settings = getInstance();
+	if (!settings._timeSpentTimer) {
+		settings._timeSpentTimer = std::make_unique<base::Timer>([] {
+			auto &s = getInstance();
+			s.setTotalTimeSpent(s.getTotalTimeSpent() + 1);
+		});
+	}
+	if (!settings._timeSpentTimer->isActive()) {
+		settings._timeSpentTimer->callEach(60 * crl::time(1000));
+	}
 }
 
 GhostModeAccountSettings &AyuSettings::ghost(not_null<Main::Session*> session) {
@@ -682,6 +845,7 @@ void AyuSettings::validate() {
 	validateEnum(_showRepeatMessageInContextMenu, defaults._showRepeatMessageInContextMenu);
 	validateEnum(_showAddFilterInContextMenu, defaults._showAddFilterInContextMenu);
 
+	validateEnum(_connectionBypassMode, defaults._connectionBypassMode, 2);
 	validateEnum(_translationProvider, defaults._translationProvider, 3);
 	if ((_translationProvider.current() == TranslationProvider::Native)
 		&& !Platform::IsTranslateProviderAvailable()) {
@@ -692,6 +856,7 @@ void AyuSettings::validate() {
 	validateRange(_messageBubbleRadius, 0, 16, defaults._messageBubbleRadius);
 	validateRange(_wideMultiplier, 0.5, 4.0, defaults._wideMultiplier);
 	validateRange(_avatarCorners, 0, AyuUiSettings::kMaxAvatarCorners, defaults._avatarCorners);
+	validateRange(_cryptoFiatCurrency, 0, 2, defaults._cryptoFiatCurrency);
 
 	const auto embeddedType = _messageShotSettings._embeddedThemeType.current();
 	auto embeddedTypeValid = (embeddedType == -1) || (embeddedType >= 0 && embeddedType <= 3); // from Window::Theme::EmbeddedType::DayBlue to Window::Theme::EmbeddedType::NightGreen
@@ -1243,6 +1408,138 @@ void AyuSettings::setStreamerMode(bool val) {
 	save();
 }
 
+void AyuSettings::setMusicIslandEnabled(bool val) {
+	if (_musicIslandEnabled.current() == val) return;
+	_musicIslandEnabled = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandPosition(int val) {
+	if (_musicIslandPosition.current() == val) return;
+	_musicIslandPosition = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandHideTopBar(bool val) {
+	if (_musicIslandHideTopBar.current() == val) return;
+	_musicIslandHideTopBar = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandExpandMode(int val) {
+	val = std::clamp(val, 0, 2);
+	if (_musicIslandExpandMode.current() == val) return;
+	_musicIslandExpandMode = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandCoverColors(bool val) {
+	if (_musicIslandCoverColors.current() == val) return;
+	_musicIslandCoverColors = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandBlurCover(bool val) {
+	if (_musicIslandBlurCover.current() == val) return;
+	_musicIslandBlurCover = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandEqualizer(bool val) {
+	if (_musicIslandEqualizer.current() == val) return;
+	_musicIslandEqualizer = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandClickOpensTrack(bool val) {
+	if (_musicIslandClickOpensTrack.current() == val) return;
+	_musicIslandClickOpensTrack = val;
+	save();
+}
+
+void AyuSettings::setConnectionBypassMode(ConnectionBypassMode val) {
+	if (_connectionBypassMode.current() == val) {
+		return;
+	}
+	_connectionBypassMode = val;
+	save();
+	AyuFeatures::ConnectionBypass::reevaluate(true, true);
+}
+
+void AyuSettings::setConnectionBypassSecret(const QString &val) {
+	if (_connectionBypassSecret.current() == val) {
+		return;
+	}
+	_connectionBypassSecret = val;
+	save();
+	AyuFeatures::ConnectionBypass::reevaluate(true);
+}
+
+namespace {
+
+void ScheduleBypassHostSave() {
+	static auto timer = base::Timer([] {
+		AyuSettings::getInstance().save();
+	});
+	timer.callOnce(2000);
+}
+
+} // namespace
+
+QString AyuSettings::bypassLastGoodHost() const {
+	return _bypassLastGoodHost;
+}
+
+void AyuSettings::setBypassLastGoodHost(const QString &host) {
+	if (_bypassLastGoodHost == host) {
+		return;
+	}
+	_bypassLastGoodHost = host;
+	ScheduleBypassHostSave();
+}
+
+crl::time AyuSettings::bypassBadHostUntil(const QString &host) const {
+	const auto it = _bypassBadHostsUntil.find(host);
+	return (it != end(_bypassBadHostsUntil)) ? it->second : 0;
+}
+
+std::map<QString, crl::time> AyuSettings::bypassBadHostsSnapshot() const {
+	return _bypassBadHostsUntil;
+}
+
+void AyuSettings::markBypassBadHost(
+		const QString &host,
+		crl::time untilUnixMs) {
+	_bypassBadHostsUntil[host] = untilUnixMs;
+	ScheduleBypassHostSave();
+}
+
+void AyuSettings::clearBypassBadHost(const QString &host) {
+	const auto it = _bypassBadHostsUntil.find(host);
+	if (it == end(_bypassBadHostsUntil)) {
+		return;
+	}
+	_bypassBadHostsUntil.erase(it);
+	ScheduleBypassHostSave();
+}
+
+std::vector<QString> AyuSettings::bypassServerMirrors() const {
+	return _bypassServerMirrors;
+}
+
+void AyuSettings::setBypassServerMirrors(const std::vector<QString> &mirrors) {
+	_bypassServerMirrors = mirrors;
+}
+
+std::vector<QString> AyuSettings::bypassServerMirrorHosts() const {
+	return _bypassServerMirrorHosts;
+}
+
+void AyuSettings::setBypassServerMirrorHosts(
+		const std::vector<QString> &hosts) {
+	_bypassServerMirrorHosts = hosts;
+}
+
 void to_json(nlohmann::json &j, const AyuSettings &s) {
 	auto ghostAccounts = nlohmann::json::object();
 	for (const auto &[key, value] : s._ghostAccounts) {
@@ -1348,11 +1645,69 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"maxAccountProfiles", s._maxAccountProfiles.current()},
 		{"activeProfileId", s._activeProfileId.current()},
 		{"startupAnimationEnabled", s._startupAnimationEnabled.current()},
+		{"startupAnimationShowIcon", s._startupAnimationShowIcon.current()},
 		{"startupAnimationType", s._startupAnimationType.current()},
 		{"startupAnimationFps", s._startupAnimationFps.current()},
+		{"startupSoundEnabled", s._startupSoundEnabled.current()},
+		{"startupSoundPath", s._startupSoundPath.current().toStdString()},
+		{"startupSoundVolume", s._startupSoundVolume.current()},
 		{"accountProfiles", s._accountProfiles},
+		{"enableCustomArchives", s._enableCustomArchives.current()},
+		{"confirmFolderChanges", s._confirmFolderChanges.current()},
+		{"customArchives", s._customArchives},
+		{"customProfileBackgrounds", s._customProfileBackgrounds},
 		{"streamerMode", s._streamerMode.current()},
-		{"messageShotSettings", s._messageShotSettings}
+		{"musicIslandEnabled", s._musicIslandEnabled.current()},
+		{"musicIslandPosition", s._musicIslandPosition.current()},
+		{"musicIslandHideTopBar", s._musicIslandHideTopBar.current()},
+		{"musicIslandExpandMode", s._musicIslandExpandMode.current()},
+		{"musicIslandCoverColors", s._musicIslandCoverColors.current()},
+		{"musicIslandBlurCover", s._musicIslandBlurCover.current()},
+		{"musicIslandEqualizer", s._musicIslandEqualizer.current()},
+		{"musicIslandClickOpensTrack", s._musicIslandClickOpensTrack.current()},
+		{"connectionBypassMode", s._connectionBypassMode.current()},
+		{"connectionBypassSecret", s._connectionBypassSecret.current()},
+		{"messageShotSettings", s._messageShotSettings},
+		{"cryptoFiatCurrency", s._cryptoFiatCurrency.current()},
+		{"cryptoFiatCurrencyManual", s._cryptoFiatCurrencyManual.current()},
+		{"showCryptoInDrawer", s._showCryptoInDrawer.current()},
+		{"showSendBotInDrawer", s._showSendBotInDrawer.current()},
+		{"showBTC", s._showBTC.current()},
+		{"showETH", s._showETH.current()},
+		{"showTON", s._showTON.current()},
+		{"showSOL", s._showSOL.current()},
+		{"showBNB", s._showBNB.current()},
+		{"showFiatUSD", s._showFiatUSD.current()},
+		{"showFiatEUR", s._showFiatEUR.current()},
+		{"showFiatRUB", s._showFiatRUB.current()},
+		{"totalTimeSpent", s._totalTimeSpent.current()},
+		{"showTimeSpentInDrawer", s._showTimeSpentInDrawer.current()},
+		{"whitegramAutoUpdate", s._whitegramAutoUpdate.current()},
+		{"selfDestructSalt", s._selfDestructSalt.toStdString()},
+		{"selfDestructHash", s._selfDestructHash.toStdString()},
+		{"selfDestructFailedAttempts", s._selfDestructFailedAttempts},
+		{"selfDestructLockoutLevel", s._selfDestructLockoutLevel},
+		{"selfDestructLockoutUntil", s._selfDestructLockoutUntilUnixMs},
+		{"totalDestructSalt", s._totalDestructSalt.toStdString()},
+		{"totalDestructHash", s._totalDestructHash.toStdString()},
+		{"totalDestructFailedAttempts", s._totalDestructFailedAttempts},
+		{"totalDestructLockoutLevel", s._totalDestructLockoutLevel},
+		{"totalDestructLockoutUntil", s._totalDestructLockoutUntilUnixMs},
+		{"totalDestructCloudPasswords", [&] {
+			auto passwords = nlohmann::json::object();
+			for (const auto &[userId, encrypted] : s._totalDestructCloudPasswords) {
+				passwords[std::to_string(userId)] = encrypted.toStdString();
+			}
+			return passwords;
+		}()},
+		{"bypassLastGoodHost", s._bypassLastGoodHost.toStdString()},
+		{"bypassBadHostsUntil", [&] {
+			auto badHosts = nlohmann::json::object();
+			for (const auto &[host, until] : s._bypassBadHostsUntil) {
+				badHosts[host.toStdString()] = until;
+			}
+			return badHosts;
+		}()}
 	};
 }
 
@@ -1465,19 +1820,185 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 	s._streamerMode = j.value("streamerMode", defaults._streamerMode.current());
+	s._musicIslandEnabled = j.value(
+		"musicIslandEnabled",
+		defaults._musicIslandEnabled.current());
+	s._musicIslandPosition = std::clamp(
+		j.value("musicIslandPosition", defaults._musicIslandPosition.current()),
+		0,
+		3);
+	s._musicIslandHideTopBar = j.value(
+		"musicIslandHideTopBar",
+		defaults._musicIslandHideTopBar.current());
+	if (j.contains("musicIslandExpandMode")) {
+		s._musicIslandExpandMode = std::clamp(
+			j.value(
+				"musicIslandExpandMode",
+				defaults._musicIslandExpandMode.current()),
+			0,
+			2);
+	} else if (j.contains("musicIslandExpandOnHover")) {
+		s._musicIslandExpandMode = j.value("musicIslandExpandOnHover", true)
+			? 0
+			: 1;
+	} else {
+		s._musicIslandExpandMode = defaults._musicIslandExpandMode.current();
+	}
+	s._musicIslandCoverColors = j.value(
+		"musicIslandCoverColors",
+		defaults._musicIslandCoverColors.current());
+	s._musicIslandBlurCover = j.value(
+		"musicIslandBlurCover",
+		defaults._musicIslandBlurCover.current());
+	s._musicIslandEqualizer = j.value(
+		"musicIslandEqualizer",
+		defaults._musicIslandEqualizer.current());
+	s._musicIslandClickOpensTrack = j.value(
+		"musicIslandClickOpensTrack",
+		defaults._musicIslandClickOpensTrack.current());
+	s._connectionBypassMode = j.value(
+		"connectionBypassMode",
+		defaults._connectionBypassMode.current());
+	s._connectionBypassSecret = j.value(
+		"connectionBypassSecret",
+		defaults._connectionBypassSecret.current());
 
 	s._enableAccountProfiles = j.value("enableAccountProfiles", defaults._enableAccountProfiles.current());
 	s._maxAccountProfiles = j.value("maxAccountProfiles", defaults._maxAccountProfiles.current());
 	s._activeProfileId = j.value("activeProfileId", 0);
 	s._startupAnimationEnabled = j.value("startupAnimationEnabled", defaults._startupAnimationEnabled.current());
+	s._startupAnimationShowIcon = j.value(
+		"startupAnimationShowIcon",
+		defaults._startupAnimationShowIcon.current());
 	s._startupAnimationType = j.value("startupAnimationType", defaults._startupAnimationType.current());
 	s._startupAnimationFps = j.value("startupAnimationFps", defaults._startupAnimationFps.current());
+	s._startupSoundEnabled = j.value(
+		"startupSoundEnabled",
+		defaults._startupSoundEnabled.current());
+	s._startupSoundPath = QString::fromStdString(j.value(
+		"startupSoundPath",
+		defaults._startupSoundPath.current().toStdString()));
+	s._startupSoundVolume = j.value(
+		"startupSoundVolume",
+		defaults._startupSoundVolume.current());
 	if (j.contains("accountProfiles") && j["accountProfiles"].is_array()) {
 		j["accountProfiles"].get_to(s._accountProfiles);
+	}
+	s._enableCustomArchives = j.value(
+		"enableCustomArchives",
+		defaults._enableCustomArchives.current());
+	s._confirmFolderChanges = j.value(
+		"confirmFolderChanges",
+		defaults._confirmFolderChanges.current());
+	if (j.contains("customArchives") && j["customArchives"].is_array()) {
+		j["customArchives"].get_to(s._customArchives);
+	}
+	if (j.contains("customProfileBackgrounds")
+		&& j["customProfileBackgrounds"].is_array()) {
+		j["customProfileBackgrounds"].get_to(s._customProfileBackgrounds);
 	}
 
 	if (j.contains("messageShotSettings") && j["messageShotSettings"].is_object()) {
 		j["messageShotSettings"].get_to(s._messageShotSettings);
+	}
+
+	s._cryptoFiatCurrency = j.value(
+		"cryptoFiatCurrency",
+		defaults._cryptoFiatCurrency.current());
+	s._cryptoFiatCurrencyManual = j.value(
+		"cryptoFiatCurrencyManual",
+		defaults._cryptoFiatCurrencyManual.current());
+
+	s._showCryptoInDrawer = j.value(
+		"showCryptoInDrawer",
+		defaults._showCryptoInDrawer.current());
+	s._showSendBotInDrawer = j.value(
+		"showSendBotInDrawer",
+		j.value("showWalletInDrawer", defaults._showSendBotInDrawer.current()));
+	s._showBTC = j.value("showBTC", defaults._showBTC.current());
+	s._showETH = j.value("showETH", defaults._showETH.current());
+	s._showTON = j.value("showTON", defaults._showTON.current());
+	s._showSOL = j.value("showSOL", defaults._showSOL.current());
+	s._showBNB = j.value("showBNB", defaults._showBNB.current());
+	s._showFiatUSD = j.value("showFiatUSD", defaults._showFiatUSD.current());
+	s._showFiatEUR = j.value("showFiatEUR", defaults._showFiatEUR.current());
+	s._showFiatRUB = j.value("showFiatRUB", defaults._showFiatRUB.current());
+	s._totalTimeSpent = j.value(
+		"totalTimeSpent",
+		defaults._totalTimeSpent.current());
+	s._showTimeSpentInDrawer = j.value(
+		"showTimeSpentInDrawer",
+		defaults._showTimeSpentInDrawer.current());
+	s._whitegramAutoUpdate = j.value(
+		"whitegramAutoUpdate",
+		defaults._whitegramAutoUpdate.current());
+	s._selfDestructSalt = QString::fromStdString(
+		j.value("selfDestructSalt", std::string()));
+	s._selfDestructHash = QString::fromStdString(
+		j.value("selfDestructHash", std::string()));
+	s._selfDestructFailedAttempts = j.value(
+		"selfDestructFailedAttempts",
+		defaults._selfDestructFailedAttempts);
+	s._selfDestructLockoutLevel = j.value(
+		"selfDestructLockoutLevel",
+		defaults._selfDestructLockoutLevel);
+	s._selfDestructLockoutUntilUnixMs = j.value<std::int64_t>(
+		"selfDestructLockoutUntil",
+		defaults._selfDestructLockoutUntilUnixMs);
+	s.normalizeSelfDestructPasswordLockout();
+	s._hasSelfDestructPassword = !s._selfDestructHash.isEmpty() && !s._selfDestructSalt.isEmpty();
+
+	s._totalDestructSalt = QString::fromStdString(
+		j.value("totalDestructSalt", std::string()));
+	s._totalDestructHash = QString::fromStdString(
+		j.value("totalDestructHash", std::string()));
+	s._totalDestructFailedAttempts = j.value(
+		"totalDestructFailedAttempts",
+		defaults._totalDestructFailedAttempts);
+	s._totalDestructLockoutLevel = j.value(
+		"totalDestructLockoutLevel",
+		defaults._totalDestructLockoutLevel);
+	s._totalDestructLockoutUntilUnixMs = j.value<std::int64_t>(
+		"totalDestructLockoutUntil",
+		defaults._totalDestructLockoutUntilUnixMs);
+	s.normalizeTotalDestructPasswordLockout();
+	s._hasTotalDestructPassword = !s._totalDestructHash.isEmpty() && !s._totalDestructSalt.isEmpty();
+
+	s._totalDestructCloudPasswords.clear();
+	if (j.contains("totalDestructCloudPasswords")
+		&& j["totalDestructCloudPasswords"].is_object()) {
+		for (auto &[key, value] : j["totalDestructCloudPasswords"].items()) {
+			const auto userId = QString::fromStdString(key).toULongLong();
+			if (userId > 0) {
+				s._totalDestructCloudPasswords[userId]
+					= QString::fromStdString(value.get<std::string>());
+			}
+		}
+	}
+
+	s._bypassLastGoodHost = QString::fromStdString(
+		j.value("bypassLastGoodHost", std::string()));
+	if (s._bypassLastGoodHost.endsWith(
+			u".web.telegram.org"_q,
+			Qt::CaseInsensitive)) {
+		s._bypassLastGoodHost.clear();
+	}
+	s._bypassBadHostsUntil.clear();
+	if (j.contains("bypassBadHostsUntil") && j["bypassBadHostsUntil"].is_object()) {
+		for (auto &[key, value] : j["bypassBadHostsUntil"].items()) {
+			s._bypassBadHostsUntil.emplace(
+				QString::fromStdString(key),
+				value.get<crl::time>());
+		}
+	}
+	const auto now = QDateTime::currentMSecsSinceEpoch();
+	for (auto it = s._bypassBadHostsUntil.begin()
+		; it != s._bypassBadHostsUntil.end();) {
+		if (it->second <= now) {
+			it = s._bypassBadHostsUntil.erase(it);
+		} else {
+			++it;
+		}
 	}
 }
 
@@ -1487,8 +2008,33 @@ void AyuSettings::setShowCryptoInDrawer(bool val) {
 	save();
 }
 
+void AyuSettings::setShowSendBotInDrawer(bool val) {
+	if (_showSendBotInDrawer.current() == val) return;
+	_showSendBotInDrawer = val;
+	save();
+}
+
 void AyuSettings::setCryptoFiatCurrency(int val) {
-	if (_cryptoFiatCurrency.current() == val) return;
+	const auto changed = (_cryptoFiatCurrency.current() != val)
+		|| !_cryptoFiatCurrencyManual.current();
+	if (!changed) {
+		return;
+	}
+	_cryptoFiatCurrencyManual = true;
+	_cryptoFiatCurrency = val;
+	save();
+}
+
+void AyuSettings::setCryptoFiatCurrencyFromLanguage(int val, bool force) {
+	if (!force && _cryptoFiatCurrencyManual.current()) {
+		return;
+	}
+	if (force) {
+		_cryptoFiatCurrencyManual = false;
+	}
+	if (_cryptoFiatCurrency.current() == val) {
+		return;
+	}
 	_cryptoFiatCurrency = val;
 	save();
 }
@@ -1547,6 +2093,12 @@ void AyuSettings::setStartupAnimationEnabled(bool val) {
 	save();
 }
 
+void AyuSettings::setStartupAnimationShowIcon(bool val) {
+	if (_startupAnimationShowIcon.current() == val) return;
+	_startupAnimationShowIcon = val;
+	save();
+}
+
 void AyuSettings::setStartupAnimationType(int val) {
 	if (_startupAnimationType.current() == val) return;
 	_startupAnimationType = val;
@@ -1571,6 +2123,245 @@ void AyuSettings::setShowTimeSpentInDrawer(bool val) {
 	save();
 }
 
+void AyuSettings::setWhitegramAutoUpdate(bool val) {
+	if (_whitegramAutoUpdate.current() == val) return;
+	_whitegramAutoUpdate = val;
+	save();
+}
+
+namespace {
+
+constexpr auto kSelfDestructMaxAttempts = 3;
+
+constexpr auto kLegacyLockoutThreshold = crl::time(1'000'000'000'000LL);
+
+constexpr std::array<int, 6> kSelfDestructLockoutSeconds = {
+	5 * 60,
+	10 * 60,
+	30 * 60,
+	60 * 60,
+	2 * 60 * 60,
+	4 * 60 * 60,
+};
+
+[[nodiscard]] crl::time selfDestructWallClockMsNow() {
+	return QDateTime::currentMSecsSinceEpoch();
+}
+
+[[nodiscard]] QString MakeSelfDestructSalt() {
+	return QString::number(base::RandomValue<uint64>(), 16);
+}
+
+[[nodiscard]] QString HashSelfDestructPassword(
+		const QString &salt,
+		const QString &password) {
+	const auto bytes = QCryptographicHash::hash(
+		(salt + password).toUtf8(),
+		QCryptographicHash::Sha256);
+	return QString::fromLatin1(bytes.toHex());
+}
+
+} // namespace
+
+void AyuSettings::normalizeSelfDestructPasswordLockout() {
+	constexpr auto kLegacyLockoutThreshold = crl::time(1'000'000'000'000LL);
+	if (_selfDestructLockoutUntilUnixMs > 0
+		&& _selfDestructLockoutUntilUnixMs < kLegacyLockoutThreshold) {
+		_selfDestructLockoutUntilUnixMs = 0;
+	}
+	const auto now = QDateTime::currentMSecsSinceEpoch();
+	if (_selfDestructLockoutUntilUnixMs > 0
+		&& _selfDestructLockoutUntilUnixMs <= now) {
+		_selfDestructLockoutUntilUnixMs = 0;
+		_selfDestructFailedAttempts = 0;
+	}
+}
+
+bool AyuSettings::checkSelfDestructPassword(const QString &password) const {
+	if (!hasSelfDestructPassword()) {
+		return false;
+	}
+	return HashSelfDestructPassword(_selfDestructSalt, password)
+		== _selfDestructHash;
+}
+
+void AyuSettings::setSelfDestructPassword(const QString &password) {
+	_selfDestructSalt = MakeSelfDestructSalt();
+	_selfDestructHash = HashSelfDestructPassword(
+		_selfDestructSalt,
+		password);
+	_hasSelfDestructPassword = true;
+	resetSelfDestructPasswordLockout();
+	save();
+}
+
+void AyuSettings::clearSelfDestructPassword() {
+	_selfDestructSalt = QString();
+	_selfDestructHash = QString();
+	_hasSelfDestructPassword = false;
+	resetSelfDestructPasswordLockout();
+	save();
+}
+
+void AyuSettings::normalizeTotalDestructPasswordLockout() {
+	constexpr auto kLegacyLockoutThreshold = crl::time(1'000'000'000'000LL);
+	if (_totalDestructLockoutUntilUnixMs > 0
+		&& _totalDestructLockoutUntilUnixMs < kLegacyLockoutThreshold) {
+		_totalDestructLockoutUntilUnixMs = 0;
+	}
+	const auto now = QDateTime::currentMSecsSinceEpoch();
+	if (_totalDestructLockoutUntilUnixMs > 0
+		&& _totalDestructLockoutUntilUnixMs <= now) {
+		_totalDestructLockoutUntilUnixMs = 0;
+		_totalDestructFailedAttempts = 0;
+	}
+}
+
+bool AyuSettings::checkTotalDestructPassword(const QString &password) const {
+	if (!hasTotalDestructPassword()) {
+		return false;
+	}
+	return HashSelfDestructPassword(_totalDestructSalt, password)
+		== _totalDestructHash;
+}
+
+void AyuSettings::setTotalDestructPassword(const QString &password) {
+	_totalDestructSalt = MakeSelfDestructSalt();
+	_totalDestructHash = HashSelfDestructPassword(
+		_totalDestructSalt,
+		password);
+	_hasTotalDestructPassword = true;
+	resetTotalDestructPasswordLockout();
+	save();
+}
+
+void AyuSettings::clearTotalDestructPassword() {
+	_totalDestructSalt = QString();
+	_totalDestructHash = QString();
+	_hasTotalDestructPassword = false;
+	_totalDestructCloudPasswords.clear();
+	resetTotalDestructPasswordLockout();
+	save();
+}
+
+void AyuSettings::setTotalDestructCloudPassword(
+		uint64 userId,
+		const QString &encryptedPassword) {
+	_totalDestructCloudPasswords[userId] = encryptedPassword;
+	save();
+}
+
+void AyuSettings::clearTotalDestructCloudPasswords() {
+	_totalDestructCloudPasswords.clear();
+	save();
+}
+
+std::map<uint64, QString> AyuSettings::totalDestructCloudPasswords() const {
+	return _totalDestructCloudPasswords;
+}
+
+bool AyuSettings::isTotalDestructPasswordLockedOut() const {
+	return _totalDestructLockoutUntilUnixMs > selfDestructWallClockMsNow();
+}
+
+crl::time AyuSettings::totalDestructPasswordLockoutRemaining() const {
+	const auto remaining = _totalDestructLockoutUntilUnixMs
+		- selfDestructWallClockMsNow();
+	return remaining > 0 ? remaining : 0;
+}
+
+int AyuSettings::totalDestructPasswordAttemptsRemaining() const {
+	return std::max(
+		0,
+		kSelfDestructMaxAttempts - _totalDestructFailedAttempts);
+}
+
+void AyuSettings::registerTotalDestructPasswordFailure() {
+	if (isTotalDestructPasswordLockedOut()) {
+		return;
+	}
+	++_totalDestructFailedAttempts;
+	if (_totalDestructFailedAttempts < kSelfDestructMaxAttempts) {
+		save();
+		return;
+	}
+	_totalDestructFailedAttempts = 0;
+	const auto level = std::min(
+		_totalDestructLockoutLevel,
+		int(kSelfDestructLockoutSeconds.size()) - 1);
+	_totalDestructLockoutUntilUnixMs = selfDestructWallClockMsNow()
+		+ crl::time(kSelfDestructLockoutSeconds[level]) * 1000;
+	if (_totalDestructLockoutLevel + 1 < int(kSelfDestructLockoutSeconds.size())) {
+		++_totalDestructLockoutLevel;
+	}
+	save();
+}
+
+void AyuSettings::resetTotalDestructPasswordLockout() {
+	_totalDestructFailedAttempts = 0;
+	_totalDestructLockoutLevel = 0;
+	_totalDestructLockoutUntilUnixMs = 0;
+}
+
+void AyuSettings::syncTotalDestructPasswordLockout() {
+	const auto before = _totalDestructLockoutUntilUnixMs;
+	normalizeTotalDestructPasswordLockout();
+	if (_totalDestructLockoutUntilUnixMs != before) {
+		save();
+	}
+}
+
+bool AyuSettings::isSelfDestructPasswordLockedOut() const {
+	return _selfDestructLockoutUntilUnixMs > selfDestructWallClockMsNow();
+}
+
+crl::time AyuSettings::selfDestructPasswordLockoutRemaining() const {
+	const auto remaining = _selfDestructLockoutUntilUnixMs
+		- selfDestructWallClockMsNow();
+	return remaining > 0 ? remaining : 0;
+}
+
+int AyuSettings::selfDestructPasswordAttemptsRemaining() const {
+	return std::max(
+		0,
+		kSelfDestructMaxAttempts - _selfDestructFailedAttempts);
+}
+
+void AyuSettings::registerSelfDestructPasswordFailure() {
+	if (isSelfDestructPasswordLockedOut()) {
+		return;
+	}
+	++_selfDestructFailedAttempts;
+	if (_selfDestructFailedAttempts < kSelfDestructMaxAttempts) {
+		save();
+		return;
+	}
+	_selfDestructFailedAttempts = 0;
+	const auto level = std::min(
+		_selfDestructLockoutLevel,
+		int(kSelfDestructLockoutSeconds.size()) - 1);
+	_selfDestructLockoutUntilUnixMs = selfDestructWallClockMsNow()
+		+ crl::time(kSelfDestructLockoutSeconds[level]) * 1000;
+	if (_selfDestructLockoutLevel + 1 < int(kSelfDestructLockoutSeconds.size())) {
+		++_selfDestructLockoutLevel;
+	}
+	save();
+}
+
+void AyuSettings::resetSelfDestructPasswordLockout() {
+	_selfDestructFailedAttempts = 0;
+	_selfDestructLockoutLevel = 0;
+	_selfDestructLockoutUntilUnixMs = 0;
+}
+
+void AyuSettings::syncSelfDestructPasswordLockout() {
+	const auto before = _selfDestructLockoutUntilUnixMs;
+	normalizeSelfDestructPasswordLockout();
+	if (_selfDestructLockoutUntilUnixMs != before) {
+		save();
+	}
+}
+
 void AyuSettings::setStartupSoundEnabled(bool val) {
 	if (_startupSoundEnabled.current() == val) return;
 	_startupSoundEnabled = val;
@@ -1583,28 +2374,70 @@ void AyuSettings::setStartupSoundPath(const QString &val) {
 	save();
 }
 
+void AyuSettings::setStartupSoundVolume(int val) {
+	const auto clamped = std::clamp(val, 0, 100);
+	if (_startupSoundVolume.current() == clamped) {
+		return;
+	}
+	_startupSoundVolume = clamped;
+	save();
+	if (_startupSoundTrack && _startupSoundTrack->isActive()) {
+		previewStartupSound();
+	}
+}
+
+QString AyuSettings::startupSoundBuiltinPath() {
+	return u":/sounds/call_connect.mp3"_q;
+}
+
+QString AyuSettings::startupSoundEffectivePath() const {
+	const auto &stored = _startupSoundPath.current();
+	return stored.isEmpty() ? startupSoundBuiltinPath() : stored;
+}
+
+bool AyuSettings::isStartupSoundPlaying() const {
+	return _startupSoundTrack && _startupSoundTrack->isActive();
+}
+
+void AyuSettings::stopStartupSound() {
+	if (!_startupSoundTrack) {
+		return;
+	}
+	if (Core::IsAppLaunched()) {
+		_startupSoundTrack->detachFromDevice();
+		_startupSoundTrack.reset();
+	} else {
+		_startupSoundTrack.release();
+	}
+}
+
 void AyuSettings::playStartupSound() {
 	if (!_startupSoundEnabled.current()) {
 		return;
 	}
-	const auto path = _startupSoundPath.current();
-	if (path.isEmpty()) {
+	previewStartupSound();
+}
+
+void AyuSettings::previewStartupSound() {
+	if (!Core::IsAppLaunched()) {
 		return;
 	}
-	auto bytes = QByteArray();
-	{
-		QFile f(path);
-		if (f.open(QIODevice::ReadOnly)) {
-			bytes = f.readAll();
-		}
+	stopStartupSound();
+	const auto volume = _startupSoundVolume.current();
+	if (volume <= 0) {
+		return;
 	}
-	if (!bytes.isEmpty()) {
-		_startupSoundTrack = Media::Audio::Current().createTrack();
-		if (_startupSoundTrack) {
-			_startupSoundTrack->fillFromData(bytes::make_vector(bytes));
-			_startupSoundTrack->playOnce();
-		}
+	const auto path = startupSoundEffectivePath();
+	_startupSoundTrack = Media::Audio::Current().createTrack();
+	if (!_startupSoundTrack) {
+		return;
 	}
+	_startupSoundTrack->fillFromFile(path);
+	if (_startupSoundTrack->failed()) {
+		stopStartupSound();
+		return;
+	}
+	_startupSoundTrack->playOnce(volume / 100.);
 }
 
 void AyuSettings::setActiveProfileId(int val) {
@@ -1616,6 +2449,274 @@ void AyuSettings::setActiveProfileId(int val) {
 void AyuSettings::setEnableAccountProfiles(bool val) {
 	if (_enableAccountProfiles.current() == val) return;
 	_enableAccountProfiles = val;
+	save();
+}
+
+void AyuSettings::setEnableCustomArchives(bool val) {
+	if (_enableCustomArchives.current() == val) {
+		return;
+	}
+	_enableCustomArchives = val;
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::setConfirmFolderChanges(bool val) {
+	if (_confirmFolderChanges.current() == val) {
+		return;
+	}
+	_confirmFolderChanges = val;
+	save();
+}
+
+void AyuSettings::setCustomArchives(const std::vector<CustomArchive> &val) {
+	_customArchives = val;
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::addCustomArchive(const CustomArchive &val) {
+	_customArchives.push_back(val);
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::addCustomArchive(const QString &name) {
+	auto maxId = 0;
+	auto maxOrder = 0;
+	for (const auto &archive : _customArchives) {
+		if (archive.id > maxId) {
+			maxId = archive.id;
+		}
+		if (archive.order > maxOrder) {
+			maxOrder = archive.order;
+		}
+	}
+	auto archive = CustomArchive();
+	archive.id = maxId + 1;
+	archive.name = name;
+	archive.order = maxOrder + 1;
+	_customArchives.push_back(archive);
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::removeCustomArchive(int id) {
+	std::erase_if(_customArchives, [id](const CustomArchive &archive) {
+		return archive.id == id;
+	});
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::updateCustomArchive(const CustomArchive &val) {
+	for (auto &archive : _customArchives) {
+		if (archive.id == val.id) {
+			archive = val;
+			break;
+		}
+	}
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::setCustomArchiveIcon(int id, const QString &icon) {
+	for (auto &archive : _customArchives) {
+		if (archive.id == id) {
+			archive.icon = icon;
+			break;
+		}
+	}
+	_customArchivesChanges.fire({});
+	save();
+}
+
+CustomArchive *AyuSettings::findCustomArchive(int id) {
+	for (auto &archive : _customArchives) {
+		if (archive.id == id) {
+			return &archive;
+		}
+	}
+	return nullptr;
+}
+
+const CustomArchive *AyuSettings::findCustomArchive(int id) const {
+	for (const auto &archive : _customArchives) {
+		if (archive.id == id) {
+			return &archive;
+		}
+	}
+	return nullptr;
+}
+
+int AyuSettings::findCustomArchiveIdForPeer(uint64 peerId) const {
+	for (const auto &archive : _customArchives) {
+		if (std::find(archive.peerIds.begin(), archive.peerIds.end(), peerId)
+			!= archive.peerIds.end()) {
+			return archive.id;
+		}
+	}
+	return 0;
+}
+
+bool AyuSettings::isPeerInCustomArchive(uint64 peerId) const {
+	return findCustomArchiveIdForPeer(peerId) != 0;
+}
+
+void AyuSettings::addPeerToCustomArchive(int archiveId, uint64 peerId) {
+	auto changed = false;
+	for (auto &archive : _customArchives) {
+		const auto before = archive.peerIds.size();
+		std::erase(archive.peerIds, peerId);
+		std::erase(archive.pinnedPeerIds, peerId);
+		if (archive.peerIds.size() != before) {
+			changed = true;
+		}
+	}
+	for (auto &archive : _customArchives) {
+		if (archive.id != archiveId) {
+			continue;
+		}
+		if (std::find(archive.peerIds.begin(), archive.peerIds.end(), peerId)
+			== archive.peerIds.end()) {
+			archive.peerIds.push_back(peerId);
+			changed = true;
+		}
+		break;
+	}
+	if (!changed) {
+		return;
+	}
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::removePeerFromCustomArchive(int archiveId, uint64 peerId) {
+	for (auto &archive : _customArchives) {
+		if (archive.id != archiveId) {
+			continue;
+		}
+		std::erase(archive.peerIds, peerId);
+		std::erase(archive.pinnedPeerIds, peerId);
+		break;
+	}
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::removePeerFromAllCustomArchives(uint64 peerId) {
+	auto changed = false;
+	for (auto &archive : _customArchives) {
+		const auto before = archive.peerIds.size();
+		std::erase(archive.peerIds, peerId);
+		std::erase(archive.pinnedPeerIds, peerId);
+		if (archive.peerIds.size() != before) {
+			changed = true;
+		}
+	}
+	if (!changed) {
+		return;
+	}
+	_customArchivesChanges.fire({});
+	save();
+}
+
+void AyuSettings::setPeerPinnedInCustomArchive(
+		int archiveId,
+		uint64 peerId,
+		bool pinned) {
+	for (auto &archive : _customArchives) {
+		if (archive.id != archiveId) {
+			continue;
+		}
+		if (pinned) {
+			if (std::find(
+					archive.pinnedPeerIds.begin(),
+					archive.pinnedPeerIds.end(),
+					peerId) == archive.pinnedPeerIds.end()) {
+				archive.pinnedPeerIds.push_back(peerId);
+			}
+			if (std::find(archive.peerIds.begin(), archive.peerIds.end(), peerId)
+				== archive.peerIds.end()) {
+				archive.peerIds.push_back(peerId);
+			}
+		} else {
+			std::erase(archive.pinnedPeerIds, peerId);
+		}
+		break;
+	}
+	_customArchivesChanges.fire({});
+	save();
+}
+
+const CustomProfileBackground *AyuSettings::customProfileBackground(
+		uint64 peerId,
+		CustomProfileBackground::Zone zone) const {
+	for (const auto &entry : _customProfileBackgrounds) {
+		if (entry.peerId == peerId && entry.zone == zone) {
+			return &entry;
+		}
+	}
+	return nullptr;
+}
+
+void AyuSettings::setCustomProfileBackground(
+		uint64 peerId,
+		CustomProfileBackground::Zone zone,
+		const QString &path,
+		bool isVideo) {
+	for (auto &entry : _customProfileBackgrounds) {
+		if (entry.peerId == peerId && entry.zone == zone) {
+			if (entry.path == path && entry.isVideo == isVideo) {
+				return;
+			}
+			entry.path = path;
+			entry.isVideo = isVideo;
+			_customProfileBackgroundChanges.fire({});
+			save();
+			return;
+		}
+	}
+	_customProfileBackgrounds.push_back({
+		.peerId = peerId,
+		.zone = zone,
+		.path = path,
+		.isVideo = isVideo,
+	});
+	_customProfileBackgroundChanges.fire({});
+	save();
+}
+
+void AyuSettings::clearCustomProfileBackground(
+		uint64 peerId,
+		CustomProfileBackground::Zone zone) {
+	const auto i = ranges::find_if(_customProfileBackgrounds, [&](
+			const CustomProfileBackground &entry) {
+		return entry.peerId == peerId && entry.zone == zone;
+	});
+	if (i == end(_customProfileBackgrounds)) {
+		return;
+	}
+	if (!i->path.isEmpty() && QFile::exists(i->path)) {
+		QFile::remove(i->path);
+	}
+	_customProfileBackgrounds.erase(i);
+	_customProfileBackgroundChanges.fire({});
+	save();
+}
+
+void AyuSettings::clearAllCustomProfileBackgrounds(uint64 peerId) {
+	for (auto i = begin(_customProfileBackgrounds); i != end(_customProfileBackgrounds);) {
+		if (i->peerId != peerId) {
+			++i;
+			continue;
+		}
+		if (!i->path.isEmpty() && QFile::exists(i->path)) {
+			QFile::remove(i->path);
+		}
+		i = _customProfileBackgrounds.erase(i);
+	}
+	_customProfileBackgroundChanges.fire({});
 	save();
 }
 

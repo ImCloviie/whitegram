@@ -47,12 +47,14 @@ enum class ActionType : uchar {
 	PhotoQualityOn,
 	PhotoQualityOff,
 	ChangePrice,
+	OneTimeMessage,
 };
 struct Action {
 	using Type = ActionType;
 
 	Api::SendOptions options;
 	Type type = Type::Send;
+	int whitegramTtl = -2;
 };
 [[nodiscard]] Fn<void(Action, Details)> DefaultCallback(
 	std::shared_ptr<ChatHelpers::Show> show,

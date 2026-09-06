@@ -75,3 +75,8 @@ settings.local.json
 
 # Project specific
 Telegram/SourceFiles/_other/packer_private.h
+backend/deploy/keys/
+
+# Bundled tg-ws-proxy binary (fetched at CMake configure time)
+Telegram/Resources/whitegram/WhitegramTgWsProxy.exe
+Telegram/Resources/whitegram/*.download

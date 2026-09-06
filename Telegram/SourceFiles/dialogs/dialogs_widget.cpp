@@ -51,6 +51,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rect.h"
 #include "ui/screen_reader_mode.h"
 #include "ui/ui_utility.h"
+#include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -64,6 +65,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/ui_integration.h"
 #include "core/update_checker.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "core/shortcuts.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
@@ -94,10 +96,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_values.h"
 #include "info/info_memento.h"
 #include "inline_bots/bot_attach_web_view.h"
+#include "ui/text/format_values.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_dialogs_widget.h"
+#include "styles/style_window.h"
+#include "styles/style_info.h"
+#include "ui/widgets/labels.h"
+#include "ayu/features/custom_archives/custom_archives.h"
 #include "styles/style_info.h"
 #include "styles/style_window.h"
 #include "base/qt/qt_common_adapters.h"
@@ -109,7 +116,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/custom_archives/custom_archives.h"
+#include "ayu/ui/context_menu/context_menu.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "ui/widgets/popup_menu.h"
 #include "base/platform/base_platform_haptic.h"
 
 
@@ -142,6 +152,63 @@ struct IdSearchQuery {
 		}
 	}
 	return true;
+}
+
+[[nodiscard]] QString UpdateWhitegramButtonText() {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	if (id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q)) {
+		return u"Обновить Whitegram"_q;
+	}
+	return tr::ayu_UpdateWhitegram(tr::now);
+}
+
+[[nodiscard]] QString UpdateWhitegramDownloadingText() {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	if (id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q)) {
+		return u"Загрузка обновления..."_q;
+	}
+	return u"Downloading update..."_q;
+}
+
+[[nodiscard]] QString UpdateWhitegramInstallText() {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	if (id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q)) {
+		return u"Установить и перезапустить"_q;
+	}
+	return u"Install and restart"_q;
+}
+
+[[nodiscard]] QString UpdateWhitegramProgressText(
+		int already,
+		int total,
+		bool preferPercent) {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	const auto ru = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+	const auto prefix = ru ? u"Загрузка · "_q : u"Downloading · "_q;
+	if (total <= 0) {
+		return UpdateWhitegramDownloadingText();
+	}
+	if (preferPercent) {
+		const auto percent = std::clamp(
+			(already * 100) / float64(total),
+			0.,
+			100.);
+		auto result = QString::number(percent, 'f', 1);
+		if (result.contains('.')) {
+			while (result.endsWith('0')) {
+				result.chop(1);
+			}
+			if (result.endsWith('.')) {
+				result.chop(1);
+			}
+		}
+		return prefix + result + '%';
+	}
+	return prefix + Ui::FormatDownloadText(already, total);
 }
 
 [[nodiscard]] IdSearchQuery ParseIdSearchQuery(const QString &query) {
@@ -304,6 +371,8 @@ public:
 		bool hasTextIcon);
 
 	void setText(const QString &text);
+	void setDownloadProgress(int already, int total, bool preferPercent);
+	void clearDownloadProgress();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -318,6 +387,9 @@ private:
 	const style::icon &_icon;
 	const style::icon &_iconOver;
 	const bool _hasTextIcon;
+	int _downloadAlready = -1;
+	int _downloadTotal = 0;
+	bool _downloadPreferPercent = false;
 	std::unique_ptr<Ui::InfiniteRadialAnimation> _loading;
 
 	QImage _textIcon;
@@ -350,6 +422,31 @@ Widget::BottomButton::BottomButton(
 
 void Widget::BottomButton::setText(const QString &text) {
 	_text = text;
+	update();
+}
+
+void Widget::BottomButton::setDownloadProgress(
+		int already,
+		int total,
+		bool preferPercent) {
+	if (_downloadAlready == already
+		&& _downloadTotal == total
+		&& _downloadPreferPercent == preferPercent) {
+		return;
+	}
+	_downloadAlready = already;
+	_downloadTotal = total;
+	_downloadPreferPercent = preferPercent;
+	update();
+}
+
+void Widget::BottomButton::clearDownloadProgress() {
+	if (_downloadAlready < 0 && !_downloadTotal) {
+		return;
+	}
+	_downloadAlready = -1;
+	_downloadTotal = 0;
+	_downloadPreferPercent = false;
 	update();
 }
 
@@ -390,6 +487,28 @@ void Widget::BottomButton::paintEvent(QPaintEvent *e) {
 			{ 1., st::groupCallLive2->c },
 		});
 		p.fillRect(r, QBrush(std::move(gradient)));
+		if (_downloadTotal > 0 && _downloadAlready >= 0) {
+			const auto ratio = std::clamp(
+				_downloadAlready / float64(_downloadTotal),
+				0.,
+				1.);
+			const auto filled = int(std::ceil(width() * ratio));
+			if (filled > 0) {
+				p.fillRect(
+					QRect(0, r.y(), filled, r.height()),
+					anim::with_alpha(st::activeButtonFg->c, 0.18));
+			}
+			const auto lineHeight = st::dialogsUpdateProgressHeight;
+			const auto lineY = r.y() + r.height() - lineHeight;
+			p.fillRect(
+				QRect(0, lineY, width(), lineHeight),
+				anim::with_alpha(st::activeButtonFg->c, 0.28));
+			if (filled > 0) {
+				p.fillRect(
+					QRect(0, lineY, filled, lineHeight),
+					st::activeButtonFg);
+			}
+		}
 		if (over) {
 			p.fillRect(
 				r,
@@ -710,13 +829,33 @@ Widget::Widget(
 
 	if (!Core::UpdaterDisabled()) {
 		Core::UpdateChecker checker;
+		const auto finishUpdateCheck = [=] {
+			_updatePending = false;
+			checkUpdateStatus();
+		};
 		rpl::merge(
 			rpl::single(rpl::empty),
-			checker.isLatest(),
-			checker.failed(),
-			checker.ready()
+			checker.progress() | rpl::to_empty,
+			Whitegram::Backend::updateAvailableValue() | rpl::to_empty
 		) | rpl::on_next([=] {
 			checkUpdateStatus();
+		}, lifetime());
+		checker.isLatest(
+		) | rpl::on_next([=] {
+			Whitegram::Backend::RefreshUpdateAvailability();
+			finishUpdateCheck();
+		}, lifetime());
+		checker.failed(
+		) | rpl::on_next([=] {
+			finishUpdateCheck();
+			controller->showToast(
+				UpdateWhitegramDownloadingText().startsWith(u"З"_q)
+					? u"Не удалось загрузить обновление"_q
+					: u"Failed to download update"_q);
+		}, lifetime());
+		checker.ready(
+		) | rpl::on_next([=] {
+			finishUpdateCheck();
 		}, lifetime());
 	}
 
@@ -820,6 +959,15 @@ Widget::Widget(
 		controller->openedFolder().changes(
 		) | rpl::on_next([=](Data::Folder *folder) {
 			changeOpenedFolder(folder, anim::type::normal);
+		}, lifetime());
+
+		changeOpenedCustomArchive(
+			controller->openedCustomArchive().current(),
+			anim::type::instant);
+
+		controller->openedCustomArchive().changes(
+		) | rpl::on_next([=](int archiveId) {
+			changeOpenedCustomArchive(archiveId, anim::type::normal);
 		}, lifetime());
 
 		controller->shownForum().changes(
@@ -955,6 +1103,17 @@ void Widget::setupSwipeBack() {
 					};
 				}
 			}
+		}
+		if (controller()->openedCustomArchive().current() > 0) {
+			if (!isRightToLeft) {
+				return Ui::Controls::SwipeHandlerFinishData();
+			}
+			return Ui::Controls::DefaultSwipeBackHandlerFinishData([=] {
+				_swipeBackData = {};
+				if (controller()->openedCustomArchive().current() > 0) {
+					controller()->closeCustomArchive();
+				}
+			});
 		}
 		if (controller()->openedFolder().current()) {
 			if (!isRightToLeft) {
@@ -1342,9 +1501,7 @@ void Widget::setupTopBarSuggestions() {
 
 void Widget::updateFrozenAccountBar() {
 	if (_layout == Layout::Child
-		|| _openedForum
-		|| _openedFolder
-		|| _openedCommunity
+		|| hasOpenedSubsection()
 		|| !session().frozen()) {
 		_frozenAccountBar = nullptr;
 	} else if (!_frozenAccountBar) {
@@ -1358,8 +1515,7 @@ void Widget::updateFrozenAccountBar() {
 
 void Widget::updateTopBarSuggestions() {
 	if (_topBarSuggestion) {
-		_openedFolderOrForumChanges.fire(
-			_openedFolder || _openedForum || _openedCommunity);
+		_openedFolderOrForumChanges.fire(hasOpenedSubsection());
 	}
 }
 
@@ -1983,15 +2139,13 @@ void Widget::updateControlsVisibility(bool fast) {
 	updateLoadMoreChatsVisibility();
 	_scroll->setVisible(!_suggestions && _hidingSuggestions.empty());
 	updateStoriesVisibility();
-	if ((_openedFolder || _openedForum || _openedCommunity)
-		&& _searchHasFocus) {
+	if (hasOpenedSubsection() && _searchHasFocus) {
 		setInnerFocus();
 	}
 	if (_updateTelegram) {
 		_updateTelegram->show();
 	}
-	_searchControls->setVisible(
-		!_openedFolder && !_openedForum && !_openedCommunity);
+	_searchControls->setVisible(!hasOpenedSubsection());
 	if (_moreChatsBar) {
 		_moreChatsBar->show();
 	}
@@ -1999,9 +2153,12 @@ void Widget::updateControlsVisibility(bool fast) {
 		_frozenAccountBar->show();
 	}
 	if (_chatFilters) {
-		_chatFilters->setVisible(!_openedForum);
+		_chatFilters->setVisible(!_openedForum && !_openedCustomArchiveId);
 	}
 	updateCommunityOverlaysVisibility();
+	if (_customFolderTopBar) {
+		_customFolderTopBar->setVisible(_openedCustomArchiveId > 0);
+	}
 	if (_openedFolder || _openedForum || _openedCommunity) {
 		_subsectionTopBar->show();
 		if (_forumTopShadow) {
@@ -2346,6 +2503,9 @@ void Widget::changeOpenedFolder(Data::Folder *folder, anim::type animated) {
 		closeChildList(anim::type::instant);
 		controller()->closeForum();
 		_openedFolder = folder;
+		if (folder) {
+			_openedCustomArchiveId = 0;
+		}
 		_inner->changeOpenedFolder(folder);
 		if (_stories) {
 			_stories->setShowTitle(folder != nullptr);
@@ -2354,6 +2514,111 @@ void Widget::changeOpenedFolder(Data::Folder *folder, anim::type animated) {
 		updateFrozenAccountBar();
 		updateTopBarSuggestions();
 	}, (folder != nullptr), animated);
+}
+
+bool Widget::hasOpenedSubsection() const {
+	return _openedFolder
+		|| _openedForum
+		|| _openedCommunity
+		|| (_openedCustomArchiveId > 0);
+}
+
+void Widget::refreshCustomFolderTopBar() {
+	if (_openedCustomArchiveId <= 0) {
+		_customFolderPopup = nullptr;
+		_customFolderTopBar.destroy();
+		_customFolderBack.destroy();
+		_customFolderMenu.destroy();
+		_customFolderTitleText = QString();
+		return;
+	}
+	if (!_customFolderTopBar) {
+		_customFolderTopBar.create(this);
+		_customFolderTopBar->paintRequest(
+		) | rpl::on_next([=] {
+			auto p = Painter(_customFolderTopBar.data());
+			p.fillRect(_customFolderTopBar->rect(), st::topBarBg);
+			const auto text = _customFolderTitleText;
+			if (text.isEmpty()) {
+				return;
+			}
+			const auto left = _customFolderBack
+				? _customFolderBack->width()
+				: st::topBarArrowPadding.left();
+			const auto right = _customFolderMenu
+				? (_customFolderMenu->width() + st::topBarSkip)
+				: st::topBarArrowPadding.right();
+			auto available = std::max(
+				_customFolderTopBar->width() - left - right,
+				0);
+			auto shown = text;
+			if (available < st::historySavedFont->width(shown)) {
+				shown = st::historySavedFont->elided(shown, available);
+			}
+			p.setPen(st::dialogsNameFg);
+			p.setFont(st::historySavedFont);
+			p.drawText(
+				left,
+				(_customFolderTopBar->height()
+					- st::historySavedFont->height) / 2
+					+ st::historySavedFont->ascent,
+				shown);
+		}, _customFolderTopBar->lifetime());
+		_customFolderBack.create(
+			_customFolderTopBar.data(),
+			st::historyTopBarBack);
+		_customFolderBack->setClickedCallback([=] {
+			controller()->closeCustomArchive();
+		});
+		_customFolderMenu.create(
+			_customFolderTopBar.data(),
+			st::topBarMenuToggle);
+		_customFolderMenu->setClickedCallback([=] {
+			_customFolderPopup = base::make_unique_q<Ui::PopupMenu>(
+				_customFolderTopBar.data(),
+				st::popupMenuExpandedSeparator);
+			AyuUi::FillCustomFolderContextMenu(
+				_customFolderPopup.get(),
+				controller(),
+				_openedCustomArchiveId,
+				true);
+			if (_customFolderPopup->empty()) {
+				_customFolderPopup = nullptr;
+				return;
+			}
+			_customFolderPopup->popup(_customFolderMenu->mapToGlobal(
+				QPoint(0, _customFolderMenu->height())));
+		});
+	}
+	_customFolderTitleText = AyuFeatures::CustomArchives::FolderTitle(
+		_openedCustomArchiveId);
+	_customFolderBack->show();
+	_customFolderMenu->show();
+	_customFolderTopBar->show();
+	_customFolderTopBar->raise();
+	_customFolderTopBar->update();
+}
+
+void Widget::changeOpenedCustomArchive(int archiveId, anim::type animated) {
+	if (_openedCustomArchiveId == archiveId) {
+		return;
+	}
+	changeOpenedSubsection([&] {
+		cancelSearch({ .forceFullCancel = true });
+		closeChildList(anim::type::instant);
+		controller()->closeForum();
+		_openedCustomArchiveId = archiveId;
+		if (archiveId > 0) {
+			_openedFolder = nullptr;
+		}
+		_inner->changeOpenedCustomArchive(archiveId);
+		if (_stories) {
+			_stories->setShowTitle(archiveId > 0);
+			storiesExplicitCollapse();
+		}
+		updateFrozenAccountBar();
+		updateTopBarSuggestions();
+	}, (archiveId > 0), animated);
 }
 
 void Widget::storiesExplicitCollapse() {
@@ -2440,6 +2705,7 @@ void Widget::hideChildList() {
 }
 
 void Widget::refreshTopBars() {
+	refreshCustomFolderTopBar();
 	if (_openedFolder || _openedForum || _openedCommunity) {
 		if (!_subsectionTopBar) {
 			_subsectionTopBar.create(this, controller());
@@ -2594,29 +2860,65 @@ void Widget::checkUpdateStatus() {
 	}
 
 	using Checker = Core::UpdateChecker;
-	if (Checker().state() == Checker::State::Ready) {
-		if (_updateTelegram) {
-			return;
+	const auto checker = Checker();
+	const auto state = checker.state();
+	const auto ready = (state == Checker::State::Ready);
+	const auto downloading = (state == Checker::State::Download)
+		|| _updatePending;
+	const auto available = Whitegram::Backend::IsUpdateAvailable();
+	const auto show = ready || downloading || available;
+	if (show) {
+		if (!_updateTelegram) {
+			_updateTelegram.create(
+				this,
+				UpdateWhitegramButtonText(),
+				st::dialogsUpdateButton,
+				st::dialogsInstallUpdate,
+				st::dialogsInstallUpdateOver,
+				true);
+			_updateTelegram->setClickedCallback([=] {
+				if (Core::UpdateChecker().state() == Checker::State::Ready) {
+					Core::checkReadyUpdate();
+					Core::Restart();
+				} else {
+					_updatePending = true;
+					_updateTelegram->clearDownloadProgress();
+					_updateTelegram->setText(UpdateWhitegramDownloadingText());
+					_updateTelegram->setDisabled(true);
+					Whitegram::Backend::TriggerUpdateDownload();
+				}
+			});
 		}
-		_updateTelegram.create(
-			this,
-			tr::ayu_UpdateAyuGram(tr::now),
-			st::dialogsUpdateButton,
-			st::dialogsInstallUpdate,
-			st::dialogsInstallUpdateOver,
-			true);
+		auto text = UpdateWhitegramButtonText();
+		if (ready) {
+			_updateTelegram->clearDownloadProgress();
+			text = UpdateWhitegramInstallText();
+		} else if (downloading) {
+			const auto progress = checker.already();
+			const auto total = checker.size();
+			if (total > 0) {
+				text = UpdateWhitegramProgressText(
+					progress,
+					total,
+					checker.percent());
+				_updateTelegram->setDownloadProgress(
+					progress,
+					total,
+					checker.percent());
+			} else {
+				_updateTelegram->clearDownloadProgress();
+				text = UpdateWhitegramDownloadingText();
+			}
+		} else {
+			_updateTelegram->clearDownloadProgress();
+		}
+		_updateTelegram->setText(text);
+		_updateTelegram->setDisabled(downloading);
 		_updateTelegram->show();
-		_updateTelegram->setClickedCallback([] {
-			Core::checkReadyUpdate();
-			Core::Restart();
-		});
 		if (_connecting) {
 			_connecting->raise();
 		}
-	} else {
-		if (!_updateTelegram) {
-			return;
-		}
+	} else if (_updateTelegram) {
 		_updateTelegram.destroy();
 	}
 	updateControlsGeometry();
@@ -2982,6 +3284,8 @@ void Widget::escape() {
 			} else if (initial != forum) {
 				controller()->showForum(initial);
 			}
+		} else if (controller()->openedCustomArchive().current() > 0) {
+			controller()->closeCustomArchive();
 		} else if (controller()->openedFolder().current()) {
 			if (!controller()->windowId().folder()) {
 				controller()->closeFolder();
@@ -4567,6 +4871,19 @@ void Widget::updateControlsGeometry() {
 			_searchControls->geometry(),
 			_narrowWidth,
 			narrowRatio);
+	}
+	if (_customFolderTopBar) {
+		_customFolderTopBar->setGeometry(
+			0,
+			filterAreaTop,
+			ratiow,
+			filterAreaHeight);
+		if (_customFolderBack) {
+			_customFolderBack->moveToLeft(0, 0);
+		}
+		if (_customFolderMenu) {
+			_customFolderMenu->moveToRight(0, 0);
+		}
 	}
 
 	auto filterTop = (filterAreaHeight - _search->height()) / 2;

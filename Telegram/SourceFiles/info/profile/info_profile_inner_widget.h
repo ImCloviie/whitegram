@@ -11,6 +11,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_section_stack.h"
 #include "ui/rp_widget.h"
 
+#include <memory>
+#include <vector>
+
+#include <QtCore/QPointer>
+
+namespace AyuFeatures::CustomProfileBackground {
+class Renderer;
+} // namespace AyuFeatures::CustomProfileBackground
+
 namespace Data {
 class ForumTopic;
 class SavedSublist;
@@ -25,6 +34,7 @@ namespace Ui {
 class VerticalLayout;
 template <typename Widget>
 class SlideWrap;
+class ScrollArea;
 struct ScrollToRequest;
 class MultiSlideTracker;
 } // namespace Ui
@@ -76,6 +86,8 @@ public:
 		return _tabsDocked.value();
 	}
 
+	void setupScrollBackgroundPaint(not_null<Ui::ScrollArea*> scroll);
+
 protected:
 	int resizeGetHeight(int newWidth) override;
 	void visibleTopBottomUpdated(
@@ -86,6 +98,20 @@ private:
 	object_ptr<RpWidget> setupContent(
 		not_null<RpWidget*> parent,
 		Origin origin);
+	void setupDetailsBackground(not_null<Ui::RpWidget*> section);
+	void addDetailsBackgroundSection(not_null<Ui::RpWidget*> section);
+	void paintSectionBackgroundAt(
+		not_null<Ui::RpWidget*> section,
+		QPainter &p,
+		const QRect &rect);
+	void paintDetailsBackgroundsOn(
+		QPainter &p,
+		not_null<QWidget*> target);
+	void syncScrollBackgroundLayer();
+	[[nodiscard]] int detailsBackgroundSpanHeight() const;
+	[[nodiscard]] int detailsBackgroundTopBarHeight() const;
+	void updateDetailsBackgroundSections();
+	void reloadCustomBackground();
 	[[nodiscard]] Section makeMembersSection(
 		not_null<QWidget*> parent,
 		rpl::producer<bool> shown);
@@ -125,6 +151,16 @@ private:
 	TabsHost *_tabsHost = nullptr;
 	rpl::variable<bool> _tabsDocked = false;
 	bool _clampingTabsScroll = false;
+
+	// Must stay declared before _content: setupContent() registers details
+	// sections into these while _content is being initialized, so they have
+	// to be alive by then.
+	std::unique_ptr<AyuFeatures::CustomProfileBackground::Renderer> _customBackground;
+	std::vector<QPointer<Ui::RpWidget>> _detailsBackgroundSections;
+	QPointer<Ui::ScrollArea> _scrollBackgroundScroll;
+	QPointer<Ui::RpWidget> _scrollBackgroundLayer;
+	int _detailsBackgroundHeight = 0;
+
 	object_ptr<RpWidget> _content;
 
 };

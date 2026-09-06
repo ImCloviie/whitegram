@@ -82,6 +82,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/multi_select.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/unread_badge.h"
+#include "ui/unread_badge_paint.h"
 #include "boxes/filters/edit_filter_box.h"
 #include "boxes/peers/edit_forum_topic_box.h"
 #include "boxes/peer_list_box.h"
@@ -102,7 +103,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <unordered_map>
 
 // AyuGram includes
+#include "ayu/ayu_settings.h"
+#include "ayu/features/custom_archives/custom_archives.h"
 #include "ayu/ui/ayu_userpic.h"
+#include "ayu/ui/context_menu/context_menu.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "styles/style_ayu_icons.h"
 
@@ -258,8 +262,14 @@ constexpr auto kPreviewPostsLimit = 3;
 struct InnerWidget::CollapsedRow {
 	CollapsedRow(Data::Folder *folder) : folder(folder) {
 	}
+	CollapsedRow(int customFolderId, const QString &title)
+	: customFolderId(customFolderId)
+	, title(title) {
+	}
 
 	Data::Folder *folder = nullptr;
+	int customFolderId = 0;
+	QString title;
 	BasicRow row;
 };
 
@@ -352,6 +362,46 @@ InnerWidget::InnerWidget(
 		refresh();
 		refreshEmpty();
 	}, lifetime());
+
+	AyuSettings::getInstance().enableCustomArchivesChanges(
+	) | rpl::on_next([=](bool enabled) {
+		if (enabled) {
+			AyuFeatures::CustomArchives::RestorePeersFromTelegramArchive(
+				&session());
+		}
+		AyuFeatures::CustomArchives::RefreshAllFolderPeers(&session());
+		if (enabled) {
+			AyuFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
+		}
+		if (_state == WidgetState::Default
+			&& !_openedFolder
+			&& !_openedCustomArchiveId) {
+			refreshWithCollapsedRows();
+		}
+	}, lifetime());
+
+	AyuSettings::getInstance().customArchivesChanges(
+	) | rpl::on_next([=] {
+		AyuFeatures::CustomArchives::RefreshAllFolderPeers(&session());
+		AyuFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
+		if (_openedCustomArchiveId) {
+			refreshShownList();
+			refresh();
+		} else if (_state == WidgetState::Default && !_openedFolder) {
+			refreshWithCollapsedRows();
+		}
+	}, lifetime());
+
+	if (AyuSettings::getInstance().enableCustomArchives()) {
+		crl::on_main(this, [=] {
+			if (!AyuSettings::getInstance().enableCustomArchives()) {
+				return;
+			}
+			AyuFeatures::CustomArchives::RestorePeersFromTelegramArchive(
+				&session());
+			AyuFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
+		});
+	}
 
 	session().data().itemRemoved(
 	) | rpl::on_next([=](not_null<const HistoryItem*> item) {
@@ -690,6 +740,28 @@ void InnerWidget::refreshWithCollapsedRows(bool toTop) {
 		_skipTopDialog = false;
 	}
 
+	if (!_filterId && !_openedFolder && !_openedCustomArchiveId) {
+		const auto &settings = AyuSettings::getInstance();
+		if (settings.enableCustomArchives()) {
+			auto folders = settings.customArchives();
+			std::sort(folders.begin(), folders.end(), [](
+					const CustomArchive &a,
+					const CustomArchive &b) {
+				if (a.order != b.order) {
+					return a.order < b.order;
+				}
+				return a.id < b.id;
+			});
+			for (const auto &folder : folders) {
+				if (!folder.showInChatList) {
+					continue;
+				}
+				_collapsedRows.push_back(
+					std::make_unique<CollapsedRow>(folder.id, folder.name));
+			}
+		}
+	}
+
 	Assert(!needCollapsedRowsRefresh());
 	refresh(toTop);
 
@@ -711,9 +783,61 @@ int InnerWidget::collapsedRowsOffset() const {
 	return 0;
 }
 
+int InnerWidget::collapsedRowHeight(
+		not_null<const CollapsedRow*> row) const {
+	return row->customFolderId
+		? ([&] {
+			const auto archive = AyuSettings::getInstance().findCustomArchive(
+				row->customFolderId);
+			return (archive && archive->collapsed)
+				? st::dialogsImportantBarHeight
+				: st::defaultDialogRow.height;
+		}())
+		: st::dialogsImportantBarHeight;
+}
+
+int InnerWidget::collapsedRowsHeight() const {
+	auto height = 0;
+	for (const auto &row : _collapsedRows) {
+		height += collapsedRowHeight(row.get());
+	}
+	return height;
+}
+
+int InnerWidget::collapsedRowTop(int index) const {
+	Expects(index >= 0 && index <= int(_collapsedRows.size()));
+
+	auto top = 0;
+	for (auto i = 0; i != index; ++i) {
+		top += collapsedRowHeight(_collapsedRows[i].get());
+	}
+	return top;
+}
+
+int InnerWidget::collapsedRowFromY(int y) const {
+	auto top = 0;
+	for (auto i = 0, count = int(_collapsedRows.size()); i != count; ++i) {
+		const auto height = collapsedRowHeight(_collapsedRows[i].get());
+		if (y >= top && y < top + height) {
+			return i;
+		}
+		top += height;
+	}
+	return -1;
+}
+
+void InnerWidget::updateCollapsedRow(int index) {
+	if (!base::in_range(index, 0, int(_collapsedRows.size()))) {
+		return;
+	}
+	const auto top = collapsedRowTop(index);
+	const auto height = collapsedRowHeight(_collapsedRows[index].get());
+	update(0, top, width(), height);
+}
+
 int InnerWidget::dialogsOffset() const {
 	return collapsedRowsOffset()
-		+ (_collapsedRows.size() * st::dialogsImportantBarHeight)
+		+ collapsedRowsHeight()
 		- skipTopHeight()
 		+ ((communityModeShown() && !_shownList->empty())
 			? st::searchedBarHeight
@@ -860,6 +984,31 @@ void InnerWidget::changeOpenedFolder(Data::Folder *folder) {
 	stopReorderPinned();
 	clearSelection();
 	_openedFolder = folder;
+	if (folder) {
+		_openedCustomArchiveId = 0;
+	}
+	refreshShownList();
+	refreshWithCollapsedRows(true);
+	if (_loadMoreCallback) {
+		_loadMoreCallback();
+	}
+}
+
+void InnerWidget::changeOpenedCustomArchive(int archiveId) {
+	Expects(!_savedSublists);
+
+	if (_openedCustomArchiveId == archiveId) {
+		return;
+	}
+	stopReorderPinned();
+	clearSelection();
+	_openedCustomArchiveId = archiveId;
+	if (archiveId > 0) {
+		_openedFolder = nullptr;
+		AyuFeatures::CustomArchives::SyncFolderChatsList(
+			&session(),
+			archiveId);
+	}
 	refreshShownList();
 	refreshWithCollapsedRows(true);
 	if (_loadMoreCallback) {
@@ -1824,14 +1973,15 @@ Ui::VideoUserpic *InnerWidget::validateVideoUserpic(
 
 void InnerWidget::paintCollapsedRows(Painter &p, QRect clip) const {
 	auto index = 0;
-	const auto rowHeight = st::dialogsImportantBarHeight;
+	auto y = 0;
 	for (const auto &row : _collapsedRows) {
+		const auto rowHeight = collapsedRowHeight(row.get());
 		const auto increment = gsl::finally([&] {
 			p.translate(0, rowHeight);
+			y += rowHeight;
 			++index;
 		});
 
-		const auto y = index * rowHeight;
 		if (!clip.intersects(QRect(0, y, width(), rowHeight))) {
 			continue;
 		}
@@ -1845,11 +1995,98 @@ void InnerWidget::paintCollapsedRow(
 		Painter &p,
 		not_null<const CollapsedRow*> row,
 		bool selected) const {
+	const auto fullWidth = width();
+	if (row->customFolderId) {
+		const auto &st = st::defaultDialogRow;
+		const auto rowHeight = st.height;
+		const auto archive = AyuSettings::getInstance().findCustomArchive(
+			row->customFolderId);
+		const auto unread = AyuFeatures::CustomArchives::UnreadCountForFolder(
+			&session(),
+			row->customFolderId);
+		if (archive && archive->collapsed) {
+			Ui::PaintCollapsedRow(p, row->row, nullptr, row->title, unread, {
+				.st = _st,
+				.currentBg = currentBg(),
+				.width = fullWidth,
+				.selected = selected,
+				.narrow = (fullWidth < st::columnMinimalWidthLeft / 2),
+			});
+			return;
+		}
+		const auto subtitle = AyuFeatures::CustomArchives::FolderSubtitle(
+			&session(),
+			row->customFolderId);
+		const auto locked = archive
+			&& archive->isLocked()
+			&& !AyuFeatures::CustomArchives::IsArchiveUnlocked(
+				row->customFolderId);
+		const auto emoji = locked
+			? u"🔐"_q
+			: AyuFeatures::CustomArchives::FolderIconEmoji(
+				archive ? archive->icon : QString());
+
+		p.fillRect(
+			QRect{ 0, 0, fullWidth, rowHeight },
+			selected ? st::dialogsBgOver : currentBg());
+		row->row.paintRipple(p, 0, 0, fullWidth);
+
+		const auto photo = st.photoSize;
+		const auto photoLeft = st.padding.left();
+		const auto photoTop = st.padding.top();
+		{
+			PainterHighQualityEnabler hq(p);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::historyPeerArchiveUserpicBg);
+			AyuUserpic::PaintShape(p, photoLeft, photoTop, photo);
+		}
+		p.setPen(st::historyPeerUserpicFg);
+		p.setFont(st::semiboldFont);
+		p.drawText(
+			QRect(photoLeft, photoTop, photo, photo),
+			emoji,
+			QTextOption(style::al_center));
+
+		auto available = fullWidth
+			- st.nameLeft
+			- st.padding.right();
+		if (unread > 0 && fullWidth >= st::columnMinimalWidthLeft / 2) {
+			available -= st::dialogsUnreadHeight * 2;
+		}
+
+		p.setFont(st::semiboldFont);
+		p.setPen(st::dialogsNameFg);
+		p.drawText(
+			st.nameLeft,
+			st.nameTop + st::semiboldFont->ascent,
+			st::semiboldFont->elided(row->title, available));
+
+		p.setFont(st::dialogsTextFont);
+		p.setPen(selected ? st::dialogsTextFgOver : st::dialogsTextFg);
+		p.drawText(
+			st.textLeft,
+			st.textTop + st::dialogsTextFont->ascent,
+			st::dialogsTextFont->elided(subtitle, available));
+
+		if (unread > 0 && fullWidth >= st::columnMinimalWidthLeft / 2) {
+			const auto unreadTop = (rowHeight - st::dialogsUnreadHeight) / 2;
+			const auto unreadRight = fullWidth - st.padding.right();
+			auto badge = Ui::UnreadBadgeStyle();
+			badge.muted = true;
+			Ui::PaintUnreadBadge(
+				p,
+				QString::number(unread),
+				unreadRight,
+				unreadTop,
+				badge);
+		}
+		return;
+	}
+
 	Expects(row->folder != nullptr);
 
 	const auto text = row->folder->chatListName();
 	const auto unread = row->folder->chatListBadgesState().unreadCounter;
-	const auto fullWidth = width();
 	Ui::PaintCollapsedRow(p, row->row, row->folder, text, unread, {
 		.st = _st,
 		.currentBg = currentBg(),
@@ -2285,10 +2522,7 @@ void InnerWidget::selectByMouse(QPoint globalPosition) {
 	}
 	if (_state == WidgetState::Default) {
 		const auto offset = dialogsOffset();
-		const auto collapsedSelected = (mouseY >= 0
-			&& mouseY < _collapsedRows.size() * st::dialogsImportantBarHeight)
-			? (mouseY / st::dialogsImportantBarHeight)
-			: -1;
+		const auto collapsedSelected = collapsedRowFromY(mouseY);
 		const auto selected = (collapsedSelected >= 0)
 			? nullptr
 			: (mouseY >= offset)
@@ -2531,9 +2765,13 @@ void InnerWidget::mousePressEvent(QMouseEvent *e) {
 
 	if (base::in_range(_collapsedSelected, 0, _collapsedRows.size())) {
 		auto row = &_collapsedRows[_collapsedSelected]->row;
-		row->addRipple(e->pos(), QSize(width(), st::dialogsImportantBarHeight), [this, index = _collapsedSelected] {
-			update(0, (index * st::dialogsImportantBarHeight), width(), st::dialogsImportantBarHeight);
-		});
+		const auto index = _collapsedSelected;
+		const auto height = collapsedRowHeight(_collapsedRows[index].get());
+		const auto top = collapsedRowTop(index);
+		row->addRipple(
+			e->pos() - QPoint(0, top),
+			QSize(width(), height),
+			[=] { updateCollapsedRow(index); });
 	} else if (_pressed) {
 		auto row = _pressed;
 		const auto weakThis = base::make_weak(this);
@@ -2737,6 +2975,10 @@ const std::vector<Key> &InnerWidget::pinnedChatsOrder() const {
 		? owner->pinnedChatsOrder(_savedSublists)
 		: _openedForum
 		? owner->pinnedChatsOrder(_openedForum)
+		: _openedCustomArchiveId
+		? owner->pinnedChatsOrder(
+			AyuFeatures::CustomArchives::FilterIdForFolder(
+				_openedCustomArchiveId))
 		: _filterId
 		? owner->pinnedChatsOrder(_filterId)
 		: owner->pinnedChatsOrder(_openedFolder);
@@ -2781,14 +3023,18 @@ void InnerWidget::startReorderPinned(QPoint localPosition) {
 }
 
 int InnerWidget::countPinnedIndex(Row *ofRow) {
-	if (!ofRow || !ofRow->entry()->isPinnedDialog(_filterId)) {
+	const auto filterId = _openedCustomArchiveId
+		? AyuFeatures::CustomArchives::FilterIdForFolder(
+			_openedCustomArchiveId)
+		: _filterId;
+	if (!ofRow || !ofRow->entry()->isPinnedDialog(filterId)) {
 		return -1;
 	}
 	auto result = 0;
 	for (const auto &row : *_shownList) {
 		if (row->entry()->fixedOnTopIndex()) {
 			continue;
-		} else if (!row->entry()->isPinnedDialog(_filterId)) {
+		} else if (!row->entry()->isPinnedDialog(filterId)) {
 			break;
 		} else if (row == ofRow) {
 			return result;
@@ -2815,6 +3061,23 @@ void InnerWidget::savePinnedOrder() {
 		session().api().savePinnedOrder(&session().data().savedMessages());
 	} else if (_openedForum) {
 		session().api().savePinnedOrder(_openedForum);
+	} else if (_openedCustomArchiveId) {
+		auto pinned = std::vector<uint64>();
+		for (const auto &key : newOrder) {
+			if (const auto history = key.history()) {
+				pinned.push_back(history->peer->id.value);
+			}
+		}
+		auto &settings = AyuSettings::getInstance();
+		if (const auto current = settings.findCustomArchive(
+				_openedCustomArchiveId)) {
+			auto updated = *current;
+			updated.pinnedPeerIds = std::move(pinned);
+			settings.updateCustomArchive(updated);
+			AyuFeatures::CustomArchives::SyncFolderChatsList(
+				&session(),
+				_openedCustomArchiveId);
+		}
 	} else if (_filterId) {
 		Api::SaveNewFilterPinned(&session(), _filterId);
 	} else {
@@ -3466,7 +3729,7 @@ void InnerWidget::handleChatListEntryRefreshes() {
 void InnerWidget::repaintCollapsedFolderRow(not_null<Data::Folder*> folder) {
 	for (auto i = 0, l = int(_collapsedRows.size()); i != l; ++i) {
 		if (_collapsedRows[i]->folder == folder) {
-			update(0, i * st::dialogsImportantBarHeight, width(), st::dialogsImportantBarHeight);
+			updateCollapsedRow(i);
 			return;
 		}
 	}
@@ -3656,6 +3919,15 @@ Row *InnerWidget::shownRowByKey(Key key) {
 		if (!history || history->communityListInfo() != _openedCommunity) {
 			return nullptr;
 		}
+	} else if (_openedCustomArchiveId) {
+		const auto history = entry->asHistory();
+		const auto filterId = AyuFeatures::CustomArchives::FilterIdForFolder(
+			_openedCustomArchiveId);
+		if (!history || !history->inChatList(filterId)) {
+			return nullptr;
+		}
+		const auto links = entry->chatListLinks(filterId);
+		return links ? links->main.get() : nullptr;
 	} else if (_openedFolder) {
 		const auto history = entry->asHistory();
 		if (!history || history->folder() != _openedFolder) {
@@ -3825,7 +4097,7 @@ void InnerWidget::updateSelectedRow(Key key) {
 		} else if (_selected) {
 			update(0, dialogsOffset() + _selected->top(), width(), _selected->height());
 		} else if (_collapsedSelected >= 0) {
-			update(0, _collapsedSelected * st::dialogsImportantBarHeight, width(), st::dialogsImportantBarHeight);
+			updateCollapsedRow(_collapsedSelected);
 		} else if (_communitySelected >= 0) {
 			if (const auto row = communityRowAt(_communitySelected)) {
 				update(
@@ -3870,6 +4142,10 @@ void InnerWidget::refreshShownList() {
 		? _openedForum->topicsList()->indexed()
 		: _openedCommunity
 		? _openedCommunity->chatsList()->indexed()
+		: _openedCustomArchiveId
+		? AyuFeatures::CustomArchives::FolderChatsList(
+			&session(),
+			_openedCustomArchiveId)->indexed()
 		: _filterId
 		? session().data().chatsFilters().chatsList(_filterId)->indexed()
 		: session().data().chatsList(_openedFolder)->indexed();
@@ -3994,6 +4270,37 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 
 	if (fromMouse) {
 		selectByMouse(e->globalPos());
+	}
+
+	if (_state == WidgetState::Default
+		&& base::in_range(_collapsedSelected, 0, _collapsedRows.size())) {
+		const auto customId = _collapsedRows[_collapsedSelected]->customFolderId;
+		if (customId) {
+			_menu = base::make_unique_q<Ui::PopupMenu>(
+				this,
+				st::popupMenuExpandedSeparator);
+			AyuUi::FillCustomFolderContextMenu(
+				_menu.get(),
+				_controller,
+				customId);
+			QObject::connect(_menu.get(), &QObject::destroyed, [=] {
+				if (!fromMouse) {
+					return;
+				}
+				const auto globalPosition = QCursor::pos();
+				if (rect().contains(mapFromGlobal(globalPosition))) {
+					setMouseTracking(true);
+					selectByMouse(globalPosition);
+				}
+			});
+			if (_menu->empty()) {
+				_menu = nullptr;
+			} else {
+				_menu->popup(e->globalPos());
+				e->accept();
+			}
+			return;
+		}
 	}
 
 	const auto row = [&]() -> RowDescriptor {
@@ -4888,8 +5195,9 @@ bool InnerWidget::needCollapsedRowsRefresh() const {
 	const auto archive = !_shownList->empty()
 		? _shownList->begin()->get()->folder()
 		: nullptr;
-	const auto collapsedHasArchive = !_collapsedRows.empty()
-		&& (_collapsedRows.back()->folder != nullptr);
+	const auto collapsedHasArchive = ranges::any_of(
+		_collapsedRows,
+		[](const auto &row) { return row->folder != nullptr; });
 	const auto archiveIsCollapsed = (archive != nullptr)
 		&& session().settings().archiveCollapsed();
 	const auto archiveIsInMainMenu = (archive != nullptr)
@@ -5015,6 +5323,8 @@ void InnerWidget::refreshEmpty() {
 		? ((_communityViewable.empty() && !_communityRequestableCount)
 			? EmptyState::Loading
 			: EmptyState::None)
+		: _openedCustomArchiveId
+		? EmptyState::EmptyFolder
 		: (!_filterId && data->contactsLoaded().current())
 		? EmptyState::NoContacts
 		: (_filterId > 0) && data->chatsList()->loaded()
@@ -5051,7 +5361,7 @@ void InnerWidget::refreshEmpty() {
 		: tr::lng_contacts_loading();
 	auto link = (state == EmptyState::NoContacts)
 		? tr::lng_add_contact_button()
-		: (state == EmptyState::EmptyFolder)
+		: (state == EmptyState::EmptyFolder && !_openedCustomArchiveId)
 		? tr::lng_filters_context_edit()
 		: (state == EmptyState::EmptyForum)
 		? tr::lng_forum_create_topic()
@@ -5071,7 +5381,9 @@ void InnerWidget::refreshEmpty() {
 		if (_emptyState == EmptyState::NoContacts) {
 			_controller->showAddContact();
 		} else if (_emptyState == EmptyState::EmptyFolder) {
-			editOpenedFilter();
+			if (!_openedCustomArchiveId) {
+				editOpenedFilter();
+			}
 		} else if (_emptyState == EmptyState::EmptyForum) {
 			_controller->show(
 				Box(NewForumTopicBox, _controller, _openedForum->history()));
@@ -5599,8 +5911,10 @@ void InnerWidget::scrollToDefaultSelected() {
 	Expects(_state == WidgetState::Default);
 
 	if (_collapsedSelected >= 0) {
-		const auto from = _collapsedSelected * st::dialogsImportantBarHeight;
-		scrollToItem(from, st::dialogsImportantBarHeight);
+		const auto from = collapsedRowTop(_collapsedSelected);
+		scrollToItem(
+			from,
+			collapsedRowHeight(_collapsedRows[_collapsedSelected].get()));
 	} else if (_selected) {
 		const auto from = dialogsOffset() + _selected->top();
 		scrollToItem(from, _selected->height());
@@ -5685,6 +5999,18 @@ bool InnerWidget::chooseCollapsedRow(Qt::KeyboardModifiers modifiers) {
 		return false;
 	}
 	const auto &row = _collapsedRows[_collapsedSelected];
+	if (row->customFolderId) {
+		if (modifiers & Qt::ControlModifier) {
+			AyuFeatures::CustomArchives::OpenCustomFolderInNewWindow(
+				_controller,
+				row->customFolderId);
+		} else {
+			AyuFeatures::CustomArchives::OpenArchive(
+				_controller,
+				row->customFolderId);
+		}
+		return true;
+	}
 	Assert(row->folder != nullptr);
 	_controller->openFolder(row->folder);
 	return true;
@@ -5818,11 +6144,13 @@ ChosenRow InnerWidget::computeChosenRow() const {
 		if ((_collapsedSelected >= 0)
 			&& (_collapsedSelected < _collapsedRows.size())) {
 			const auto &row = _collapsedRows[_collapsedSelected];
-			Assert(row->folder != nullptr);
-			return {
-				.key = row->folder,
-				.message = Data::UnreadMessagePosition,
-			};
+			if (row->folder) {
+				return {
+					.key = row->folder,
+					.message = Data::UnreadMessagePosition,
+				};
+			}
+			return ChosenRow();
 		} else if (_selected) {
 			return {
 				.key = _selected->key(),
@@ -5895,6 +6223,8 @@ bool InnerWidget::chooseRow(
 		MsgId pressedTopicRootId,
 		PeerId pressedSublistPeerId) {
 	if (chooseHashtag()) {
+		return true;
+	} else if (chooseCollapsedRow(modifiers)) {
 		return true;
 	} else if (_selectedMorePosts) {
 		if (_searchHashOrCashtag != HashOrCashtag::None) {
@@ -6921,8 +7251,11 @@ QString InnerWidget::accessibilityChildName(int index) const {
 		if (!ref) {
 			return {};
 		} else if (ref->collapsed >= 0) {
-			const auto folder = _collapsedRows[ref->collapsed]->folder;
-			return folder ? CollapsedRowAccessibilityName(folder) : QString();
+			const auto &row = _collapsedRows[ref->collapsed];
+			if (row->folder) {
+				return CollapsedRowAccessibilityName(row->folder);
+			}
+			return row->title;
 		}
 		return RowAccessibilityName(ref->row, _filterId);
 	} else if (_state == WidgetState::Filtered) {
@@ -7021,10 +7354,9 @@ QRect InnerWidget::accessibilityChildRect(int index) const {
 		} else if (ref->collapsed >= 0) {
 			return QRect(
 				0,
-				collapsedRowsOffset()
-					+ ref->collapsed * st::dialogsImportantBarHeight,
+				collapsedRowsOffset() + collapsedRowTop(ref->collapsed),
 				width(),
-				st::dialogsImportantBarHeight);
+				collapsedRowHeight(_collapsedRows[ref->collapsed].get()));
 		}
 		// row->top() is measured from the raw shown list (which includes the
 		// skipped top dialog); dialogsOffset() shifts it to the painted
@@ -7203,9 +7535,11 @@ quintptr InnerWidget::accessibilityChildIdentity(int index) const {
 		if (!ref) {
 			return 0;
 		} else if (ref->collapsed >= 0) {
-			return fromPointer(
-				Kind::Chat,
-				_collapsedRows[ref->collapsed]->folder);
+			const auto &row = _collapsedRows[ref->collapsed];
+			if (row->folder) {
+				return fromPointer(Kind::Chat, row->folder);
+			}
+			return (quintptr(row->customFolderId) << 4) | quintptr(Kind::Chat);
 		}
 		return fromPointer(Kind::Chat, ref->row->entry().get());
 	} else if (_state == WidgetState::Filtered) {

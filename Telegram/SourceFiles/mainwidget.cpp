@@ -74,6 +74,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/options.h"
 #include "mtproto/mtproto_dc_options.h"
 #include "core/update_checker.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "settings.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
@@ -102,6 +105,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/features/forward/ayu_forward.h"
+#include "ayu/ui/components/music_island.h"
 
 
 namespace {
@@ -328,6 +332,30 @@ MainWidget::MainWidget(
 		_player->finishAnimating();
 	}
 
+	_musicIsland = Ui::CreateChild<AyuUi::MusicIsland>(this, _controller);
+
+	const auto refreshTopBarPlayer = [=] {
+		const auto player = Media::Player::instance();
+		const auto type = player->getActiveType();
+		if (_musicIsland->replacesTopBar(type)) {
+			closeBothPlayers();
+		} else {
+			const auto state = player->getState(type);
+			if (state.id && !Media::Player::IsStoppedOrStopping(state.state)) {
+				createPlayer();
+			}
+		}
+	};
+
+	const auto islandSettings = &AyuSettings::getInstance();
+	rpl::merge(
+		islandSettings->musicIslandEnabledChanges() | rpl::to_empty,
+		islandSettings->musicIslandHideTopBarChanges() | rpl::to_empty,
+		_musicIsland->shownChanges() | rpl::to_empty
+	) | rpl::on_next(refreshTopBarPlayer, lifetime());
+
+	refreshTopBarPlayer();
+
 	_controller->chatsForceDisplayWideChanges(
 	) | rpl::on_next([=] {
 		crl::on_main(this, [=] {
@@ -435,8 +463,11 @@ MainWidget::MainWidget(
 	orderWidgets();
 
 	if (!Core::UpdaterDisabled()) {
-		Core::UpdateChecker checker;
-		checker.start();
+		Whitegram::Backend::CheckUpdateAvailability();
+		if (AyuSettings::getInstance().whitegramAutoUpdate()) {
+			cSetLastUpdateCheck(0);
+			Core::UpdateChecker().startForced();
+		}
 	}
 
 	cSetOtherOnline(0);
@@ -872,7 +903,9 @@ void MainWidget::handleAudioUpdate(const Media::Player::TrackState &state) {
 		const auto ttlSeconds = item
 			&& item->media()
 			&& item->media()->ttlSeconds();
-		if (!ttlSeconds) {
+		const auto replaced = _musicIsland
+			&& _musicIsland->replacesTopBar(state.id.type());
+		if (!ttlSeconds && !replaced) {
 			createPlayer();
 		}
 	} else if (state.state == State::StoppedAtStart) {
@@ -1798,6 +1831,11 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 	if (hiderVisible) {
 		_hider->hide();
 	}
+	const auto musicIslandVisible = (_musicIsland
+		&& !_musicIsland->isHidden());
+	if (musicIslandVisible) {
+		_musicIsland->hide();
+	}
 
 	auto sectionTop = getMainSectionTop();
 	if (_mainSection) {
@@ -1814,6 +1852,9 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 
 	if (_hider && hiderVisible) {
 		_hider->show();
+	}
+	if (musicIslandVisible) {
+		_musicIsland->show();
 	}
 	if (playerPlaylistVisible) {
 		_playerPlaylist->show();
@@ -2193,6 +2234,10 @@ void MainWidget::orderWidgets() {
 	if (_player) {
 		_player->entity()->raiseDropdowns();
 	}
+	if (_musicIsland) {
+		_musicIsland->raise();
+		_musicIsland->refresh();
+	}
 	if (_hider) _hider->raise();
 }
 
@@ -2209,6 +2254,11 @@ QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &param
 	const auto hiderVisible = (_hider && !_hider->isHidden());
 	if (hiderVisible) {
 		_hider->hide();
+	}
+	const auto musicIslandVisible = (_musicIsland
+		&& !_musicIsland->isHidden());
+	if (musicIslandVisible) {
+		_musicIsland->hide();
 	}
 
 	auto sectionTop = getMainSectionTop();
@@ -2239,6 +2289,9 @@ QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &param
 	}
 	if (_hider && hiderVisible) {
 		_hider->show();
+	}
+	if (musicIslandVisible) {
+		_musicIsland->show();
 	}
 	if (playerPlaylistVisible) {
 		_playerPlaylist->show();
@@ -2887,6 +2940,7 @@ void MainWidget::handleHistoryBack() {
 	}
 	const auto openedFolder = _controller->openedFolder().current();
 	const auto openedForum = _controller->shownForum().current();
+	const auto openedCustom = _controller->openedCustomArchive().current();
 	const auto rootPeer = !_stack.empty()
 		? _stack.front()->peer()
 		: _history->peer()
@@ -2902,6 +2956,15 @@ void MainWidget::handleHistoryBack() {
 		&& _stack.empty()
 		&& (!rootPeer || rootPeer->forum() != openedForum)) {
 		_controller->closeForum();
+	} else if (openedCustom > 0) {
+		if (!_dialogs || _dialogs->isHidden()) {
+			_controller->showBackFromStack();
+			if (_dialogs) {
+				_dialogs->setInnerFocus();
+			}
+		} else {
+			_controller->closeCustomArchive();
+		}
 	} else if (!openedFolder
 		|| (rootFolder == openedFolder)
 		|| (!_dialogs || _dialogs->isHidden())) {

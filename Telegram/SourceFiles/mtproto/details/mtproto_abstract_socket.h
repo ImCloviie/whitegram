@@ -12,13 +12,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace MTP::details {
 
+void SetPreferWebSocket(bool value);
+[[nodiscard]] bool PreferWebSocket();
+
 class AbstractSocket : protected QObject {
 public:
 	static std::unique_ptr<AbstractSocket> Create(
 		not_null<QThread*> thread,
 		const bytes::vector &secret,
 		const QNetworkProxy &proxy,
-		bool protocolForFiles);
+		bool protocolForFiles,
+		int16 protocolDcId = 0);
 
 	void setDebugId(const QString &id) {
 		_debugId = id;
@@ -43,6 +47,10 @@ public:
 	}
 	[[nodiscard]] rpl::producer<> syncTimeRequests() const {
 		return _syncTimeRequests.events();
+	}
+
+	[[nodiscard]] virtual crl::time connectBudget() const {
+		return 0;
 	}
 
 	virtual void connectToHost(const QString &address, int port) = 0;

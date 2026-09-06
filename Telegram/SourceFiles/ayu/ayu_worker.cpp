@@ -16,6 +16,7 @@
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
+#include "ayu/features/whitegram_e2ee/whitegram_key_manager.h"
 
 namespace AyuWorker {
 
@@ -34,6 +35,7 @@ void markAsOnline(not_null<Main::Session*> session) {
 	state[session->userId().bare] = true;
 	workerTimer().cancel();
 	workerTimer().callEach(3000);
+	Whitegram::E2EE::KeyManager::Instance().init(session);
 }
 
 void lateInit() {

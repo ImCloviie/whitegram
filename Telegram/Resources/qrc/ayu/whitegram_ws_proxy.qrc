@@ -1,0 +1,5 @@
+<RCC>
+	<qresource prefix="/whitegram">
+		<file alias="WhitegramTgWsProxy.exe">../../whitegram/WhitegramTgWsProxy.exe</file>
+	</qresource>
+</RCC>

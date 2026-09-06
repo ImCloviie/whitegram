@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
 
+#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "api/api_premium.h"
 #include "api/api_sensitive_content.h"
 #include "api/api_transcribes.h"
@@ -3826,6 +3827,9 @@ TextWithEntities HistoryItem::translatedTextWithLocalEntities() const {
 	if (hideLinks()) {
 		const auto isUrl = [](const EntityInText &entity) {
 			const auto type = entity.type();
+			if (type == EntityType::CustomUrl && entity.data().startsWith(u"tg://whitegram_view_once"_q)) {
+				return false;
+			}
 			return (type == EntityType::Mention)
 				|| (type == EntityType::Hashtag)
 				|| (type == EntityType::Cashtag)
@@ -4426,9 +4430,27 @@ void HistoryItem::detectTextLinks(
 
 void HistoryItem::setText(TextWithEntities textWithEntities) {
 	auto text = textWithEntities;
-	const auto &settings = AyuSettings::getInstance();
-	if (settings.filterZalgo()) {
-		text.text = filterZalgo(text.text);
+	if (Whitegram::E2EE::IsEncryptedMessage(text.text)) {
+		Whitegram::E2EE::SaveEncryptedPayload(this, text.text);
+
+		const auto peerId = history()->peer->id.value;
+		const auto msgId = id.bare;
+		const auto viewOnceUrl = QString(u"tg://whitegram_view_once?peer=%1&id=%2"_q)
+			.arg(peerId)
+			.arg(msgId);
+
+		text.text = u"🔒 Одноразовое сообщение\n👁️ Нажмите, чтобы просмотреть"_q;
+		text.entities.clear();
+		text.entities.push_back(EntityInText(
+			EntityType::CustomUrl,
+			0,
+			text.text.size(),
+			viewOnceUrl));
+	} else {
+		const auto &settings = AyuSettings::getInstance();
+		if (settings.filterZalgo()) {
+			text.text = filterZalgo(text.text);
+		}
 	}
 
 	applyLocalPremiumEmoji(text);

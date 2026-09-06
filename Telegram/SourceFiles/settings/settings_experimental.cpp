@@ -67,6 +67,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 
 // AyuGram includes
+#include "ayu/ui/settings/experimental_settings_i18n.h"
 #include "ayu/ui/settings/settings_main.h"
 #include "settings/settings_builder.h"
 
@@ -181,10 +182,16 @@ void SetupCopyDeepLink(
 		*menu = base::make_unique_q<Ui::PopupMenu>(
 			button,
 			st::popupMenuWithIcons);
-		(*menu)->addAction(u"Copy deep link"_q, [=] {
+		(*menu)->addAction(
+			IsWhitegramRussian()
+				? u"Копировать deep link"_q
+				: u"Copy deep link"_q,
+			[=] {
 			TextUtilities::SetClipboardText({ link });
 			window->showToast({
-				.text = { u"Deep link copied to clipboard."_q },
+				.text = { IsWhitegramRussian()
+					? u"Deep link скопирован в буфер обмена."_q
+					: u"Deep link copied to clipboard."_q },
 				.iconLottie = u"toast/voip_invite"_q,
 				.iconLottieSize = st::toastLottieIconSize,
 			});
@@ -254,8 +261,12 @@ QString AddOption(
 		rpl::producer<> reloadOptionsRequests,
 		rpl::producer<QString> query,
 		Fn<void(const QString&, not_null<QWidget*>)> registerHighlight) {
-	const auto name = option.name().isEmpty() ? option.id() : option.name();
-	const auto &description = option.description();
+	const auto name = ExperimentalOptionName(
+		option.id(),
+		option.name().isEmpty() ? option.id() : option.name());
+	const auto description = ExperimentalOptionDescription(
+		option.id(),
+		option.description());
 
 	const auto wrap = container->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -354,10 +365,12 @@ QString AddFavoriteLinkButton(
 		Fn<void(const QString&, not_null<QWidget*>)> registerHighlight) {
 	const auto option = &base::options::lookup<QString>(
 		Window::kOptionFolderFavoriteLink);
-	const auto name = option->name().isEmpty()
-		? option->id()
-		: option->name();
-	const auto &description = option->description();
+	const auto name = ExperimentalOptionName(
+		option->id(),
+		option->name().isEmpty() ? option->id() : option->name());
+	const auto description = ExperimentalOptionDescription(
+		option->id(),
+		option->description());
 
 	const auto wrap = container->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -580,7 +593,7 @@ void SetupExperimental(
 	};
 
 	for (const auto &category : categories) {
-		addCategory(category.title, [&](
+		addCategory(ExperimentalCategoryTitle(category.title), [&](
 				not_null<Ui::VerticalLayout*> inner,
 				std::vector<QString> &searchable) {
 			for (const auto name : category.options) {
@@ -589,7 +602,7 @@ void SetupExperimental(
 		});
 	}
 
-	addCategory(u"Other"_q, [&](
+	addCategory(ExperimentalCategoryTitle(u"Other"_q), [&](
 			not_null<Ui::VerticalLayout*> inner,
 			std::vector<QString> &searchable) {
 		if (base::options::lookup<bool>(kOptionFastButtonsMode).value()) {
@@ -621,12 +634,15 @@ rpl::producer<QString> Experimental::title() {
 void Experimental::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 	const auto window = &controller()->window();
 	addAction(
-		u"Export"_q,
+		IsWhitegramRussian() ? u"Экспорт"_q : u"Export"_q,
 		[=] {
 			TextUtilities::SetClipboardText(
 				{ EncodeOptionsToText(base::options::serialize()) });
 			window->showToast({
-				.text = { u"Experimental settings code copied to clipboard."_q },
+				.text = { IsWhitegramRussian()
+					? u"Код экспериментальных настроек скопирован "
+						"в буфер обмена."_q
+					: u"Experimental settings code copied to clipboard."_q },
 				.iconLottie = u"toast/copy"_q,
 				.iconLottieSize = st::toastLottieIconSize,
 			});
@@ -636,23 +652,32 @@ void Experimental::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 		return;
 	}
 	addAction(
-		u"Import"_q,
+		IsWhitegramRussian() ? u"Импорт"_q : u"Import"_q,
 		[=] {
 			const auto decoded = DecodeOptionsFromText(
 				QGuiApplication::clipboard()->text());
 			if (!decoded.ok) {
-				window->showToast(u"Clipboard does not contain "
-					"a valid experimental settings code."_q);
+				window->showToast(IsWhitegramRussian()
+					? u"В буфере обмена нет корректного кода "
+						"экспериментальных настроек."_q
+					: u"Clipboard does not contain "
+						"a valid experimental settings code."_q);
 				return;
 			}
 			if (!base::options::deserialize(decoded.json)) {
-				window->showToast(u"Experimental settings code is valid"
-					", but data format is not supported."_q);
+				window->showToast(IsWhitegramRussian()
+					? u"Код экспериментальных настроек корректен, "
+						"но формат данных не поддерживается."_q
+					: u"Experimental settings code is valid"
+						", but data format is not supported."_q);
 				return;
 			}
 			_reloadOptionsRequests.fire({});
-			window->showToast(u"Experimental settings imported "
-				"from code in clipboard."_q);
+			window->showToast(IsWhitegramRussian()
+				? u"Экспериментальные настройки импортированы "
+					"из кода в буфере обмена."_q
+				: u"Experimental settings imported "
+					"from code in clipboard."_q);
 		},
 		&st::menuIconImportTheme);
 }

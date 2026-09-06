@@ -97,6 +97,10 @@ namespace Core {
 class Changelogs;
 } // namespace Core
 
+namespace AyuUi {
+class MusicIsland;
+} // namespace AyuUi
+
 extern const char kForceComposeSearchOneColumn[];
 
 class MainWidget final
@@ -369,6 +373,7 @@ private:
 	object_ptr<Window::TopBarWrapWidget<Media::Player::Widget>> _player
 		= { nullptr };
 	object_ptr<Media::Player::Panel> _playerPlaylist;
+	AyuUi::MusicIsland *_musicIsland = nullptr;
 
 	base::unique_qptr<Window::HistoryHider> _hider;
 	std::vector<std::unique_ptr<StackItem>> _stack;

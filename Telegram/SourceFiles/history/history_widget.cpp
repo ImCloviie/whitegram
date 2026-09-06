@@ -17,6 +17,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_send_progress.h"
 #include "api/api_unread_things.h"
 #include "base/random.h"
+#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "ayu/features/whitegram_e2ee/whitegram_key_manager.h"
+#include "ayu/features/whitegram_e2ee/whitegram_view_once_box.h"
 #include "boxes/compose_ai_box.h"
 #include "ui/boxes/confirm_box.h"
 #include "boxes/delete_messages_box.h"
@@ -454,6 +457,46 @@ HistoryWidget::HistoryWidget(
 	setupSendMenu(_send.get(), [=](SendMenu::Action action, SendMenu::Details) {
 		if (action.type == SendMenu::ActionType::Send) {
 			send(action.options);
+		} else if (action.type == SendMenu::ActionType::OneTimeMessage) {
+			const auto ttl = action.whitegramTtl;
+			const auto performSend = [=](int effectiveTtl) {
+				const auto textWithTags = _field->getTextWithTags();
+				if (textWithTags.text.trimmed().isEmpty()) {
+					return;
+				}
+				const auto myUserId = session().userId().bare;
+				const auto recipientId = peerToUser(_peer->id).bare;
+
+				const auto cachedKey = Whitegram::E2EE::KeyManager::Instance().cachedPeerPublicKey(recipientId);
+				if (!cachedKey.has_value() && recipientId != myUserId) {
+					Whitegram::E2EE::KeyManager::Instance().fetchPeerPublicKey(recipientId, nullptr);
+				}
+				const auto pubKey = (recipientId == myUserId)
+					? Whitegram::E2EE::GetMyPublicKey()
+					: cachedKey.value_or(QByteArray());
+
+				const auto encryptedText = Whitegram::E2EE::Encrypt(
+					textWithTags.text,
+					effectiveTtl,
+					myUserId,
+					recipientId,
+					pubKey);
+
+				if (!encryptedText.isEmpty()) {
+					_field->setTextWithTags(TextWithTags{ encryptedText }, Ui::InputField::HistoryAction::NewEntry);
+					auto options = action.options;
+					options.scheduled = 0;
+					send(options);
+				}
+			};
+
+			if (ttl == -999) {
+				Whitegram::E2EE::ShowCustomTtlBox(controller->uiShow(), [=](int customSeconds) {
+					performSend(customSeconds);
+				});
+			} else {
+				performSend(ttl);
+			}
 		} else {
 			sendScheduled(action.options);
 		}
@@ -1235,8 +1278,7 @@ HistoryWidget::HistoryWidget(
 		if (action.replaceMediaOf) {
 		} else if (action.options.scheduled) {
 			cancelReplyOrSuggest(lastKeyboardUsed);
-			const auto &ghost = AyuSettings::ghost(&controller->session());
-			if (!ghost.isUseScheduledMessages()) {
+			if (!AyuSettings::ghost(&controller->session()).isUseScheduledMessages()) {
 				crl::on_main(this, [=, history = action.history]
 				{
 					controller->showSection(

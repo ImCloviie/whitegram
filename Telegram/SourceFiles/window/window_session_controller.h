@@ -460,6 +460,10 @@ public:
 	void closeFolder();
 	const rpl::variable<Data::Folder*> &openedFolder() const;
 
+	void openCustomArchive(int archiveId);
+	void closeCustomArchive();
+	[[nodiscard]] const rpl::variable<int> &openedCustomArchive() const;
+
 	void showForum(
 		not_null<Data::Forum*> forum,
 		const SectionShow &params = SectionShow::Way::ClearStack,
@@ -870,6 +874,7 @@ private:
 
 	PeerData *_showEditPeer = nullptr;
 	rpl::variable<Data::Folder*> _openedFolder;
+	rpl::variable<int> _openedCustomArchive = 0;
 	rpl::variable<Data::Forum*> _shownForum;
 	rpl::lifetime _shownForumLifetime;
 	rpl::variable<Data::CommunityInfo*> _openedCommunity;

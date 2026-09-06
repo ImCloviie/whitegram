@@ -51,18 +51,41 @@ if not qt_version.resolve(arch):
 if 'qt6' in arguments:
     arguments.remove('qt6')
 
+has_api_credentials = any(
+    arg.startswith('-DTDESKTOP_API_ID=') or arg.startswith('-DTDESKTOP_API_HASH=')
+    for arg in arguments
+)
+
 if officialTarget != '':
-    officialApiIdFile = scriptPath + '/../../DesktopPrivate/custom_api_id.h'
-    if not os.path.isfile(officialApiIdFile):
-        error('DesktopPrivate/custom_api_id.h not found.')
-    with open(officialApiIdFile, 'r') as f:
-        for line in f:
-            apiIdMatch = re.search(r'ApiId\s+=\s+(\d+)', line)
-            apiHashMatch = re.search(r'ApiHash\s+=\s+"([a-fA-F\d]+)"', line)
-            if apiIdMatch:
-                arguments.append('-DTDESKTOP_API_ID=' + apiIdMatch.group(1))
-            elif apiHashMatch:
-                arguments.append('-DTDESKTOP_API_HASH=' + apiHashMatch.group(1))
+    if not has_api_credentials:
+        cacheFile = scriptPath + '/../out/CMakeCache.txt'
+        if os.path.isfile(cacheFile):
+            with open(cacheFile, 'r') as f:
+                for line in f:
+                    if line.startswith('TDESKTOP_API_ID:') and '=' in line:
+                        apiId = line.split('=', 1)[1].strip()
+                        if apiId and apiId != '0':
+                            arguments.append('-DTDESKTOP_API_ID=' + apiId)
+                    elif line.startswith('TDESKTOP_API_HASH:') and '=' in line:
+                        apiHash = line.split('=', 1)[1].strip()
+                        if apiHash:
+                            arguments.append('-DTDESKTOP_API_HASH=' + apiHash)
+            has_api_credentials = any(
+                arg.startswith('-DTDESKTOP_API_ID=') or arg.startswith('-DTDESKTOP_API_HASH=')
+                for arg in arguments
+            )
+        if not has_api_credentials:
+            officialApiIdFile = scriptPath + '/../../DesktopPrivate/custom_api_id.h'
+            if not os.path.isfile(officialApiIdFile):
+                error('DesktopPrivate/custom_api_id.h not found.')
+            with open(officialApiIdFile, 'r') as f:
+                for line in f:
+                    apiIdMatch = re.search(r'ApiId\s+=\s+(\d+)', line)
+                    apiHashMatch = re.search(r'ApiHash\s+=\s+"([a-fA-F\d]+)"', line)
+                    if apiIdMatch:
+                        arguments.append('-DTDESKTOP_API_ID=' + apiIdMatch.group(1))
+                    elif apiHashMatch:
+                        arguments.append('-DTDESKTOP_API_HASH=' + apiHashMatch.group(1))
     if arch != '':
         arguments.append(arch)
 

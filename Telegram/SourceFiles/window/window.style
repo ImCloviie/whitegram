@@ -116,6 +116,10 @@ mainMenuTelegramLabel: FlatLabel(defaultFlatLabel) {
 mainMenuVersionLabel: FlatLabel(mainMenuTelegramLabel) {
 	style: defaultTextStyle;
 }
+mainMenuBetaSkip: 8px;
+mainMenuBetaLabel: FlatLabel(mainMenuVersionLabel) {
+	textFg: windowActiveTextFg;
+}
 
 mainMenuToggleFourStrokes: 3px;
 

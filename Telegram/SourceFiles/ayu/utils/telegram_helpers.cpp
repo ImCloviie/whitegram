@@ -15,6 +15,7 @@
 #include "ayu/data/entities.h"
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
+#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "ayu/ui/boxes/donate_info_box.h"
 #include "ayu/ui/toasts.h"
 #include "ayu/utils/rc_manager.h"
@@ -104,7 +105,8 @@ BadgeToastIcon::BadgeToastIcon(
 	0,
 	Info::Profile::BadgeType::Extera
 		| Info::Profile::BadgeType::ExteraSupporter
-		| Info::Profile::BadgeType::ExteraCustom) {
+		| Info::Profile::BadgeType::ExteraCustom
+		| Info::Profile::BadgeType::WhitegramSponsor) {
 	setAttribute(Qt::WA_TransparentForMouseEvents);
 	_badge.setOverrideStyle(&st::exteraBadgeToastBadge);
 	_badge.updated() | rpl::on_next([=] {
@@ -200,21 +202,37 @@ CustomBadge getCustomBadge(ID peerId) {
 	return {};
 }
 
-QImage MakeWhitegramSponsorBadgeImage() {
-	auto path = QString(":/gui/icons/ayu/sponsor_icon.png");
-	if (style::DevicePixelRatio() > 2.0) {
-		path = ":/gui/icons/ayu/sponsor_icon@3x.png";
-	} else if (style::DevicePixelRatio() > 1.0) {
-		path = ":/gui/icons/ayu/sponsor_icon@2x.png";
+[[nodiscard]] QImage LoadScaledGuiImage(
+		const QString &basePath,
+		const QString &baseName) {
+	const auto ratio = style::DevicePixelRatio();
+	auto path = basePath + baseName + u".png"_q;
+	auto dpr = 1.;
+	if (ratio > 2.) {
+		path = basePath + baseName + u"@3x.png"_q;
+		dpr = 3.;
+	} else if (ratio > 1.) {
+		path = basePath + baseName + u"@2x.png"_q;
+		dpr = 2.;
 	}
 	auto image = QImage(path);
 	if (image.isNull()) {
-		image = QImage(":/gui/icons/ayu/sponsor_icon.png");
+		image = QImage(basePath + baseName + u".png"_q);
+		dpr = 1.;
 	}
 	if (!image.isNull()) {
-		image.setDevicePixelRatio(style::DevicePixelRatio());
+		image.setDevicePixelRatio(dpr);
 	}
 	return image;
+}
+
+QImage MakeWhitegramSponsorBadgeImage() {
+	return LoadScaledGuiImage(u":/gui/icons/ayu/"_q, u"sponsor_icon"_q);
+}
+
+QImage MakeWhitegramSponsorLogoImage() {
+	auto image = LoadScaledGuiImage(u":/gui/icons/ayu/"_q, u"sponsor_logo"_q);
+	return image.isNull() ? MakeWhitegramSponsorBadgeImage() : image;
 }
 
 [[nodiscard]] Info::Profile::Badge::Content ComputeExteraBadgeContent(
@@ -750,6 +768,10 @@ int getScheduleTime(int64 sumSize) {
 }
 
 bool isMessageSavable(const not_null<HistoryItem*> item) {
+	if (Whitegram::E2EE::IsWhitegramOneTimeMessage(item)) {
+		return false;
+	}
+
 	const auto &settings = AyuSettings::getInstance();
 
 	if (!settings.saveDeletedMessages()) {

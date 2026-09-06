@@ -1853,6 +1853,7 @@ void Filler::fillContextMenuActions() {
 	addUngroup();
 	addHidePromotion();
 	addToggleArchive();
+	AyuUi::AddCustomArchiveActions(_peer, _controller, _addAction);
 	addTogglePin();
 	if (ViewProfileInChatsListContextMenu.value()) {
 		addInfo();
@@ -1875,6 +1876,7 @@ void Filler::fillContextMenuActions() {
 
 void Filler::fillHistoryActions() {
 	addToggleMuteSubmenu(true);
+	AyuUi::AddCustomArchiveActions(_peer, _controller, _addAction);
 	AyuUi::AddAyuGramActions(_peer, _thread, _controller, _addAction);
 	addCreateTopic();
 	addInfo();

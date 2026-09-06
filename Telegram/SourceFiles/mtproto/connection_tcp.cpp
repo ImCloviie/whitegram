@@ -514,10 +514,13 @@ void TcpConnection::connectToServer(
 	Expects(_protocol == nullptr);
 	Expects(_protocolDcId == 0);
 
-	const auto secret = (_proxy.type == ProxyData::Type::Mtproto)
+	const auto useWebSocket = details::PreferWebSocket()
+		&& (protocolDcId != 0);
+	const auto secret = (!useWebSocket
+			&& _proxy.type == ProxyData::Type::Mtproto)
 		? _proxy.secretFromMtprotoPassword()
 		: protocolSecret;
-	if (_proxy.type == ProxyData::Type::Mtproto) {
+	if (!useWebSocket && _proxy.type == ProxyData::Type::Mtproto) {
 		_address = _proxy.host;
 		_port = _proxy.port;
 		_protocol = Protocol::Create(secret);
@@ -526,11 +529,17 @@ void TcpConnection::connectToServer(
 		_port = port;
 		_protocol = Protocol::Create(secret);
 	}
+	const auto networkProxy = (!useWebSocket
+			|| _proxy.type == ProxyData::Type::Socks5
+			|| _proxy.type == ProxyData::Type::Http)
+		? ToNetworkProxy(_proxy)
+		: QNetworkProxy(QNetworkProxy::NoProxy);
 	_socket = AbstractSocket::Create(
 		thread(),
 		secret,
-		ToNetworkProxy(_proxy),
-		protocolForFiles);
+		networkProxy,
+		protocolForFiles,
+		protocolDcId);
 	_protocolDcId = protocolDcId;
 
 	const auto postfix = _socket->debugPostfix();
@@ -579,6 +588,13 @@ crl::time TcpConnection::pingTime() const {
 }
 
 crl::time TcpConnection::fullConnectTimeout() const {
+	if (details::PreferWebSocket() && _socket) {
+		const auto budget = _socket->connectBudget();
+		if (budget > 0) {
+			return budget;
+		}
+		return kFullConnectionTimeout * 4;
+	}
 	return kFullConnectionTimeout;
 }
 

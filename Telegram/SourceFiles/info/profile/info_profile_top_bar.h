@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "ui/userpic_view.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 
 namespace Data {
 class ForumTopic;
@@ -147,6 +148,7 @@ public:
 		bool shouldUseColored);
 
 	rpl::producer<std::optional<QColor>> edgeColor() const;
+	void setCustomBackgroundDetailsHeight(int height);
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -214,6 +216,7 @@ private:
 	void applyTabSwapProgress(float64 progress);
 	void refreshTabSubtitle();
 	void paintTabSubtitle(QPainter &p);
+	void reloadCustomBackground();
 	void updateRightButtonsPosition();
 	void updateTabGroupActive();
 	[[nodiscard]] bool tabSwapActive() const;
@@ -375,13 +378,16 @@ private:
 	rpl::lifetime _giftsLoadingLifetime;
 
 	QBrush _storyOutlineBrush;
-	std::vector<Ui::OutlineSegment> _storySegments;
+	std::vector<	Ui::OutlineSegment> _storySegments;
 	bool _hasStories = false;
 	bool _hasLiveStories = false;
 
 	std::optional<uint8> _localColorProfileIndex;
 	std::optional<DocumentId> _localPatternEmojiId;
 	std::shared_ptr<Data::EmojiStatusCollectible> _localCollectible;
+
+	AyuFeatures::CustomProfileBackground::Renderer _customBackground;
+	int _customBackgroundDetailsHeight = 0;
 
 };
 

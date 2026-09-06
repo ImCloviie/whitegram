@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_settings.h"
 
 #include "apiwrap.h"
+
+#include <algorithm>
 #include "base/event_filter.h"
 #include "base/qt_signal_producer.h"
 #include "boxes/about_box.h"
@@ -69,6 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_main_menu_helpers.h"
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
+#include "window/window_session_controller_link_info.h"
 #include "styles/style_chat.h" // popupMenuExpandedSeparator
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
@@ -89,6 +92,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang_auto.h"
 #include "ayu/ui/settings/settings_main.h"
 #include "ayu/features/whitegram_crypto.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "styles/style_info.h"
 
 namespace Window {
@@ -350,6 +354,8 @@ MainMenu::MainMenu(
 , _footer(_inner->add(object_ptr<Ui::RpWidget>(_inner.get())))
 , _telegram(
 	Ui::CreateChild<Ui::FlatLabel>(_footer.get(), st::mainMenuTelegramLabel))
+, _betaBadge(
+	Ui::CreateChild<Ui::FlatLabel>(_footer.get(), st::mainMenuBetaLabel))
 , _version(AddVersionLabel(_footer)) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
@@ -379,9 +385,18 @@ MainMenu::MainMenu(
 
 	_footer->heightValue(
 	) | rpl::on_next([=] {
-		_telegram->moveToLeft(st::mainMenuFooterLeft, _footer->height() - st::mainMenuTelegramBottom - _telegram->height());
-		_version->moveToLeft(st::mainMenuFooterLeft, _footer->height() - st::mainMenuVersionBottom - _version->height());
+		updateFooterLayout();
 	}, _footer->lifetime());
+
+	_telegram->widthValue(
+	) | rpl::on_next([=] {
+		updateFooterLayout();
+	}, _telegram->lifetime());
+
+	_betaBadge->widthValue(
+	) | rpl::on_next([=] {
+		updateFooterLayout();
+	}, _betaBadge->lifetime());
 
 	rpl::combine(
 		heightValue(),
@@ -396,6 +411,7 @@ MainMenu::MainMenu(
 		u"Whitegram"_q,
 		u"https://ayugram.one"_q));
 	_telegram->setLinksTrusted();
+	setupFooterBetaBadge();
 	_version->setMarkedText(
 		tr::link(
 			tr::lng_settings_current_version(
@@ -720,7 +736,23 @@ void MainMenu::setupMenu() {
 		if (settings.showBotsInDrawer())
 		SetupMenuBots(_menu, controller);
 
-		if (settings.showMyProfileInDrawer() || settings.showBotsInDrawer())
+		if (settings.showSendBotInDrawer()) {
+			addAction(
+				Settings::trWhitegram(
+					QString::fromUtf8("CryptoBot"),
+					QString("CryptoBot")),
+				{ &st::menuIconSend }
+			)->setClickedCallback([=] {
+				controller->showPeerByLink(Window::PeerByLinkInfo{
+					.usernameOrId = QString("send"),
+					.attachBotMainOpen = true,
+				});
+			});
+		}
+
+		if (settings.showMyProfileInDrawer()
+			|| settings.showBotsInDrawer()
+			|| settings.showSendBotInDrawer())
 		_menu->add(
 			object_ptr<Ui::PlainShadow>(_menu),
 			{ 0, st::mainMenuSkip, 0, st::mainMenuSkip });
@@ -1051,6 +1083,11 @@ void MainMenu::setupMenu() {
 		) | rpl::on_next([=](const std::vector<Whitegram::CoinPrice> &) {
 			rebuild();
 		}, cryptoContainer->lifetime());
+
+		AyuSettings::getInstance().cryptoFiatCurrencyChanges(
+		) | rpl::on_next([=](int) {
+			rebuild();
+		}, cryptoContainer->lifetime());
 	}
 
 	if (settings.showTimeSpentInDrawer()) {
@@ -1350,6 +1387,35 @@ void MainMenu::setupSwipe() {
 		.update = std::move(update),
 		.init = std::move(init),
 	});
+}
+
+void MainMenu::updateFooterLayout() {
+	const auto telegramTop = _footer->height()
+		- st::mainMenuTelegramBottom
+		- _telegram->height();
+	_telegram->moveToLeft(st::mainMenuFooterLeft, telegramTop);
+	const auto betaTop = telegramTop
+		+ (_telegram->height() - _betaBadge->height()) / 2;
+	_betaBadge->moveToLeft(
+		st::mainMenuFooterLeft + _telegram->width() + st::mainMenuBetaSkip,
+		betaTop);
+	_version->moveToLeft(
+		st::mainMenuFooterLeft,
+		_footer->height() - st::mainMenuVersionBottom - _version->height());
+}
+
+void MainMenu::setupFooterBetaBadge() {
+	const auto apply = [=](const QString &text) {
+		_betaBadge->setText(text);
+		_betaBadge->resizeToNaturalWidth(st::mainMenuWidth);
+		updateFooterLayout();
+	};
+	apply(Whitegram::Backend::BetaBadgeText());
+	Whitegram::Backend::betaBadgeTextValue(
+	) | rpl::on_next([=](const QString &text) {
+		apply(text);
+	}, lifetime());
+	Whitegram::Backend::FetchClientInfo();
 }
 
 } // namespace Window

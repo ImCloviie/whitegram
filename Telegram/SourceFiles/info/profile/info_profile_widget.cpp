@@ -206,6 +206,7 @@ Widget::Widget(
 	}
 
 	setupTabsStripFloat();
+	_inner->setupScrollBackgroundPaint(scroll());
 }
 
 void Widget::setupTabsStripFloat() {

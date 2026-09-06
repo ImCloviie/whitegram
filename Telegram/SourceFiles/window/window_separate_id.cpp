@@ -90,6 +90,7 @@ Data::CommunityInfo *SeparateId::community() const {
 bool SeparateId::hasChatsList() const {
 	return (type == SeparateType::Primary)
 		|| (type == SeparateType::Archive)
+		|| (type == SeparateType::CustomFolder)
 		|| (type == SeparateType::Forum)
 		|| (type == SeparateType::Community);
 }

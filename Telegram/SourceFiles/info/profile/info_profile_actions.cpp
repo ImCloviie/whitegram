@@ -8,6 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_actions.h"
 #include "ayu/ui/ghost_profile_box.h"
 #include "ayu/data/ayu_database.h"
+#include "ayu/ayu_settings.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 
 #include "api/api_blocked_peers.h"
 #include "api/api_chat_participants.h"
@@ -74,6 +76,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "inline_bots/bot_attach_web_view.h"
 #include "iv/iv_instance.h"
 #include "lang/lang_keys.h"
+#include "lang/lang_instance.h"
 #include "main/main_session.h"
 #include "menu/menu_mute.h"
 #include "settings/settings_common.h"
@@ -130,6 +133,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Info {
 namespace Profile {
 namespace {
+
+[[nodiscard]] bool IsRussianUi() {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	return id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+}
 
 constexpr auto kDay = Data::WorkingInterval::kDay;
 constexpr auto kPeerIdLinkIndex = uint16(1);
@@ -1069,6 +1078,62 @@ auto AddMainButton(
 	return button->entity();
 }
 
+void AddProfileBackgroundZoneControls(
+		not_null<Ui::VerticalLayout*> layout,
+		not_null<Window::SessionController*> controller,
+		uint64 peerId) {
+	using Zone = AyuFeatures::CustomProfileBackground::Zone;
+	const auto addZone = [&](
+			Zone zone,
+			const QString &setTitle,
+			const QString &removeTitle) {
+		AddMainButton(
+			layout,
+			rpl::single(setTitle),
+			rpl::single(true),
+			[=] {
+				AyuFeatures::CustomProfileBackground::PickBackground(
+					controller,
+					peerId,
+					zone);
+			},
+			nullptr,
+			nullptr,
+			st::infoMainButton);
+		auto hasBackground = rpl::merge(
+			rpl::single(
+				AyuFeatures::CustomProfileBackground::HasBackground(
+					peerId,
+					zone)),
+			AyuSettings::getInstance().customProfileBackgroundChanges(
+			) | rpl::map([=] {
+				return AyuFeatures::CustomProfileBackground::HasBackground(
+					peerId,
+					zone);
+			}));
+		AddMainButton(
+			layout,
+			rpl::single(removeTitle),
+			std::move(hasBackground),
+			[=] {
+				AyuFeatures::CustomProfileBackground::RemoveBackground(
+					peerId,
+					zone);
+			},
+			nullptr,
+			nullptr,
+			st::infoMainButton);
+	};
+	addZone(
+		Zone::Top,
+		IsRussianUi()
+			? u"Установить фон шапки"_q
+			: u"Set header background"_q,
+		IsRussianUi()
+			? u"Убрать фон шапки"_q
+			: u"Remove header background"_q);
+}
+
 rpl::producer<CreditsAmount> AddCurrencyAction(
 		not_null<UserData*> user,
 		not_null<Ui::VerticalLayout*> wrap,
@@ -1249,11 +1314,15 @@ public:
 		not_null<SectionStack*> stack,
 		not_null<Data::ForumTopic*> topic);
 
+	void setDetailsSectionCreated(
+		Fn<void(not_null<Ui::RpWidget*>)> callback);
+
 	void buildSections();
 
 private:
 	[[nodiscard]] Section makePersonalChannel(not_null<UserData*> user);
 	[[nodiscard]] Section makeInfo();
+	[[nodiscard]] Section makeCustomProfileBackground(not_null<UserData*> user);
 	[[nodiscard]] Section makeAddAsContact(not_null<UserData*> user);
 	void addBotVerify();
 	void addMainApp(not_null<UserData*> user);
@@ -1276,6 +1345,7 @@ private:
 	Data::ForumTopic *_topic = nullptr;
 	Data::SavedSublist *_sublist = nullptr;
 	Origin _origin;
+	Fn<void(not_null<Ui::RpWidget*>)> _detailsSectionCreated;
 
 };
 
@@ -1297,6 +1367,7 @@ private:
 	void addDeleteContactAction(not_null<UserData*> user);
 	void addBotCommandActions(not_null<UserData*> user);
 	void addFastButtonsMode(not_null<UserData*> user);
+	void addCustomProfileBackgroundAction(not_null<UserData*> user);
 	void addReportAction();
 	void addGhostProfileAction(not_null<UserData*> user);
 	void addBlockAction(not_null<UserData*> user);
@@ -1389,6 +1460,11 @@ DetailsFiller::DetailsFiller(
 , _stack(stack)
 , _peer(topic->peer())
 , _topic(topic) {
+}
+
+void DetailsFiller::setDetailsSectionCreated(
+		Fn<void(not_null<Ui::RpWidget*>)> callback) {
+	_detailsSectionCreated = std::move(callback);
 }
 
 template <typename T>
@@ -2004,6 +2080,10 @@ Section DetailsFiller::makeInfo() {
 	raw->toggleOn(tracker.atLeastOneShownValue());
 	raw->finishAnimating();
 
+	if (_detailsSectionCreated) {
+		_detailsSectionCreated(raw);
+	}
+
 	return Section{
 		.widget = std::move(wrap),
 		.shown = raw->toggledValue(),
@@ -2453,6 +2533,28 @@ Section DetailsFiller::makeBotPermissions(not_null<UserData*> user) {
 	};
 }
 
+Section DetailsFiller::makeCustomProfileBackground(not_null<UserData*> user) {
+	if (!user->isSelf()) {
+		return Section{ .widget = nullptr };
+	}
+	const auto parent = _stack->layout();
+	auto wrap = object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+		parent,
+		object_ptr<Ui::VerticalLayout>(parent));
+	const auto raw = wrap.data();
+	const auto peerId = user->id.value;
+	const auto controller = _controller->parentController();
+	AddProfileBackgroundZoneControls(raw->entity(), controller, peerId);
+	raw->toggleOn(rpl::single(true));
+	if (_detailsSectionCreated) {
+		_detailsSectionCreated(raw);
+	}
+	return Section{
+		.widget = std::move(wrap),
+		.shown = raw->toggledValue(),
+	};
+}
+
 Section DetailsFiller::makeAddAsContact(not_null<UserData*> user) {
 	const auto parent = _stack->layout();
 	auto wrap = object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -2882,6 +2984,10 @@ void DetailsFiller::buildSections() {
 	}
 	_stack->add(makeInfo());
 	if (const auto user = _peer->asUser()) {
+		if (user->isSelf()) {
+			_stack->add(makeCustomProfileBackground(user));
+			_stack->addPlainSeparator();
+		}
 		_stack->add(makeAddAsContact(user));
 		addBotVerify();
 		if (const auto info = user->botInfo.get()) {
@@ -3217,6 +3323,86 @@ void ActionsFiller::addGhostProfileAction(not_null<UserData*> user) {
 		&st::infoIconInformation);
 }
 
+void ActionsFiller::addCustomProfileBackgroundAction(not_null<UserData*> user) {
+	if (!user->isSelf()) {
+		return;
+	}
+	const auto peerId = user->id.value;
+	const auto controller = _controller->parentController();
+
+	const auto addProfileButton = [&](
+			const QString &text,
+			rpl::producer<bool> &&shown,
+			Fn<void()> callback,
+			const style::icon &icon) {
+		const auto wrap = _wrap->add(
+			object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+				_wrap,
+				object_ptr<Ui::SettingsButton>(
+					_wrap,
+					rpl::single(text),
+					st::infoSharedMediaButton)));
+		wrap->setDuration(
+			st::infoSlideDuration
+		)->toggleOn(
+			std::move(shown)
+		)->entity()->addClickHandler(std::move(callback));
+		wrap->finishAnimating();
+		object_ptr<Profile::FloatingIcon>(
+			wrap,
+			icon,
+			st::infoSharedMediaButtonIconPosition);
+	};
+
+	using Zone = AyuFeatures::CustomProfileBackground::Zone;
+	const auto addZone = [&](
+			Zone zone,
+			const QString &setTitle,
+			const QString &removeTitle) {
+		addProfileButton(
+			setTitle,
+			rpl::single(true),
+			[=] {
+				AyuFeatures::CustomProfileBackground::PickBackground(
+					controller,
+					peerId,
+					zone);
+			},
+			st::menuIconPhoto);
+		addProfileButton(
+			removeTitle,
+			rpl::merge(
+				rpl::single(
+					AyuFeatures::CustomProfileBackground::HasBackground(
+						peerId,
+						zone)),
+				AyuSettings::getInstance().customProfileBackgroundChanges(
+				) | rpl::map([=] {
+					return AyuFeatures::CustomProfileBackground::HasBackground(
+						peerId,
+						zone);
+				})),
+			[=] {
+				AyuFeatures::CustomProfileBackground::RemoveBackground(
+					peerId,
+					zone);
+			},
+			st::menuIconDelete);
+	};
+	addZone(
+		Zone::Top,
+		IsRussianUi()
+			? u"Установить фон шапки"_q
+			: u"Set header background"_q,
+		IsRussianUi()
+			? u"Убрать фон шапки"_q
+			: u"Remove header background"_q);
+
+	_wrap->add(object_ptr<Ui::FixedHeightWidget>(
+		_wrap,
+		st::infoBlockButtonSkip));
+}
+
 void ActionsFiller::addReportAction() {
 	const auto peer = _peer;
 	const auto controller = _controller->parentController();
@@ -3324,6 +3510,7 @@ void ActionsFiller::addJoinChannelAction(
 }
 
 void ActionsFiller::fillUserActions(not_null<UserData*> user) {
+	addCustomProfileBackgroundAction(user);
 	addGhostProfileAction(user);
 	if (user->isBot()) {
 		addAffiliateProgram(user);
@@ -3616,15 +3803,19 @@ void BuildProfileDetailsSections(
 		not_null<PeerData*> peer,
 		Data::ForumTopic *topic,
 		Data::SavedSublist *sublist,
-		Origin origin) {
+		Origin origin,
+		Fn<void(not_null<Ui::RpWidget*>)> detailsSectionCreated) {
 	if (topic) {
 		DetailsFiller filler(controller, &stack, topic);
+		filler.setDetailsSectionCreated(std::move(detailsSectionCreated));
 		filler.buildSections();
 	} else if (sublist) {
 		DetailsFiller filler(controller, &stack, sublist);
+		filler.setDetailsSectionCreated(std::move(detailsSectionCreated));
 		filler.buildSections();
 	} else {
 		DetailsFiller filler(controller, &stack, peer, origin);
+		filler.setDetailsSectionCreated(std::move(detailsSectionCreated));
 		filler.buildSections();
 	}
 }

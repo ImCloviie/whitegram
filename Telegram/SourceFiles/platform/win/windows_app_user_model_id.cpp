@@ -26,9 +26,9 @@ const PROPERTYKEY pkey_AppUserModel_StartPinOption = { { 0x9F4C2855, 0x9F79, 0x4
 const PROPERTYKEY pkey_AppUserModel_ToastActivator = { { 0x9F4C2855, 0x9F79, 0x4B39, { 0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3 } }, 26 };
 
 #ifdef OS_WIN_STORE
-const WCHAR AppUserModelIdBase[] = L"AyuGram.AyuGramDesktop.Store";
+const WCHAR AppUserModelIdBase[] = L"Whitegram.WhitegramDesktop.Store";
 #else // OS_WIN_STORE
-const WCHAR AppUserModelIdBase[] = L"AyuGram.AyuGramDesktop";
+const WCHAR AppUserModelIdBase[] = L"Whitegram.WhitegramDesktop";
 #endif // OS_WIN_STORE
 
 } // namespace
@@ -213,32 +213,44 @@ void CleanupShortcut() {
 		return;
 	}
 
-	QString path = systemShortcutPath() + u"AyuGram.lnk"_q;
-	std::wstring p = QDir::toNativeSeparators(path).toStdWString();
+	const auto names = {
+		u"Whitegram.lnk"_q,
+		u"AyuGram.lnk"_q,
+	};
+	for (const auto &name : names) {
+		const auto path = systemShortcutPath() + name;
+		const auto native = QDir::toNativeSeparators(path).toStdWString();
 
-	DWORD attributes = GetFileAttributes(p.c_str());
-	if (attributes >= 0xFFFFFFF) return; // file does not exist
+		DWORD attributes = GetFileAttributes(native.c_str());
+		if (attributes >= 0xFFFFFFF) {
+			continue;
+		}
 
-	auto shellLink = base::WinRT::TryCreateInstance<IShellLink>(
-		CLSID_ShellLink);
-	if (!shellLink) {
-		return;
-	}
+		auto shellLink = base::WinRT::TryCreateInstance<IShellLink>(
+			CLSID_ShellLink);
+		if (!shellLink) {
+			continue;
+		}
 
-	auto persistFile = shellLink.try_as<IPersistFile>();
-	if (!persistFile) {
-		return;
-	}
+		auto persistFile = shellLink.try_as<IPersistFile>();
+		if (!persistFile) {
+			continue;
+		}
 
-	auto hr = persistFile->Load(p.c_str(), STGM_READWRITE);
-	if (!SUCCEEDED(hr)) return;
+		auto hr = persistFile->Load(native.c_str(), STGM_READWRITE);
+		if (!SUCCEEDED(hr)) {
+			continue;
+		}
 
-	WCHAR szGotPath[MAX_PATH];
-	hr = shellLink->GetPath(szGotPath, MAX_PATH, nullptr, 0);
-	if (!SUCCEEDED(hr)) return;
+		WCHAR szGotPath[MAX_PATH];
+		hr = shellLink->GetPath(szGotPath, MAX_PATH, nullptr, 0);
+		if (!SUCCEEDED(hr)) {
+			continue;
+		}
 
-	if (GetUniqueFileId(szGotPath) == myid) {
-		QFile().remove(path);
+		if (GetUniqueFileId(szGotPath) == myid) {
+			QFile().remove(path);
+		}
 	}
 }
 
@@ -345,9 +357,11 @@ bool checkInstalled(QString path = {}) {
 		}
 	}
 
-	const auto installed = u"AyuGram Desktop/AyuGram.lnk"_q;
+	const auto installed = u"Whitegram Desktop/Whitegram.lnk"_q;
+	const auto ayuInstalled = u"AyuGram Desktop/AyuGram.lnk"_q;
 	const auto old = u"AyuGram for Windows/AyuGram.lnk"_q;
 	return validateShortcutAt(path + installed)
+		|| validateShortcutAt(path + ayuInstalled)
 		|| validateShortcutAt(path + old);
 }
 
@@ -358,7 +372,7 @@ bool ValidateShortcut() {
 	}
 
 	if (cAlphaVersion()) {
-		path += u"AyuGramAlpha.lnk"_q;
+		path += u"WhitegramAlpha.lnk"_q;
 		if (validateShortcutAt(path)) {
 			return true;
 		}
@@ -367,7 +381,7 @@ bool ValidateShortcut() {
 			return true;
 		}
 
-		path += u"AyuGram.lnk"_q;
+		path += u"Whitegram.lnk"_q;
 		if (validateShortcutAt(path)) {
 			return true;
 		}

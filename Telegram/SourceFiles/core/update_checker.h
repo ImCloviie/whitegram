@@ -38,6 +38,7 @@ public:
 	rpl::producer<> ready() const;
 
 	void start(bool forceWait = false);
+	void startForced(bool forceWait = false);
 	void stop();
 	void test();
 
@@ -54,6 +55,8 @@ private:
 };
 
 bool checkReadyUpdate();
+void RecoverStuckUpdates();
+void MarkPendingInstallVersion();
 void UpdateApplication();
 QString countAlphaVersionSignature(uint64 version);
 

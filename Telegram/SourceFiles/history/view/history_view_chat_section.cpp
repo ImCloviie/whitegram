@@ -485,8 +485,7 @@ ChatWidget::ChatWidget(
 		}) | rpl::on_next([=](const Api::SendAction &action) {
 			if (action.options.scheduled) {
 				_composeControls->cancelReplyMessage();
-				const auto &ghost = AyuSettings::ghost(&session());
-				if (!ghost.isUseScheduledMessages()) {
+				if (!AyuSettings::ghost(&session()).isUseScheduledMessages()) {
 					crl::on_main(this, [=, t = _topic] {
 						controller->showSection(
 							std::make_shared<HistoryView::ScheduledMemento>(t));

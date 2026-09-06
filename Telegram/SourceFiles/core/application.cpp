@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_download_manager.h"
 #include "base/battery_saving.h"
+#include "crl/crl.h"
 #include "base/event_filter.h"
 #include "base/invoke_queued.h"
 #include "base/concurrent_timer.h"
@@ -108,7 +109,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_infra.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
-
 
 namespace Core {
 namespace {
@@ -264,6 +264,8 @@ Application::~Application() {
 
 	_mediaControlsManager = nullptr;
 
+	AyuSettings::getInstance().stopStartupSound();
+
 	Media::Player::finish(_audio.get());
 	style::StopManager();
 
@@ -276,6 +278,10 @@ void Application::run() {
 	_notifications = std::make_unique<Window::Notifications::System>();
 
 	startLocalStorage();
+
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
+	Local::writeAutoupdatePrefix(QString());
+#endif
 
 	style::SetCustomFont(settings().customFontFamily());
 	style::internal::StartFonts();
@@ -316,7 +322,9 @@ void Application::run() {
 	startSystemDarkModeViewer();
 	Media::Player::start(_audio.get());
 
-	AyuSettings::getInstance().playStartupSound();
+	crl::on_main([] {
+		AyuSettings::getInstance().playStartupSound();
+	});
 
 	if (MediaControlsManager::Supported()) {
 		_mediaControlsManager = std::make_unique<MediaControlsManager>();
@@ -2007,6 +2015,7 @@ void Restart() {
    const auto updateReady = !UpdaterDisabled()
 	   && (UpdateChecker().state() == UpdateChecker::State::Ready);
    if (updateReady) {
+	   MarkPendingInstallVersion();
 	   cSetRestartingUpdate(true);
    } else {
 	   cSetRestarting(true);

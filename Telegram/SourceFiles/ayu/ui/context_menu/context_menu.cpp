@@ -12,6 +12,10 @@
 #include "api/api_sending.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
+#include "ayu/features/custom_archives/custom_archives.h"
+#include "ayu/ui/settings/custom_archives_box.h"
+
+#include <algorithm>
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/forward/ayu_forward.h"
@@ -41,10 +45,12 @@
 #include "styles/style_ayu_icons.h"
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
+#include "styles/style_window.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "window/window_peer_menu.h"
+#include "window/window_controller.h"
 #include "window/window_session_controller.h"
 
 namespace AyuUi {
@@ -247,6 +253,159 @@ bool needToShowItem(ContextMenuVisibility state) {
 		|| (state == ContextMenuVisibility::VisibleWithModifier && base::IsExtendedContextMenuModifierPressed());
 }
 
+void AddCustomArchiveActions(PeerData *peerData,
+							 not_null<Window::SessionController*> sessionController,
+							 const Window::PeerMenuCallback &addCallback) {
+	if (!peerData) {
+		return;
+	}
+	const auto &settings = AyuSettings::getInstance();
+	if (!settings.enableCustomArchives()) {
+		return;
+	}
+	auto archives = settings.customArchives();
+	std::sort(archives.begin(), archives.end(), [](
+			const CustomArchive &a,
+			const CustomArchive &b) {
+		if (a.order != b.order) {
+			return a.order < b.order;
+		}
+		return a.id < b.id;
+	});
+	const auto peerId = peerData->id.value;
+	const auto currentId = settings.findCustomArchiveIdForPeer(peerId);
+
+	addCallback(Window::PeerMenuCallback::Args{
+		.text = QString::fromUtf8("Папки"),
+		.handler = nullptr,
+		.icon = &st::menuIconArchive,
+		.fillSubmenu = [=](not_null<Ui::PopupMenu*> menu) {
+			const auto addAction = Ui::Menu::CreateAddActionCallback(menu);
+			for (const auto &archive : archives) {
+				const auto archiveId = archive.id;
+				const auto selected = (archiveId == currentId);
+				addAction(
+					(selected ? u"✓ "_q : QString()) + archive.name,
+					[=] {
+						if (selected) {
+							AyuFeatures::CustomArchives::RemovePeerFromArchives(
+								sessionController,
+								peerData);
+						} else {
+							AyuFeatures::CustomArchives::MovePeerToArchive(
+								sessionController,
+								peerData,
+								archiveId);
+						}
+					},
+					&st::menuIconArchive);
+			}
+			if (!archives.empty()) {
+				addAction({ .isSeparator = true });
+			}
+			addAction(
+				QString::fromUtf8("Управление папками…"),
+				[=] {
+					AyuFeatures::CustomArchives::ShowArchivesManager(
+						sessionController);
+				},
+				&st::menuIconSettings);
+			if (currentId != 0) {
+				addAction(
+					QString::fromUtf8("Убрать из папки"),
+					[=] {
+						AyuFeatures::CustomArchives::RemovePeerFromArchives(
+							sessionController,
+							peerData);
+					},
+					&st::menuIconUnarchive);
+			}
+		},
+	});
+}
+
+void FillCustomFolderContextMenu(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<Window::SessionController*> controller,
+		int folderId,
+		bool opened) {
+	const auto folder = AyuSettings::getInstance().findCustomArchive(folderId);
+	if (!folder) {
+		return;
+	}
+	const auto addAction = Ui::Menu::CreateAddActionCallback(menu);
+	const auto collapsed = folder->collapsed;
+	const auto unlockThen = [=](Fn<void()> then) {
+		if (AyuFeatures::CustomArchives::IsArchiveUnlocked(folderId)) {
+			then();
+			return;
+		}
+		controller->show(Box(
+			CustomArchiveUnlockBox,
+			controller,
+			folderId,
+			[=] {
+				AyuFeatures::CustomArchives::UnlockArchive(folderId);
+				then();
+			}));
+	};
+	const auto openSettings = [=] {
+		unlockThen([=] {
+			controller->show(Box(
+				EditCustomArchiveBox,
+				controller,
+				folderId));
+		});
+	};
+	const auto openHint = [=] {
+		controller->show(Box(CustomFolderHintBox));
+	};
+
+	if (opened) {
+		addAction(
+			QString::fromUtf8("Настройки папки"),
+			openSettings,
+			&st::menuIconManage);
+		addAction(
+			tr::lng_context_archive_how_does_it_work(tr::now),
+			openHint,
+			&st::menuIconFaq);
+		return;
+	}
+
+	addAction(
+		tr::lng_context_new_window(tr::now),
+		[=] {
+			unlockThen([=] {
+				AyuFeatures::CustomArchives::OpenCustomFolderInNewWindow(
+					controller,
+					folderId);
+			});
+		},
+		&st::menuIconNewWindow);
+	addAction({ .isSeparator = true });
+	addAction(
+		collapsed
+			? tr::lng_context_archive_expand(tr::now)
+			: tr::lng_context_archive_collapse(tr::now),
+		[=] {
+			auto updated = *AyuSettings::getInstance().findCustomArchive(
+				folderId);
+			updated.collapsed = !collapsed;
+			AyuSettings::getInstance().updateCustomArchive(updated);
+		},
+		collapsed ? &st::menuIconExpand : &st::menuIconCollapse);
+	addAction({ .isSeparator = true });
+	addAction(
+		QString::fromUtf8("Настройки папки"),
+		openSettings,
+		&st::menuIconManage);
+	addAction(
+		tr::lng_context_archive_how_does_it_work(tr::now),
+		openHint,
+		&st::menuIconFaq);
+}
+
 void AddAyuGramActions(PeerData *peerData,
 							   Data::Thread *thread,
 							   not_null<Window::SessionController*> sessionController,
@@ -260,8 +419,7 @@ void AddAyuGramActions(PeerData *peerData,
 	const auto showFilters = settings.filtersEnabled()
 		&& (!user || user->isBot());
 	const auto saveDeletedMessages = settings.saveDeletedMessages();
-	const auto &ghost = AyuSettings::ghost(&sessionController->session());
-	const auto ghostMode = ghost.ghostTargetMode();
+	const auto ghostMode = AyuSettings::ghost(&sessionController->session()).ghostTargetMode();
 	const auto showGhostAction = (ghostMode != GhostTargetMode::Global);
 	if (!showFilters && !saveDeletedMessages && !showGhostAction) {
 		return;
@@ -278,8 +436,9 @@ void AddAyuGramActions(PeerData *peerData,
 			const auto addAction = Ui::Menu::CreateAddActionCallback(menu);
 			if (showGhostAction) {
 				const auto peerId = peerData->id.value;
+				auto &ghostSettings = AyuSettings::ghost(&sessionController->session());
 				if (ghostMode == GhostTargetMode::Blacklist) {
-					const auto isExcluded = ghost.isPeerInExcludedList(peerId);
+					const auto isExcluded = ghostSettings.isPeerInExcludedList(peerId);
 					addAction(
 						isExcluded
 							? tr::ayu_GhostRemoveFromExceptions(tr::now)
@@ -289,7 +448,7 @@ void AddAyuGramActions(PeerData *peerData,
 						},
 						&st::menuIconShowInChat);
 				} else if (ghostMode == GhostTargetMode::Whitelist) {
-					const auto isTarget = ghost.isPeerInTargetList(peerId);
+					const auto isTarget = ghostSettings.isPeerInTargetList(peerId);
 					addAction(
 						isTarget
 							? tr::ayu_GhostDisableForChat(tr::now)
@@ -942,8 +1101,7 @@ void AddReadUntilAction(not_null<Ui::PopupMenu*> menu, HistoryItem *item) {
 		return;
 	}
 
-	const auto &ghost = AyuSettings::ghost(&readItem->history()->session());
-	if (ghost.sendReadMessages()) {
+	if (AyuSettings::ghost(&readItem->history()->session()).sendReadMessages()) {
 		return;
 	}
 

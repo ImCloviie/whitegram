@@ -1009,8 +1009,7 @@ void RepliesList::sendReadTillRequest() {
 	const auto api = &_history->session().api();
 	api->request(base::take(_readRequestId)).cancel();
 
-	const auto &ghost = AyuSettings::ghost(&_history->session());
-	if (!ghost.sendReadMessages()) {
+	if (!AyuSettings::ghost(&_history->session()).sendReadMessages()) {
 		return;
 	}
 
@@ -1018,7 +1017,7 @@ void RepliesList::sendReadTillRequest() {
 		_history->peer->input(),
 		MTP_int(_rootId),
 		MTP_int(computeInboxReadTillFull())
-	)).done(crl::guard(this, [=] {
+	)).done(crl::guard(this, [this] {
 		_readRequestId = 0;
 		reloadUnreadCountIfNeeded();
 	})).send();

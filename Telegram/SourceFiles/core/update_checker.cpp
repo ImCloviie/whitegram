@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/update_checker.h"
 
+#include "ayu/ayu_settings.h"
 #include "platform/platform_specific.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/base_platform_file_utilities.h"
@@ -60,6 +61,8 @@ extern "C" {
 #ifndef Q_OS_WIN
 #include <unistd.h>
 #endif // !Q_OS_WIN
+
+#include <optional>
 
 namespace Core {
 namespace {
@@ -287,6 +290,55 @@ QString UpdatesFolder() {
 
 void ClearAll() {
 	base::Platform::DeleteDirectory(UpdatesFolder());
+}
+
+[[nodiscard]] QString PendingInstallVersionPath() {
+	return cWorkingDir() + u"tupdates/pending_version"_q;
+}
+
+[[nodiscard]] std::optional<VersionInt> ReadVersionFile(
+		const QString &path) {
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) {
+		return std::nullopt;
+	}
+	auto version = VersionInt();
+	if (file.read(
+			reinterpret_cast<char*>(&version),
+			sizeof(VersionInt)) != sizeof(VersionInt)) {
+		return std::nullopt;
+	}
+	return version;
+}
+
+void ClearPendingInstallVersion() {
+	QFile::remove(PendingInstallVersionPath());
+}
+
+[[nodiscard]] std::optional<int32> ParsePackFileVersion(const QString &name) {
+	static const auto RegExp = QRegularExpression(
+		u"^(?:tupdate|tx64upd|tarm64upd|tmacupd|tarmacupd|tlinuxupd)(\\d+)"_q,
+		QRegularExpression::CaseInsensitiveOption);
+	const auto match = RegExp.match(name);
+	if (!match.hasMatch()) {
+		return std::nullopt;
+	}
+	return int32(match.captured(1).toInt());
+}
+
+void RemoveStalePackFiles() {
+	QDir updates(UpdatesFolder());
+	if (!updates.exists()) {
+		return;
+	}
+	for (const auto &info : updates.entryInfoList(QDir::Files)) {
+		const auto version = ParsePackFileVersion(info.fileName());
+		if (version && *version <= AppVersion) {
+			QFile(info.absoluteFilePath()).remove();
+			LOG(("Update Info: removed stale pack '%1' (version %2)"
+				).arg(info.fileName()).arg(*version));
+		}
+	}
 }
 
 QString FindUpdateFile() {
@@ -1252,6 +1304,49 @@ FlatpakLoader::~FlatpakLoader() {
 
 } // namespace
 
+void MarkPendingInstallVersion() {
+	const auto version = ReadVersionFile(
+		cWorkingDir() + u"tupdates/temp/tdata/version"_q);
+	if (!version || *version == VersionInt(0x7FFFFFFF)) {
+		return;
+	}
+	QFile file(PendingInstallVersionPath());
+	if (file.open(QIODevice::WriteOnly)) {
+		file.write(
+			reinterpret_cast<const char*>(&(*version)),
+			sizeof(VersionInt));
+	}
+}
+
+void RecoverStuckUpdates() {
+	if (UpdaterDisabled() || cExeName().isEmpty()) {
+		return;
+	}
+	if (const auto pending = ReadVersionFile(PendingInstallVersionPath())) {
+		if (*pending != VersionInt(0x7FFFFFFF) && AppVersion < *pending) {
+			LOG(("Update Info: install target %1 but app version %2, "
+				"clearing tupdates").arg(*pending).arg(AppVersion));
+			ClearAll();
+			return;
+		}
+		ClearPendingInstallVersion();
+	}
+	RemoveStalePackFiles();
+	const auto readyPath = cWorkingDir() + u"tupdates/temp/ready"_q;
+	const auto tempPath = cWorkingDir() + u"tupdates/temp"_q;
+	if (const auto tempVersion = ReadVersionFile(tempPath + u"/tdata/version"_q)) {
+		if (*tempVersion != VersionInt(0x7FFFFFFF)
+			&& AppVersion >= *tempVersion) {
+			LOG(("Update Info: stale prepared update %1, clearing tupdates"
+				).arg(*tempVersion));
+			ClearAll();
+		}
+	} else if (QDir(tempPath).exists() && !QFile(readyPath).exists()) {
+		LOG(("Update Info: incomplete update temp, clearing tupdates"));
+		ClearAll();
+	}
+}
+
 bool UpdaterDisabled() {
 	return UpdaterIsDisabled;
 }
@@ -1273,6 +1368,7 @@ public:
 	rpl::producer<> ready() const;
 
 	void start(bool forceWait);
+	void startForced(bool forceWait);
 	void stop();
 	void test();
 
@@ -1328,6 +1424,7 @@ private:
 	std::shared_ptr<Loader> _activeLoader;
 	bool _usingMtprotoLoader = (cAlphaVersion() != 0);
 	base::weak_ptr<Main::Session> _session;
+	bool _forcedStart = false;
 
 	rpl::lifetime _lifetime;
 
@@ -1447,13 +1544,25 @@ void Updater::stop() {
 	_action = Action::Waiting;
 }
 
+void Updater::startForced(bool forceWait) {
+	if (_action != Action::Waiting) {
+		stop();
+	}
+	_forcedStart = true;
+	start(forceWait);
+}
+
 void Updater::start(bool forceWait) {
 	if (cExeName().isEmpty()) {
 		return;
 	}
 
+	RecoverStuckUpdates();
+
 	_timer.cancel();
-	if (!cAutoUpdate() || _action != Action::Waiting) {
+	const auto autoUpdate = AyuSettings::getInstance().whitegramAutoUpdate();
+	if ((!autoUpdate && !_forcedStart) || _action != Action::Waiting) {
+		_forcedStart = false;
 		return;
 	}
 
@@ -1464,7 +1573,9 @@ void Updater::start(bool forceWait) {
 		+ constDelay
 		+ int(rand() % randDelay)
 		- base::unixtime::now();
-	auto sendRequest = (updateInSecs <= 0)
+	const auto forced = base::take(_forcedStart);
+	auto sendRequest = forced
+		|| (updateInSecs <= 0)
 		|| (updateInSecs > constDelay + randDelay);
 	if (!sendRequest && !forceWait) {
 		if (!FindUpdateFile().isEmpty()) {
@@ -1686,6 +1797,10 @@ void UpdateChecker::start(bool forceWait) {
 	_updater->start(forceWait);
 }
 
+void UpdateChecker::startForced(bool forceWait) {
+	_updater->startForced(forceWait);
+}
+
 void UpdateChecker::test() {
 	_updater->test();
 }
@@ -1852,6 +1967,7 @@ bool checkReadyUpdate() {
 	base::Platform::RemoveQuarantine(updater.absolutePath());
 #endif // Q_OS_MAC
 
+	MarkPendingInstallVersion();
 	return true;
 }
 

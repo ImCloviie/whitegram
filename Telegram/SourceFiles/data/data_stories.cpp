@@ -1404,8 +1404,7 @@ void Stories::toggleHidden(
 void Stories::sendMarkAsReadRequest(
 		not_null<PeerData*> peer,
 		StoryId tillId) {
-	const auto &ghost = AyuSettings::ghost(&_owner->session());
-	if (!ghost.shouldSendReadStoriesForPeer(peer->id.value)) {
+	if (!AyuSettings::ghost(&_owner->session()).shouldSendReadStoriesForPeer(peer->id.value)) {
 		return;
 	}
 

@@ -38,6 +38,11 @@ bool HandleAyuSettings(
 	const Match &match,
 	const QVariant &context);
 
+bool HandleViewOnce(
+	Window::SessionController *controller,
+	const Match &match,
+	const QVariant &context);
+
 bool TryHandleSpotify(const QString &url);
 
 }

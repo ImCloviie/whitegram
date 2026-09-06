@@ -599,8 +599,10 @@ Fn<void(Action, Details)> DefaultCallback(
 		Fn<void(Api::SendOptions)> send) {
 	const auto guard = base::make_weak(show->toastParent());
 	return [=](Action action, Details details) {
-		if (action.type == ActionType::Send) {
-			send(action.options);
+		if (action.type == ActionType::Send || action.type == ActionType::OneTimeMessage) {
+			auto options = action.options;
+			options.scheduled = 0;
+			send(options);
 			return;
 		}
 		auto box = HistoryView::PrepareScheduleBox(
@@ -746,6 +748,47 @@ FillMenuResult FillSendMenu(
 	const auto &icons = iconsOverride
 		? *iconsOverride
 		: st::defaultComposeIcons;
+
+	if (sending && type != Type::Reminder) {
+		auto ttlSubmenu = std::make_unique<Ui::PopupMenu>(menu, st::popupMenuWithIcons);
+
+		ttlSubmenu->addAction(u"Один просмотр (до закрытия)"_q, [=] {
+			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 0 }, details);
+		});
+		ttlSubmenu->addAction(u"3 секунды"_q, [=] {
+			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 3 }, details);
+		});
+		ttlSubmenu->addAction(u"10 секунд"_q, [=] {
+			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 10 }, details);
+		});
+		ttlSubmenu->addAction(u"30 секунд"_q, [=] {
+			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 30 }, details);
+		});
+		ttlSubmenu->addAction(u"1 минута"_q, [=] {
+			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 60 }, details);
+		});
+		ttlSubmenu->addAction(u"Никогда (бессрочно)"_q, [=] {
+			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = -1 }, details);
+		});
+		ttlSubmenu->addAction(u"Ввести своё время..."_q, [=] {
+			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = -999 }, details);
+		});
+
+		ttlSubmenu->addSeparator();
+
+		const auto descAction = ttlSubmenu->addAction(
+			u"Сообщение исчезнет через указанное время после просмотра."_q,
+			[] {});
+		descAction->setEnabled(false);
+
+		menu->addAction(
+			u"🔒  Одноразовое сообщение"_q,
+			std::move(ttlSubmenu),
+			&st::menuIconTTL,
+			&st::menuIconTTL);
+
+		menu->addSeparator(&st::expandedMenuSeparator);
+	}
 
 	if (sending && type != Type::Reminder) {
 		const auto &ghost = maybeShow

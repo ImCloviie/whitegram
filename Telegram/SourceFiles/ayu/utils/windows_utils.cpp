@@ -34,8 +34,19 @@ void processIcon(QString shortcut, QString iconPath) {
 			const auto shortcutPath = shortcut.toStdWString();
 
 			if (SUCCEEDED(pPersistFile->Load(shortcutPath.c_str(), STGM_READWRITE))) {
-				pShellLink->SetIconLocation(iconPath.toStdWString().c_str(), 0);
-				pPersistFile->Save(shortcutPath.c_str(), TRUE);
+				const auto srcid = Platform::AppUserModelId::MyExecutablePathId();
+				WCHAR dst[MAX_PATH] = { 0 };
+				const auto gotPath = SUCCEEDED(
+					pShellLink->GetPath(dst, MAX_PATH, nullptr, 0));
+				if (srcid
+					&& gotPath
+					&& Platform::AppUserModelId::GetUniqueFileId(dst) == srcid) {
+					const auto nativeIcon = QDir::toNativeSeparators(iconPath);
+					pShellLink->SetIconLocation(
+						nativeIcon.toStdWString().c_str(),
+						0);
+					pPersistFile->Save(shortcutPath.c_str(), TRUE);
+				}
 			}
 
 			pPersistFile->Release();
@@ -47,15 +58,18 @@ void processIcon(QString shortcut, QString iconPath) {
 
 void processLegacy(const QString &iconPath) {
 	const auto appdata = QDir::fromNativeSeparators(qgetenv("APPDATA"));
-	auto shortcut = appdata + "/Microsoft/Internet Explorer/Quick Launch/User Pinned/TaskBar/Whitegram Desktop.lnk";
-	if (!QFile::exists(shortcut)) {
-		shortcut = appdata + "/Microsoft/Internet Explorer/Quick Launch/User Pinned/TaskBar/Whitegram.lnk";
+	const auto dir = appdata
+		+ u"/Microsoft/Internet Explorer/Quick Launch/User Pinned/TaskBar/"_q;
+	const auto names = {
+		u"Whitegram Desktop.lnk"_q,
+		u"Whitegram.lnk"_q,
+		u"AyuGram Desktop.lnk"_q,
+		u"AyuGram.lnk"_q,
+		u"Telegram.lnk"_q,
+	};
+	for (const auto &name : names) {
+		processIcon(dir + name, iconPath);
 	}
-	if (!QFile::exists(shortcut)) {
-		return;
-	}
-
-	processIcon(shortcut, iconPath);
 }
 
 void processNewPinned(const QString &iconPath) {
@@ -143,6 +157,9 @@ void processNewShortcuts(const QString &iconPath) {
 		path + u"Whitegram Desktop/Whitegram.lnk"_q,
 		path + u"Whitegram/Whitegram.lnk"_q,
 		path + u"Whitegram.lnk"_q,
+		path + u"AyuGram Desktop/AyuGram.lnk"_q,
+		path + u"AyuGram for Windows/AyuGram.lnk"_q,
+		path + u"AyuGram.lnk"_q,
 		path + u"Telegram Desktop/Telegram.lnk"_q,
 	};
 	for (const auto &shortcut : shortcuts) {

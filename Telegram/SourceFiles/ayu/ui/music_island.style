@@ -1,0 +1,79 @@
+// This is the source code of AyuGram for Desktop.
+//
+// We do not and cannot prevent the use of our code,
+// but be respectful and credit the original author.
+//
+// Copyright @Radolyn, 2026
+
+using "ui/basic.style";
+
+musicIslandShadow: 14px;
+musicIslandScreenMargin: 12px;
+
+musicIslandCollapsedWidth: 272px;
+musicIslandExpandedWidth: 376px;
+
+musicIslandCollapsedRadius: 22px;
+musicIslandExpandedRadius: 26px;
+
+musicIslandCollapsedPadding: 8px;
+musicIslandExpandedPadding: 16px;
+musicIslandExpandedPaddingBottom: 14px;
+
+musicIslandCollapsedCover: 44px;
+musicIslandExpandedCover: 84px;
+musicIslandCollapsedCoverRadius: 12px;
+musicIslandExpandedCoverRadius: 18px;
+
+musicIslandTextSkip: 12px;
+musicIslandTitleTop: 6px;
+musicIslandPerformerSkip: 3px;
+
+musicIslandControlSize: 32px;
+musicIslandPlaySize: 40px;
+musicIslandControlSkip: 4px;
+musicIslandTextControlsSkip: 4px;
+
+musicIslandSeekTop: 8px;
+musicIslandSeekHeight: 4px;
+musicIslandSeekHeightOver: 6px;
+musicIslandSeekKnob: 11px;
+musicIslandTimeTop: 7px;
+
+musicIslandVolumeTop: 8px;
+musicIslandVolumeIconSize: 20px;
+musicIslandVolumeSkip: 8px;
+musicIslandVolumeHeight: 4px;
+musicIslandVolumeKnob: 10px;
+
+musicIslandSaveSize: 24px;
+musicIslandSaveSkip: 4px;
+
+musicIslandCloseSize: 24px;
+musicIslandCloseSkip: 6px;
+
+musicIslandEqualizerCount: 4;
+musicIslandEqualizerWidth: 3px;
+musicIslandEqualizerSkip: 3px;
+musicIslandEqualizerHeight: 18px;
+musicIslandEqualizerSkipRight: 6px;
+
+musicIslandTitleStyle: TextStyle(defaultTextStyle) {
+	font: font(14px semibold);
+}
+musicIslandPerformerStyle: TextStyle(defaultTextStyle) {
+	font: font(12px);
+}
+musicIslandTimeStyle: TextStyle(defaultTextStyle) {
+	font: font(11px);
+}
+
+musicIslandIconPrevious: icon{{ "player/player_backward", windowFg }};
+musicIslandIconNext: icon{{ "player/player_forward", windowFg }};
+musicIslandIconPlay: icon{{ "player/player_play", windowFg }};
+musicIslandIconPause: icon{{ "player/player_pause", windowFg }};
+musicIslandIconClose: icon{{ "player/panel_close", windowFg }};
+musicIslandIconVolume0: icon{{ "player/player_mini_off", windowFg }};
+musicIslandIconVolume1: icon{{ "player/player_mini_half", windowFg }};
+musicIslandIconVolume2: icon{{ "player/player_mini_full", windowFg }};
+musicIslandIconSaveProfile: icon{{ "menu/sound_add", windowFg }};

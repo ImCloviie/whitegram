@@ -9,15 +9,38 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/details/mtproto_tcp_socket.h"
 #include "mtproto/details/mtproto_tls_socket.h"
+#include "mtproto/details/mtproto_ws_socket.h"
+
+#include <atomic>
 
 namespace MTP::details {
+namespace {
+
+std::atomic<bool> PreferWebSocketFlag = false;
+
+} // namespace
+
+void SetPreferWebSocket(bool value) {
+	PreferWebSocketFlag.store(value, std::memory_order_relaxed);
+}
+
+bool PreferWebSocket() {
+	return PreferWebSocketFlag.load(std::memory_order_relaxed);
+}
 
 std::unique_ptr<AbstractSocket> AbstractSocket::Create(
 		not_null<QThread*> thread,
 		const bytes::vector &secret,
 		const QNetworkProxy &proxy,
-		bool protocolForFiles) {
-	if (secret.size() >= 21 && secret[0] == bytes::type(0xEE)) {
+		bool protocolForFiles,
+		int16 protocolDcId) {
+	if (PreferWebSocket() && protocolDcId != 0) {
+		return std::make_unique<WsSocket>(
+			thread,
+			proxy,
+			protocolForFiles,
+			protocolDcId);
+	} else if (secret.size() >= 21 && secret[0] == bytes::type(0xEE)) {
 		return std::make_unique<TlsSocket>(
 			thread,
 			secret,

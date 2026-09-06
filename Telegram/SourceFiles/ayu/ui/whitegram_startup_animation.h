@@ -3,7 +3,9 @@
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 #include "base/timer.h"
+
 #include <QtGui/QImage>
+#include <QtGui/QColor>
 
 namespace Ui {
 
@@ -16,7 +18,15 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 
 private:
-	void stepAnimation();
+	[[nodiscard]] QImage tintedLogo(const QColor &tint, int strength) const;
+	void drawCinematicLogo(
+		QPainter &p,
+		const QRectF &rect,
+		const QColor &tint,
+		int tintStrength,
+		const QColor &bloom,
+		float64 bloomStrength,
+		float64 logoOpacity) const;
 
 	QImage _logo;
 	Ui::Animations::Simple _opacityAnimation;

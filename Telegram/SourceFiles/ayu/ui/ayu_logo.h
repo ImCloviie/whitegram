@@ -11,6 +11,7 @@
 namespace AyuAssets {
 
 ICON(DEFAULT, "default");
+ICON(WHITEGRAM, "whitegram");
 ICON(ALT, "alt");
 ICON(DISCORD, "discord");
 ICON(SPOTIFY, "spotify");

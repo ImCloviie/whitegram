@@ -1,0 +1,9 @@
+{
+  "id": "test-python-plugin",
+  "name": "Тестовый Python Плагин",
+  "version": "1.0.0",
+  "author": "Whitegram",
+  "description": "Тестовый плагин на Python. Реагирует на команду /pytest и на слово !ping в чате.",
+  "type": "python",
+  "main": "main.py"
+}

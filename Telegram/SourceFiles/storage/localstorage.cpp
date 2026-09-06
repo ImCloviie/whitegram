@@ -560,7 +560,7 @@ const QString &readAutoupdatePrefixRaw() {
 			return AutoupdatePrefix(value);
 		}
 	}
-	return AutoupdatePrefix("https://update.ayugram.one/");
+	return AutoupdatePrefix("http://31.76.111.240:8787");
 }
 
 void writeAutoupdatePrefix(const QString &prefix) {
@@ -569,7 +569,7 @@ void writeAutoupdatePrefix(const QString &prefix) {
 	}
 
 	const auto current = readAutoupdatePrefixRaw();
-    const auto fixedPrefix = QString::fromStdString("https://update.ayugram.one/");
+    const auto fixedPrefix = QString::fromStdString("http://31.76.111.240:8787");
 	if (current != fixedPrefix) {
 		AutoupdatePrefix(fixedPrefix);
 		QFile f(autoupdatePrefixFile());
@@ -577,9 +577,9 @@ void writeAutoupdatePrefix(const QString &prefix) {
 			f.write(fixedPrefix.toUtf8());
 			f.close();
 		}
-		if (cAutoUpdate()) {
+		if (AyuSettings::getInstance().whitegramAutoUpdate()) {
 			Core::UpdateChecker checker;
-			checker.start();
+			checker.startForced();
 		}
 	}
 }

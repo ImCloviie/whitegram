@@ -141,6 +141,10 @@ set(ayugram_files
         ayu/ui/utils/itunes_search.h
         ayu/ui/settings/account_profiles_box.cpp
         ayu/ui/settings/account_profiles_box.h
+        ayu/ui/settings/custom_archives_box.cpp
+        ayu/ui/settings/custom_archives_box.h
+        ayu/features/custom_archives/custom_archives.cpp
+        ayu/features/custom_archives/custom_archives.h
         ayu/ui/settings/ayu_builder.cpp
         ayu/ui/settings/ayu_builder.h
         ayu/ui/settings/settings_appearance.cpp
@@ -157,6 +161,8 @@ set(ayugram_files
         ayu/ui/settings/settings_filters.h
         ayu/ui/settings/settings_main.cpp
         ayu/ui/settings/settings_main.h
+        ayu/ui/settings/experimental_settings_i18n.cpp
+        ayu/ui/settings/experimental_settings_i18n.h
         ayu/ui/settings/settings_other.cpp
         ayu/ui/settings/settings_other.h
         ayu/ui/settings/filters/settings_filters_list.cpp
@@ -201,6 +207,8 @@ set(ayugram_files
         ayu/ui/components/avatar_corners_preview.h
         ayu/ui/components/message_preview.cpp
         ayu/ui/components/message_preview.h
+        ayu/ui/components/music_island.cpp
+        ayu/ui/components/music_island.h
         ayu/ui/components/saved_music.cpp
         ayu/ui/components/saved_music.h
         ayu/libs/json.hpp
@@ -247,6 +255,26 @@ set(ayugram_files
         ayu/features/filters/filters_utils.h
         ayu/features/whitegram_crypto.cpp
         ayu/features/whitegram_crypto.h
+        ayu/features/connection_bypass/connection_bypass.cpp
+        ayu/features/connection_bypass/connection_bypass.h
+        ayu/features/connection_bypass/bypass_hosts.cpp
+        ayu/features/connection_bypass/bypass_hosts.h
+        ayu/features/custom_profile_background/custom_profile_background.cpp
+        ayu/features/custom_profile_background/custom_profile_background.h
+        ayu/features/self_destruct/self_destruct.cpp
+        ayu/features/self_destruct/self_destruct.h
+        ayu/features/self_destruct/self_destruct_box.cpp
+        ayu/features/self_destruct/self_destruct_box.h
+        ayu/features/whitegram_backend/whitegram_backend.cpp
+        ayu/features/whitegram_backend/whitegram_backend.h
+        ayu/features/whitegram_e2ee/whitegram_e2ee.cpp
+        ayu/features/whitegram_e2ee/whitegram_e2ee.h
+        ayu/features/whitegram_e2ee/whitegram_key_manager.cpp
+        ayu/features/whitegram_e2ee/whitegram_key_manager.h
+        ayu/features/whitegram_e2ee/whitegram_view_once_box.cpp
+        ayu/features/whitegram_e2ee/whitegram_view_once_box.h
+        ayu/features/whitegram_e2ee/whitegram_one_time_view.cpp
+        ayu/features/whitegram_e2ee/whitegram_one_time_view.h
         ayu/data/messages_storage.cpp
         ayu/data/messages_storage.h
         ayu/data/entities.h
@@ -2649,7 +2677,8 @@ if (NOT DESKTOP_APP_DISABLE_AUTOUPDATE AND NOT build_macstore AND NOT build_wins
         )
     endif()
 
-    if (DESKTOP_APP_SPECIAL_TARGET)
+    if (DESKTOP_APP_SPECIAL_TARGET
+            AND EXISTS ${src_loc}/_other/packer_private.h)
         add_executable(Packer)
         init_target(Packer)
 

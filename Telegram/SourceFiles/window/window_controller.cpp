@@ -594,11 +594,13 @@ Window::Adaptive &Controller::adaptive() const {
 void Controller::openInMediaView(Media::View::OpenRequest &&request) {
 	if (request.story()) {
 		const auto story = not_null{ request.story() };
-		auto &ghost = AyuSettings::ghost(&story->session());
-		const auto suggestGhostMode = ghost.suggestGhostModeBeforeViewingStory()
-			&& ghost.sendReadStories()
-			&& !ghost.sendReadStoriesLocked()
-			&& !ghost.isGhostModeActive();
+		const auto suggestGhostMode = [&] {
+			const auto &ghost = AyuSettings::ghost(&story->session());
+			return ghost.suggestGhostModeBeforeViewingStory()
+				&& ghost.sendReadStories()
+				&& !ghost.sendReadStoriesLocked()
+				&& !ghost.isGhostModeActive();
+		}();
 		if (suggestGhostMode) {
 			const auto controller = request.controller();
 			const auto context = request.storiesContext();

@@ -7,6 +7,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
 
+#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "ayu/features/whitegram_e2ee/whitegram_key_manager.h"
+#include "ayu/features/whitegram_e2ee/whitegram_view_once_box.h"
+#include "lang/lang_keys.h"
+#include "styles/style_boxes.h"
+#include "ui/widgets/fields/password_input.h"
+#include <rpl/range.h>
+
 #include "base/call_delayed.h"
 #include "base/event_filter.h"
 #include "base/options.h"
@@ -3395,6 +3403,47 @@ void ComposeControls::setupSendMenu(
 			|| action.type == ActionType::SpoilerOn
 			|| action.type == ActionType::SpoilerOff) {
 			_header->mediaEditManagerApply(action);
+		} else if (action.type == ActionType::OneTimeMessage) {
+			const auto ttl = action.whitegramTtl;
+			const auto performSend = [=](int effectiveTtl) {
+				const auto textWithTags = _field->getTextWithTags();
+				if (textWithTags.text.trimmed().isEmpty()) {
+					return;
+				}
+				const auto myUserId = session().userId().bare;
+				const auto peer = _history->peer;
+				const auto recipientId = peerToUser(peer->id).bare;
+
+				const auto cachedKey = Whitegram::E2EE::KeyManager::Instance().cachedPeerPublicKey(recipientId);
+				if (!cachedKey.has_value() && recipientId != myUserId) {
+					Whitegram::E2EE::KeyManager::Instance().fetchPeerPublicKey(recipientId, nullptr);
+				}
+				const auto pubKey = (recipientId == myUserId)
+					? Whitegram::E2EE::GetMyPublicKey()
+					: cachedKey.value_or(QByteArray());
+
+				const auto encryptedText = Whitegram::E2EE::Encrypt(
+					textWithTags.text,
+					effectiveTtl,
+					myUserId,
+					recipientId,
+					pubKey);
+
+				if (!encryptedText.isEmpty()) {
+					_field->setTextWithTags(TextWithTags{ encryptedText }, Ui::InputField::HistoryAction::NewEntry);
+					auto options = action.options;
+					options.scheduled = 0;
+					send(options);
+				}
+			};
+
+			if (ttl == -999) {
+				Whitegram::E2EE::ShowCustomTtlBox(_show, [=](int customSeconds) {
+					performSend(customSeconds);
+				});
+			} else {
+				performSend(ttl);
+			}
 		} else {
 			SendMenu::DefaultCallback(_show, send)(action, details);
 		}

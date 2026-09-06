@@ -41,7 +41,7 @@ namespace {
 
 QImage MakeSupportLogo(DonateType type) {
 	if (type == DonateType::Whitegram) {
-		auto image = MakeWhitegramSponsorBadgeImage();
+		auto image = MakeWhitegramSponsorLogoImage();
 		if (!image.isNull()) {
 			return image;
 		}
@@ -145,7 +145,6 @@ void FillDonateInfoBox(
 	not_null<Ui::GenericBox*> box,
 	not_null<Window::SessionController*> controller,
 	DonateType type) {
-	// box->setStyle(st::starrefFooterBox);
 	box->setStyle(st::giveawayGiftCodeBox);
 	box->setNoContentMargin(true);
 	box->setWidth(int(st::aboutWidth * 1.1));
@@ -163,10 +162,14 @@ void FillDonateInfoBox(
 
 	Ui::AddSkip(box->verticalLayout());
 
+	const auto whitegram = (type == DonateType::Whitegram);
+
 	box->verticalLayout()->add(
 		object_ptr<Ui::FlatLabel>(
 			box->verticalLayout(),
-			tr::ayu_SupportBoxHeader(tr::bold),
+			whitegram
+				? tr::wg_SupportBoxHeader(tr::bold)
+				: tr::ayu_SupportBoxHeader(tr::bold),
 			st::boxTitle),
 		st::boxRowPadding,
 		style::al_top);
@@ -174,84 +177,106 @@ void FillDonateInfoBox(
 	box->verticalLayout()->add(
 		object_ptr<Ui::FlatLabel>(
 			box->verticalLayout(),
-			tr::ayu_SupportBoxInfo(),
+			whitegram
+				? tr::wg_SupportBoxInfo()
+				: tr::ayu_SupportBoxInfo(),
 			st::starrefCenteredText),
 		st::boxRowPadding);
 
 	Ui::AddSkip(box->verticalLayout());
 	Ui::AddSkip(box->verticalLayout());
-	Ui::AddSkip(box->verticalLayout());
 
-	auto emojiHelper = Ui::Text::CustomEmojiHelper();
-	const auto tonSymbol = emojiHelper.paletteDependent({
-		.factory = [=]
-		{
-			return Ui::Earn::IconCurrencyColored(
-				st::boxDividerLabel.style.font,
-				st::boxDividerLabel.textFg->c);
-		},
-		.margin = st::channelEarnCurrencyLearnMargins
-	});
+	if (whitegram) {
+		const auto username = u"imcloviie"_q;
+		const auto contactLabel = box->verticalLayout()->add(
+			object_ptr<Ui::FlatLabel>(
+				box->verticalLayout(),
+				st::starrefCenteredText),
+			st::boxRowPadding);
+		contactLabel->setMarkedText(
+			tr::wg_SupportBoxContactInfo(
+				tr::now,
+				lt_item,
+				Ui::Text::Link(
+					u"@imcloviie"_q,
+					controller->session().createInternalLinkFull(username)),
+				tr::rich),
+			Core::TextContext({
+				.session = &controller->session(),
+			}));
+	} else {
+		Ui::AddSkip(box->verticalLayout());
 
-	const auto dollarAmount = RCManager::getInstance().donateAmountUsd().prepend("$");
-	const auto tonAmount = RCManager::getInstance().donateAmountTon();
-	const auto rubleAmount = RCManager::getInstance().donateAmountRub().append("₽");
+		auto emojiHelper = Ui::Text::CustomEmojiHelper();
+		const auto tonSymbol = emojiHelper.paletteDependent({
+			.factory = [=]
+			{
+				return Ui::Earn::IconCurrencyColored(
+					st::boxDividerLabel.style.font,
+					st::boxDividerLabel.textFg->c);
+			},
+			.margin = st::channelEarnCurrencyLearnMargins
+		});
 
-	const auto innerText = TextWithEntities{}.append(tonSymbol).append(tonAmount).append(", ").append(rubleAmount);
-	const auto str = tr::ayu_SupportBoxMakeDonationInfo(
-		tr::now,
-		lt_amount1,
-		TextWithEntities{dollarAmount},
-		lt_amount2,
-		innerText,
-		tr::rich
-	);
+		const auto dollarAmount = RCManager::getInstance().donateAmountUsd().prepend("$");
+		const auto tonAmount = RCManager::getInstance().donateAmountTon();
+		const auto rubleAmount = RCManager::getInstance().donateAmountRub().append("₽");
 
-	box->verticalLayout()->add(InfoRow(
-		box->verticalLayout(),
-		&controller->session(),
-		tr::ayu_SupportBoxMakeDonationHeader(tr::now),
-		str,
-		&st::menuIconEarn,
-		emojiHelper.context()));
+		const auto innerText = TextWithEntities{}.append(tonSymbol).append(tonAmount).append(", ").append(rubleAmount);
+		const auto str = tr::ayu_SupportBoxMakeDonationInfo(
+			tr::now,
+			lt_amount1,
+			TextWithEntities{dollarAmount},
+			lt_amount2,
+			innerText,
+			tr::rich);
 
-	Ui::AddSkip(box->verticalLayout());
+		box->verticalLayout()->add(InfoRow(
+			box->verticalLayout(),
+			&controller->session(),
+			tr::ayu_SupportBoxMakeDonationHeader(tr::now),
+			str,
+			&st::menuIconEarn,
+			emojiHelper.context()));
 
-	const auto username = (type == DonateType::Extera)
-		? QString("@ayugramOwner")
-		: RCManager::getInstance().donateUsername();
-	auto usernameTrimmed = username;
-	if (usernameTrimmed.startsWith('@')) {
-		usernameTrimmed.remove(0, 1);
+		Ui::AddSkip(box->verticalLayout());
+
+		const auto username = (type == DonateType::Extera)
+			? QString("@ayugramOwner")
+			: RCManager::getInstance().donateUsername();
+		auto usernameTrimmed = username;
+		if (usernameTrimmed.startsWith('@')) {
+			usernameTrimmed.remove(0, 1);
+		}
+		const TextWithEntities proofText = tr::ayu_SupportBoxSendProofInfo(
+			tr::now,
+			lt_item,
+			Ui::Text::Link(username, controller->session().createInternalLinkFull(usernameTrimmed)),
+			tr::rich);
+		box->verticalLayout()->add(InfoRow(
+			box->verticalLayout(),
+			&controller->session(),
+			tr::ayu_SupportBoxSendProofHeader(tr::now),
+			proofText,
+			&st::menuIconPhoto,
+			Core::TextContext({
+				.session = std::move(&controller->session()),
+			})));
+
+		Ui::AddSkip(box->verticalLayout());
+
+		box->verticalLayout()->add(InfoRow(
+			box->verticalLayout(),
+			&controller->session(),
+			tr::ayu_SupportBoxReceiveBadgeHeader(tr::now),
+			TextWithEntities{
+				tr::ayu_SupportBoxReceiveBadgeInfo(tr::now)
+			},
+			&st::menuIconStarRefShare,
+			Core::TextContext({
+				.session = std::move(&controller->session()),
+			})));
 	}
-	const TextWithEntities proofText = tr::ayu_SupportBoxSendProofInfo(
-		tr::now,
-		lt_item,
-		Ui::Text::Link(username, controller->session().createInternalLinkFull(usernameTrimmed)),
-		tr::rich);
-	box->verticalLayout()->add(InfoRow(
-		box->verticalLayout(),
-		&controller->session(),
-		tr::ayu_SupportBoxSendProofHeader(tr::now),
-		proofText,
-		&st::menuIconPhoto,
-		Core::TextContext({
-			.session = std::move(&controller->session()),
-		})));
-
-	Ui::AddSkip(box->verticalLayout());
-
-	box->verticalLayout()->add(InfoRow(
-		box->verticalLayout(),
-		&controller->session(),
-		tr::ayu_SupportBoxReceiveBadgeHeader(tr::now),
-		TextWithEntities{
-			tr::ayu_SupportBoxReceiveBadgeInfo(tr::now)
-		},
-		&st::menuIconStarRefShare,
-		Core::TextContext({
-			.session = std::move(&controller->session()),
-		})));
 
 	const auto closeButton = box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	const auto buttonWidth = box->width()

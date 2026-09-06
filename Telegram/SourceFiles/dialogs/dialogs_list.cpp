@@ -60,10 +60,14 @@ not_null<Row*> List::addByName(Key key) {
 }
 
 void List::adjustByName(not_null<Row*> row) {
-	Expects(row->index() >= 0 && row->index() < _rows.size());
+	Expects(_sortMode == SortMode::Name);
+
+	const auto index = row->index();
+	if (index < 0 || index >= _rows.size() || _rows[index] != row) {
+		return;
+	}
 
 	const auto &key = row->entry()->chatListNameSortKey();
-	const auto index = row->index();
 	const auto i = _rows.begin() + index;
 	const auto before = std::find_if(i + 1, _rows.end(), [&](Row *row) {
 		return row->entry()->chatListNameSortKey().compare(key) >= 0;
@@ -83,7 +87,11 @@ void List::adjustByName(not_null<Row*> row) {
 
 void List::adjustByDate(not_null<Row*> row) {
 	Expects(_sortMode == SortMode::Date);
-	Expects(row->index() >= 0 && row->index() < _rows.size());
+
+	const auto index = row->index();
+	if (index < 0 || index >= _rows.size() || _rows[index] != row) {
+		return;
+	}
 
 	if (_frozen) {
 		const auto canAdjustWhileFrozen = _pendingAdjust.empty()
@@ -96,7 +104,6 @@ void List::adjustByDate(not_null<Row*> row) {
 	}
 
 	const auto key = row->sortKey(_filterId);
-	const auto index = row->index();
 	const auto i = _rows.begin() + index;
 	const auto before = std::find_if(i + 1, _rows.end(), [&](Row *row) {
 		return (row->sortKey(_filterId) <= key);
@@ -123,12 +130,24 @@ void List::unfreeze() {
 	auto pending = base::take(_pendingAdjust);
 	if (pending.empty()) {
 		return;
-	} else if (pending.size() == 1) {
-		adjustByDate(*pending.begin());
+	}
+	const auto stillInList = [&](not_null<Row*> row) {
+		const auto index = row->index();
+		return index >= 0
+			&& index < _rows.size()
+			&& _rows[index] == row;
+	};
+	if (pending.size() == 1) {
+		const auto row = *pending.begin();
+		if (stillInList(row)) {
+			adjustByDate(row);
+		}
 		return;
 	}
 	for (const auto &row : pending) {
-		adjustByDate(row);
+		if (stillInList(row)) {
+			adjustByDate(row);
+		}
 	}
 	if (!sortedByDate()) {
 		sortByDate();

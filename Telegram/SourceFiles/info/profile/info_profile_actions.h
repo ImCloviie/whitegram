@@ -55,7 +55,8 @@ void BuildProfileDetailsSections(
 	not_null<PeerData*> peer,
 	Data::ForumTopic *topic,
 	Data::SavedSublist *sublist,
-	Origin origin);
+	Origin origin,
+	Fn<void(not_null<Ui::RpWidget*>)> detailsSectionCreated = nullptr);
 
 } // namespace Info::Profile
 

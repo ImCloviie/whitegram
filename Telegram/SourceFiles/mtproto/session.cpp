@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/session.h"
 
+#include "mtproto/details/mtproto_abstract_socket.h"
 #include "mtproto/details/mtproto_dcenter.h"
 #include "mtproto/session_private.h"
 #include "mtproto/mtproto_auth_key.h"
@@ -238,18 +239,25 @@ void Session::restart() {
 
 void Session::refreshOptions() {
 	auto &settings = Core::App().settings().proxy();
-	const auto &proxy = settings.selected();
+	const auto &selected = settings.selected();
 	const auto isEnabled = settings.isEnabled();
-	const auto proxyType = (isEnabled ? proxy.type : ProxyData::Type::None);
+	auto proxy = (isEnabled ? selected : ProxyData());
+	if (details::PreferWebSocket()
+		&& proxy.type == ProxyData::Type::Mtproto) {
+		proxy = ProxyData();
+	}
+	const auto proxyType = proxy.type;
 	const auto useTcp = (proxyType != ProxyData::Type::Http);
-	const auto useHttp = (proxyType != ProxyData::Type::Mtproto);
+	const auto useHttp = details::PreferWebSocket()
+		? false
+		: (proxyType != ProxyData::Type::Mtproto);
 	const auto useIPv4 = true;
 	const auto useIPv6 = settings.tryIPv6();
 	_data->setOptions(SessionOptions(
 		_instance->systemLangCode(),
 		_instance->cloudLangCode(),
 		_instance->langPackName(),
-		(isEnabled ? proxy : ProxyData()),
+		proxy,
 		useIPv4,
 		useIPv6,
 		useHttp,

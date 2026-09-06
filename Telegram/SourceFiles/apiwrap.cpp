@@ -110,6 +110,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_worker.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "ayu/features/forward/ayu_forward.h"
+#include "ayu/features/custom_archives/custom_archives.h"
 
 
 namespace {
@@ -484,6 +485,10 @@ void ApiWrap::toggleHistoryArchived(
 		not_null<History*> history,
 		bool archived,
 		Fn<void()> callback) {
+	if (archived) {
+		AyuFeatures::CustomArchives::RemovePeerFromCustomFolders(
+			history->peer);
+	}
 	if (const auto already = _historyArchivedRequests.take(history)) {
 		request(already->first).cancel();
 	}
@@ -1476,7 +1481,7 @@ void ApiWrap::markContentsRead(
 	if (!markedIds.isEmpty()) {
 		request(MTPmessages_ReadMessageContents(
 			MTP_vector<MTPint>(markedIds)
-		)).done([=](const MTPmessages_AffectedMessages &result) {
+		)).done([this](const MTPmessages_AffectedMessages &result) {
 			applyAffectedMessages(result);
 		}).send();
 	}
@@ -1509,7 +1514,7 @@ void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
 	} else {
 		request(MTPmessages_ReadMessageContents(
 			ids
-		)).done([=](const MTPmessages_AffectedMessages &result) {
+		)).done([this](const MTPmessages_AffectedMessages &result) {
 			applyAffectedMessages(result);
 		}).send();
 	}

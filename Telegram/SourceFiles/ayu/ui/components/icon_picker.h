@@ -9,10 +9,16 @@
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 
+#include <vector>
+
+[[nodiscard]] std::vector<QString> WhitegramAppIcons();
+
 class IconPicker : public Ui::RpWidget
 {
 public:
-	IconPicker(QWidget *parent);
+	explicit IconPicker(
+		QWidget *parent,
+		std::vector<QString> icons = {});
 	~IconPicker() = default;
 
 	static constexpr int kColumns = 4;
@@ -24,8 +30,11 @@ protected:
 private:
 	void drawIcon(QPainter &p, const QImage &icon, int x, int y, float strokeOpacity);
 	[[nodiscard]] int cellWidth() const;
+	[[nodiscard]] int rowsCount() const;
 
+	std::vector<QString> _icons;
 	Ui::Animations::Simple _animation;
 	QString _wasSelected;
 	std::unordered_map<QString, QImage> _cachedIcons;
+
 };

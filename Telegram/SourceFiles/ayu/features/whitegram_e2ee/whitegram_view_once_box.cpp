@@ -4,8 +4,10 @@
 #include "ayu/features/whitegram_e2ee/whitegram_view_once_box.h"
 
 #include "apiwrap.h"
+#include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "base/timer.h"
+#include "mainwindow.h"
 #include "data/data_channel.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
@@ -213,6 +215,9 @@ void SetupDecryptedContentBox(
 	const auto isOut = item->out();
 
 	box->setTitle(u"🔒 Одноразовое сообщение"_q);
+	box->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
+		AyuFeatures::StreamerMode::RequireViewOnceGuard());
+	AyuFeatures::StreamerMode::hideWidgetWindow(box);
 
 	const auto subtitle = isOut
 		? (ttl == 0
@@ -342,6 +347,8 @@ void ShowViewOnceBox(
 		not_null<Window::SessionController*> controller,
 		not_null<HistoryItem*> item) {
 	const auto session = &controller->session();
+	AyuFeatures::StreamerMode::hideWidgetWindow(controller->widget().get());
+
 	auto rawText = GetEncryptedPayload(item);
 	if (rawText.isEmpty()) {
 		rawText = item->originalText().text;
@@ -349,6 +356,9 @@ void ShowViewOnceBox(
 	const auto myPrivKey = GetOrGenerateIdentityKeyPair().privateKey;
 
 	auto decrypted = Decrypt(rawText, myPrivKey);
+	if (!decrypted.has_value()) {
+		decrypted = GetLocalSentMessageById(item->fullId());
+	}
 	if (!decrypted.has_value()) {
 		decrypted = GetLocalSentMessage(rawText);
 	}
@@ -368,6 +378,9 @@ void ShowViewOnceBox(
 
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) mutable {
 		box->setTitle(u"🔒 Одноразовое сообщение"_q);
+		box->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
+			AyuFeatures::StreamerMode::RequireViewOnceGuard());
+		AyuFeatures::StreamerMode::hideWidgetWindow(box);
 
 		if (!decrypted.has_value() && IsPasscodeEncryptedMessage(rawText)) {
 			box->addRow(object_ptr<Ui::FlatLabel>(

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "base/basic_types.h"
+#include "data/data_msg_id.h"
 
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
@@ -61,6 +62,9 @@ struct MessageContent {
 	const QString &encryptedPayload,
 	const QString &passcode);
 
+[[nodiscard]] QByteArray EnsureUncompressedPublicKey(const QByteArray &keyBytes);
+void RemapMessageId(FullMsgId wasId, FullMsgId nowId);
+
 // Detection helpers
 [[nodiscard]] bool IsEncryptedMessage(const QString &text);
 [[nodiscard]] bool IsPasscodeEncryptedMessage(const QString &text);
@@ -73,6 +77,8 @@ void SaveEncryptedPayload(not_null<const HistoryItem*> item, const QString &payl
 
 void SaveLocalSentMessage(const QString &text, const MessageContent &content);
 [[nodiscard]] std::optional<MessageContent> GetLocalSentMessage(const QString &text);
+void SaveLocalSentMessageById(FullMsgId msgId, const MessageContent &content);
+[[nodiscard]] std::optional<MessageContent> GetLocalSentMessageById(FullMsgId msgId);
 
 // Memory wiping utility
 void SecureCleanse(void *ptr, size_t len);

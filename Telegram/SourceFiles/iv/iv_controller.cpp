@@ -297,7 +297,7 @@ void Controller::createWebview(const Webview::StorageId &storageId) {
 
 	const auto window = _window.get();
 
-	if (AyuSettings::getInstance().streamerMode()) {
+	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
 		AyuFeatures::StreamerMode::hideWidgetWindow(window);
 	}
 

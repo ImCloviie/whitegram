@@ -468,38 +468,62 @@ HistoryWidget::HistoryWidget(
 	}, lifetime());
 
 	setupSendMenu(_send.get(), [=](SendMenu::Action action, SendMenu::Details) {
+		if (_peer && _peer->isUser()) {
+			Whitegram::E2EE::KeyManager::Instance().refreshPeerKeyIfNeeded(
+				peerToUser(_peer->id).bare);
+		}
 		if (action.type == SendMenu::ActionType::Send) {
 			send(action.options);
 		} else if (action.type == SendMenu::ActionType::OneTimeMessage) {
+			if (!_peer || !_peer->isUser()) {
+				return;
+			}
 			const auto ttl = action.whitegramTtl;
 			const auto performSend = [=](int effectiveTtl) {
 				const auto textWithTags = _field->getTextWithTags();
 				if (textWithTags.text.trimmed().isEmpty()) {
 					return;
 				}
+				if (!_peer || !_peer->isUser()) {
+					return;
+				}
 				const auto myUserId = session().userId().bare;
 				const auto recipientId = peerToUser(_peer->id).bare;
 
-				const auto cachedKey = Whitegram::E2EE::KeyManager::Instance().cachedPeerPublicKey(recipientId);
-				if (!cachedKey.has_value() && recipientId != myUserId) {
-					Whitegram::E2EE::KeyManager::Instance().fetchPeerPublicKey(recipientId, nullptr);
-				}
-				const auto pubKey = (recipientId == myUserId)
-					? Whitegram::E2EE::GetMyPublicKey()
-					: cachedKey.value_or(QByteArray());
+				const auto doEncryptAndSend = [=](const QByteArray &pubKey) {
+					const auto encryptedText = Whitegram::E2EE::Encrypt(
+						textWithTags.text,
+						effectiveTtl,
+						myUserId,
+						recipientId,
+						pubKey);
 
-				const auto encryptedText = Whitegram::E2EE::Encrypt(
-					textWithTags.text,
-					effectiveTtl,
-					myUserId,
-					recipientId,
-					pubKey);
+					if (!encryptedText.isEmpty()) {
+						auto options = action.options;
+						options.scheduled = 0;
+						const auto nextLocalMessageId = session().data().nextLocalMessageId();
+						Whitegram::E2EE::MessageContent sentContent;
+						sentContent.text = textWithTags.text;
+						sentContent.ttl = effectiveTtl;
+						sentContent.senderId = myUserId;
+						sentContent.recipientId = recipientId;
+						sentContent.timestamp = crl::now();
+						Whitegram::E2EE::SaveLocalSentMessageById(
+							FullMsgId(_peer->id, nextLocalMessageId),
+							sentContent);
 
-				if (!encryptedText.isEmpty()) {
-					_field->setTextWithTags(TextWithTags{ encryptedText }, Ui::InputField::HistoryAction::NewEntry);
-					auto options = action.options;
-					options.scheduled = 0;
-					send(options);
+						sendTextWithTags(TextWithTags{ encryptedText }, false, options, nullptr);
+					}
+				};
+
+				if (recipientId == myUserId) {
+					doEncryptAndSend(Whitegram::E2EE::GetMyPublicKey());
+				} else if (const auto cachedKey = Whitegram::E2EE::KeyManager::Instance().cachedPeerPublicKey(recipientId)) {
+					doEncryptAndSend(*cachedKey);
+				} else {
+					Whitegram::E2EE::KeyManager::Instance().fetchPeerPublicKey(recipientId, [=](const QByteArray &pubKey) {
+						doEncryptAndSend(pubKey);
+					});
 				}
 			};
 

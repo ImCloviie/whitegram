@@ -190,10 +190,55 @@ std::optional<QByteArray> AesGcmDecrypt(
 	return plaintext;
 }
 
+} // namespace
+
+QByteArray EnsureUncompressedPublicKey(const QByteArray &keyBytes) {
+	if (keyBytes.size() == kP256X962Length) {
+		return keyBytes;
+	}
+	if (keyBytes.size() == 33) {
+		auto key = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+		if (!key) {
+			return keyBytes;
+		}
+		const auto group = EC_KEY_get0_group(key);
+		auto point = EC_POINT_new(group);
+		if (point) {
+			const auto ok = (EC_POINT_oct2point(
+				group,
+				point,
+				reinterpret_cast<const uint8_t*>(keyBytes.constData()),
+				keyBytes.size(),
+				nullptr) == 1);
+			if (ok) {
+				QByteArray uncompressed(kP256X962Length, '\0');
+				const auto written = EC_POINT_point2oct(
+					group,
+					point,
+					POINT_CONVERSION_UNCOMPRESSED,
+					reinterpret_cast<uint8_t*>(uncompressed.data()),
+					uncompressed.size(),
+					nullptr);
+				if (written == kP256X962Length) {
+					EC_POINT_free(point);
+					EC_KEY_free(key);
+					return uncompressed;
+				}
+			}
+			EC_POINT_free(point);
+		}
+		EC_KEY_free(key);
+	}
+	return keyBytes;
+}
+
+namespace {
+
 std::optional<QByteArray> ComputeEcdh(
 		const QByteArray &privateKeyBytes,
 		const QByteArray &peerPublicKeyBytes) {
-	if (privateKeyBytes.size() != kKeySize || peerPublicKeyBytes.size() != kP256X962Length) {
+	const auto pubKey = EnsureUncompressedPublicKey(peerPublicKeyBytes);
+	if (privateKeyBytes.size() != kKeySize || pubKey.size() != kP256X962Length) {
 		return std::nullopt;
 	}
 	auto key = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
@@ -222,8 +267,8 @@ std::optional<QByteArray> ComputeEcdh(
 	const auto okPoint = (EC_POINT_oct2point(
 		group,
 		point,
-		reinterpret_cast<const uint8_t*>(peerPublicKeyBytes.constData()),
-		peerPublicKeyBytes.size(),
+		reinterpret_cast<const uint8_t*>(pubKey.constData()),
+		pubKey.size(),
 		nullptr) == 1);
 
 	if (!okPoint) {
@@ -256,10 +301,11 @@ QString IdentityKeyPath() {
 	return cWorkingDir() + u"tdata/whitegram/keys/identity.key"_q;
 }
 
-constexpr auto kZw0 = QChar(ushort(0x200B));
+constexpr auto kZw0 = QChar(ushort(0x200E));
 constexpr auto kZw1 = QChar(ushort(0x200C));
 constexpr auto kZw2 = QChar(ushort(0x200D));
 constexpr auto kZw3 = QChar(ushort(0x2060));
+constexpr auto kZwGuard = QChar(ushort(0x200C));
 
 const auto kZwStart = QString(u"\u200B\u200C\u200D\u200B"_q);
 
@@ -268,7 +314,7 @@ QString EncodeZeroWidth(const QByteArray &bytes) {
 		return QString();
 	}
 	QString result;
-	result.reserve(kZwStart.length() + 8 + bytes.size() * 4);
+	result.reserve(kZwStart.length() + 8 + bytes.size() * 4 + 1);
 	result.append(kZwStart);
 
 	const QChar map[4] = { kZw0, kZw1, kZw2, kZw3 };
@@ -287,12 +333,13 @@ QString EncodeZeroWidth(const QByteArray &bytes) {
 		result.append(map[(b >> 2) & 3]);
 		result.append(map[b & 3]);
 	}
+	result.append(kZwGuard);
 	return result;
 }
 
 std::optional<QByteArray> DecodeZeroWidth(const QString &text) {
 	auto decodeChar = [](QChar ch) -> int {
-		if (ch == kZw0) return 0;
+		if (ch == kZw0 || ch == QChar(ushort(0x200B))) return 0;
 		if (ch == kZw1) return 1;
 		if (ch == kZw2) return 2;
 		if (ch == kZw3) return 3;
@@ -319,16 +366,27 @@ std::optional<QByteArray> DecodeZeroWidth(const QString &text) {
 			if (ok) {
 				const auto payloadLen = (int(lenBytes[0]) << 8) | int(lenBytes[1]);
 				const auto payloadStart = dataStart + 8;
-				if (payloadLen > 0 && text.length() >= payloadStart + payloadLen * 4) {
+				if (payloadLen > 0) {
 					QByteArray out;
 					out.reserve(payloadLen);
 					auto payloadOk = true;
 					for (auto i = 0; i < payloadLen; ++i) {
 						const auto idx = payloadStart + i * 4;
-						const auto b0 = decodeChar(text[idx]);
-						const auto b1 = decodeChar(text[idx + 1]);
-						const auto b2 = decodeChar(text[idx + 2]);
-						const auto b3 = decodeChar(text[idx + 3]);
+						const auto getChar = [&](int offset) -> int {
+							const auto p = idx + offset;
+							if (p < text.length()) {
+								const auto ch = text[p];
+								if (ch == kZwGuard && p >= payloadStart + payloadLen * 4) {
+									return -1;
+								}
+								return decodeChar(ch);
+							}
+							return 0;
+						};
+						const auto b0 = (idx < text.length()) ? decodeChar(text[idx]) : 0;
+						const auto b1 = getChar(1);
+						const auto b2 = getChar(2);
+						const auto b3 = getChar(3);
 						if (b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0) {
 							payloadOk = false;
 							break;
@@ -452,11 +510,12 @@ QString Encrypt(
 		uint64 senderId,
 		uint64 recipientId,
 		const QByteArray &recipientPublicKey) {
+	const auto validRecipientKey = EnsureUncompressedPublicKey(recipientPublicKey);
 	QByteArray aesKey(kKeySize, '\0');
 	QByteArray packet;
 	QByteArray aad;
 
-	if (recipientPublicKey.size() == kP256X962Length) {
+	if (validRecipientKey.size() == kP256X962Length) {
 		RAND_bytes(reinterpret_cast<uint8_t*>(aesKey.data()), int(aesKey.size()));
 		const auto ephemeral = GenerateKeyPair();
 		if (ephemeral.publicKey.isEmpty() || ephemeral.privateKey.isEmpty()) {
@@ -464,7 +523,7 @@ QString Encrypt(
 		}
 		const auto myPubKey = GetMyPublicKey();
 
-		const auto secretR = ComputeEcdh(ephemeral.privateKey, recipientPublicKey);
+		const auto secretR = ComputeEcdh(ephemeral.privateKey, validRecipientKey);
 		if (!secretR) {
 			return {};
 		}
@@ -563,7 +622,12 @@ QString Encrypt(
 
 	const auto zw = EncodeZeroWidth(packet);
 	const auto placeholder = QString::fromUtf8(kPlaceholderText);
-	const auto fullResult = placeholder + zw;
+	const auto b64 = QString::fromLatin1(packet.toBase64(QByteArray::Base64UrlEncoding));
+	const auto fullResult = placeholder
+		+ zw
+		+ QString::fromLatin1("\n")
+		+ QString::fromLatin1(kPrefix)
+		+ b64;
 
 	MessageContent content;
 	content.text = text;
@@ -940,23 +1004,122 @@ QString ExtractPayload(const QString &text) {
 
 namespace {
 
+QString PayloadsCachePath() {
+	return cWorkingDir() + u"tdata/whitegram/keys/payloads.json"_q;
+}
+
 base::flat_map<const HistoryItem*, QString> gPayloadsByItem;
 base::flat_map<FullMsgId, QString> gPayloadsById;
+base::flat_map<FullMsgId, MessageContent> gLocalSentMessagesById;
 base::flat_map<QString, MessageContent> gLocalSentMessages;
+std::map<QString, QString> gDiskPayloads;
+bool gDiskPayloadsLoaded = false;
+
+void EnsureDiskPayloadsLoaded() {
+	if (gDiskPayloadsLoaded) {
+		return;
+	}
+	gDiskPayloadsLoaded = true;
+	QFile file(PayloadsCachePath());
+	if (file.open(QIODevice::ReadOnly)) {
+		const auto data = file.readAll();
+		file.close();
+		try {
+			const auto j = nlohmann::json::parse(data.constData());
+			for (auto it = j.begin(); it != j.end(); ++it) {
+				gDiskPayloads[QString::fromStdString(it.key())] = QString::fromStdString(it.value().get<std::string>());
+			}
+		} catch (...) {
+		}
+	}
+}
+
+void SaveDiskPayloads() {
+	const auto path = PayloadsCachePath();
+	QFileInfo(path).dir().mkpath(u"."_q);
+	QFile file(path);
+	if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+		nlohmann::json j;
+		for (const auto &[k, v] : gDiskPayloads) {
+			j[k.toStdString()] = v.toStdString();
+		}
+		const auto dumped = j.dump(2);
+		file.write(dumped.data(), dumped.size());
+		file.close();
+	}
+}
+
+void SaveDiskPayload(FullMsgId id, const QString &payload) {
+	if (!id.msg) {
+		return;
+	}
+	EnsureDiskPayloadsLoaded();
+	const auto key = QString::number(id.peer.value) + '_' + QString::number(id.msg.bare);
+	gDiskPayloads[key] = payload;
+	SaveDiskPayloads();
+}
+
+QString ReadDiskPayload(FullMsgId id) {
+	if (!id.msg) {
+		return QString();
+	}
+	EnsureDiskPayloadsLoaded();
+	const auto key = QString::number(id.peer.value) + '_' + QString::number(id.msg.bare);
+	const auto it = gDiskPayloads.find(key);
+	if (it != gDiskPayloads.end()) {
+		return it->second;
+	}
+	return QString();
+}
 
 } // namespace
+
+void RemapMessageId(FullMsgId wasId, FullMsgId nowId) {
+	const auto it = gPayloadsById.find(wasId);
+	if (it != gPayloadsById.end()) {
+		gPayloadsById[nowId] = it->second;
+		SaveDiskPayload(nowId, it->second);
+	} else {
+		const auto fromDisk = ReadDiskPayload(wasId);
+		if (!fromDisk.isEmpty()) {
+			gPayloadsById[nowId] = fromDisk;
+			SaveDiskPayload(nowId, fromDisk);
+		}
+	}
+	const auto itLocal = gLocalSentMessagesById.find(wasId);
+	if (itLocal != gLocalSentMessagesById.end()) {
+		gLocalSentMessagesById[nowId] = itLocal->second;
+	}
+}
+
+void SaveLocalSentMessageById(FullMsgId msgId, const MessageContent &content) {
+	if (msgId.msg) {
+		gLocalSentMessagesById[msgId] = content;
+	}
+}
+
+std::optional<MessageContent> GetLocalSentMessageById(FullMsgId msgId) {
+	if (msgId.msg) {
+		const auto it = gLocalSentMessagesById.find(msgId);
+		if (it != gLocalSentMessagesById.end()) {
+			return it->second;
+		}
+	}
+	return std::nullopt;
+}
 
 void SaveEncryptedPayload(not_null<const HistoryItem*> item, const QString &payload) {
 	if (payload.trimmed().startsWith(u"🔒 Одноразовое сообщение\n👁️ Нажмите, чтобы просмотреть"_q)) {
 		return;
 	}
-	if (!ExtractPayloadBytes(payload).has_value()) {
+	if (!ExtractPayloadBytes(payload).has_value() && !IsEncryptedMessage(payload)) {
 		return;
 	}
 	gPayloadsByItem[item.get()] = payload;
 	const auto fullId = item->fullId();
 	if (fullId.msg) {
 		gPayloadsById[fullId] = payload;
+		SaveDiskPayload(fullId, payload);
 	}
 }
 
@@ -968,9 +1131,17 @@ QString GetEncryptedPayload(not_null<const HistoryItem*> item) {
 	const auto fullId = item->fullId();
 	if (fullId.msg) {
 		const auto itId = gPayloadsById.find(fullId);
-		if (itId != gPayloadsById.end()) {
+		if (itId != gPayloadsById.end() && !itId->second.isEmpty()) {
 			return itId->second;
 		}
+		const auto diskPayload = ReadDiskPayload(fullId);
+		if (!diskPayload.isEmpty()) {
+			gPayloadsById[fullId] = diskPayload;
+			return diskPayload;
+		}
+	}
+	if (IsEncryptedMessage(item->originalText().text)) {
+		return item->originalText().text;
 	}
 	return QString();
 }
@@ -986,6 +1157,7 @@ void SaveLocalSentMessage(const QString &text, const MessageContent &content) {
 	const auto placeholder = QString::fromUtf8(kPlaceholderText);
 	gLocalSentMessages[placeholder] = content;
 	gLocalSentMessages[placeholder.trimmed()] = content;
+	gLocalSentMessages[u"🔒 Одноразовое сообщение\n👁️ Нажмите, чтобы просмотреть"_q] = content;
 }
 
 std::optional<MessageContent> GetLocalSentMessage(const QString &text) {

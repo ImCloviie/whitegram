@@ -17,9 +17,11 @@ void SetWindowCaptureExcluded(
 		not_null<QWidget*> widget,
 		bool excluded) {
 	const auto handle = reinterpret_cast<HWND>(widget->winId());
-	SetWindowDisplayAffinity(
-		handle,
-		excluded ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
+	if (!excluded) {
+		SetWindowDisplayAffinity(handle, WDA_NONE);
+	} else if (!SetWindowDisplayAffinity(handle, WDA_EXCLUDEFROMCAPTURE)) {
+		SetWindowDisplayAffinity(handle, WDA_MONITOR);
+	}
 }
 
 } // namespace AyuFeatures::StreamerMode::Platform

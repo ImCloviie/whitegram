@@ -599,7 +599,7 @@ Fn<void(Action, Details)> DefaultCallback(
 		Fn<void(Api::SendOptions)> send) {
 	const auto guard = base::make_weak(show->toastParent());
 	return [=](Action action, Details details) {
-		if (action.type == ActionType::Send || action.type == ActionType::OneTimeMessage) {
+		if (action.type == ActionType::Send) {
 			auto options = action.options;
 			options.scheduled = 0;
 			send(options);
@@ -750,7 +750,7 @@ FillMenuResult FillSendMenu(
 		? *iconsOverride
 		: st::defaultComposeIcons;
 
-	if (sending && type != Type::Reminder) {
+	if (sending && type != Type::Reminder && peerIsUser(PeerId(details.barePeerId))) {
 		auto ttlSubmenu = std::make_unique<Ui::PopupMenu>(menu, st::popupMenuWithIcons);
 
 		ttlSubmenu->addAction(u"Один просмотр (до закрытия)"_q, [=] {

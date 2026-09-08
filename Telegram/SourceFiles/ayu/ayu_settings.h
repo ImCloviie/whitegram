@@ -946,6 +946,7 @@ public:
 	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
+	[[nodiscard]] bool hideTelegramOnViewOnce() const { return _hideTelegramOnViewOnce.current(); }
 	[[nodiscard]] bool musicIslandEnabled() const { return _musicIslandEnabled.current(); }
 	[[nodiscard]] int musicIslandPosition() const { return _musicIslandPosition.current(); }
 	[[nodiscard]] bool musicIslandHideTopBar() const { return _musicIslandHideTopBar.current(); }
@@ -1048,6 +1049,7 @@ public:
 	void setAvatarCorners(int val);
 	void setSingleCornerRadius(bool val);
 	void setStreamerMode(bool val);
+	void setHideTelegramOnViewOnce(bool val);
 	void setMusicIslandEnabled(bool val);
 	void setMusicIslandPosition(int val);
 	void setMusicIslandHideTopBar(bool val);
@@ -1265,6 +1267,8 @@ public:
 	[[nodiscard]] rpl::producer<bool> singleCornerRadiusChanges() const { return _singleCornerRadius.changes(); }
 	[[nodiscard]] rpl::producer<bool> streamerModeValue() const { return _streamerMode.value(); }
 	[[nodiscard]] rpl::producer<bool> streamerModeChanges() const { return _streamerMode.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideTelegramOnViewOnceValue() const { return _hideTelegramOnViewOnce.value(); }
+	[[nodiscard]] rpl::producer<bool> hideTelegramOnViewOnceChanges() const { return _hideTelegramOnViewOnce.changes(); }
 
 
   [[nodiscard]] AccountProfilesVisualVariant accountProfilesVisualVariant() const {
@@ -1590,6 +1594,7 @@ private:
   rpl::variable<int> _avatarCorners = 23;
   rpl::variable<bool> _singleCornerRadius = false;
   rpl::variable<bool> _streamerMode = false;
+  rpl::variable<bool> _hideTelegramOnViewOnce = true;
   rpl::variable<bool> _musicIslandEnabled = true;
   rpl::variable<int> _musicIslandPosition = 3;
   rpl::variable<bool> _musicIslandHideTopBar = true;

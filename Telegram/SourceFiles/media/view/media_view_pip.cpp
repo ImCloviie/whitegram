@@ -989,7 +989,7 @@ void Pip::setupPanel() {
 	_panel.setPosition(Deserialize(_delegate->pipLoadGeometry()));
 	_panel.widget()->show();
 
-	if (AyuSettings::getInstance().streamerMode()) {
+	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
 		AyuFeatures::StreamerMode::hideWidgetWindow(_panel.widget());
 	} else {
 		AyuFeatures::StreamerMode::showWidgetWindow(_panel.widget());

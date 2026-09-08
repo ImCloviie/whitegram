@@ -611,7 +611,7 @@ void Application::processCreatedWindow(
 	window->openInMediaViewRequests(
 	) | rpl::start_to_stream(_openInMediaViewRequests, window->lifetime());
 
-	if (AyuSettings::getInstance().streamerMode()) {
+	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
 		AyuFeatures::StreamerMode::hideWidgetWindow(window->widget());
 	}
 }

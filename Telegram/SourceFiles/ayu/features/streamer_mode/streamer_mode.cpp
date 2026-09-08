@@ -7,6 +7,7 @@
 
 #include "ayu/features/streamer_mode/streamer_mode.h"
 
+#include "ayu/ayu_settings.h"
 #include "ayu/features/streamer_mode/platform/platform_streamer_mode.h"
 #include "core/application.h"
 #include "window/window_controller.h"
@@ -20,6 +21,7 @@ namespace AyuFeatures::StreamerMode {
 namespace {
 
 constexpr auto kHiddenProperty = "AyuStreamerModeHidden";
+auto _viewOnceActiveCount = 0;
 
 [[nodiscard]] bool IsWindowCaptureExcluded(not_null<QWidget*> widget) {
 	return widget->property(kHiddenProperty).toBool();
@@ -32,6 +34,11 @@ void SetWindowCaptureExcluded(QWidget *widget, bool excluded) {
 }
 
 } // namespace
+
+bool isStreamerModeActive() {
+	return AyuSettings::getInstance().streamerMode()
+		|| (_viewOnceActiveCount > 0);
+}
 
 void apply(bool enabled) {
 	Core::App().enumerateWindows([=](not_null<Window::Controller*> window) {
@@ -52,12 +59,62 @@ void apply(bool enabled) {
 	}
 }
 
+void sync() {
+	apply(isStreamerModeActive());
+}
+
 void hideWidgetWindow(QWidget *widget) {
 	SetWindowCaptureExcluded(widget, true);
 }
 
 void showWidgetWindow(QWidget *widget) {
 	SetWindowCaptureExcluded(widget, false);
+}
+
+void pushViewOnceActive() {
+	++_viewOnceActiveCount;
+	sync();
+}
+
+void popViewOnceActive() {
+	if (_viewOnceActiveCount > 0) {
+		--_viewOnceActiveCount;
+		sync();
+	}
+}
+
+ScopedViewOnceGuard::ScopedViewOnceGuard() {
+	pushViewOnceActive();
+	_active = true;
+}
+
+ScopedViewOnceGuard::~ScopedViewOnceGuard() {
+	release();
+}
+
+ScopedViewOnceGuard::ScopedViewOnceGuard(ScopedViewOnceGuard &&other) noexcept
+: _active(other._active) {
+	other._active = false;
+}
+
+ScopedViewOnceGuard &ScopedViewOnceGuard::operator=(ScopedViewOnceGuard &&other) noexcept {
+	if (this != &other) {
+		release();
+		_active = other._active;
+		other._active = false;
+	}
+	return *this;
+}
+
+void ScopedViewOnceGuard::release() {
+	if (_active) {
+		_active = false;
+		popViewOnceActive();
+	}
+}
+
+ScopedViewOnceGuard RequireViewOnceGuard() {
+	return ScopedViewOnceGuard();
 }
 
 } // namespace AyuFeatures::StreamerMode

@@ -11,7 +11,32 @@ class QWidget;
 namespace AyuFeatures::StreamerMode {
 
 void apply(bool enabled);
+void sync();
 void hideWidgetWindow(QWidget *widget);
 void showWidgetWindow(QWidget *widget);
 
+[[nodiscard]] bool isStreamerModeActive();
+
+void pushViewOnceActive();
+void popViewOnceActive();
+
+class ScopedViewOnceGuard final {
+public:
+	ScopedViewOnceGuard();
+	~ScopedViewOnceGuard();
+
+	ScopedViewOnceGuard(const ScopedViewOnceGuard &) = delete;
+	ScopedViewOnceGuard &operator=(const ScopedViewOnceGuard &) = delete;
+	ScopedViewOnceGuard(ScopedViewOnceGuard &&other) noexcept;
+	ScopedViewOnceGuard &operator=(ScopedViewOnceGuard &&other) noexcept;
+
+	void release();
+
+private:
+	bool _active = false;
+};
+
+[[nodiscard]] ScopedViewOnceGuard RequireViewOnceGuard();
+
 } // namespace AyuFeatures::StreamerMode
+

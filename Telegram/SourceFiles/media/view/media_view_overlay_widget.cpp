@@ -4511,7 +4511,7 @@ void OverlayWidget::activate() {
 	QApplication::setActiveWindow(_window);
 	setFocus();
 
-	if (AyuSettings::getInstance().streamerMode()) {
+	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
 		AyuFeatures::StreamerMode::hideWidgetWindow(_window);
 	} else {
 		AyuFeatures::StreamerMode::showWidgetWindow(_window);
@@ -6079,6 +6079,23 @@ bool OverlayWidget::contentNeedsScreenshotProtection() const {
 void OverlayWidget::refreshScreenshotProtection() {
 	_screenshotProtected = contentNeedsScreenshotProtection();
 	Platform::SetWindowScreenshotProtection(_window, _screenshotProtected);
+
+	const auto media = _message ? _message->media() : nullptr;
+	const auto isViewOnce = _message && (_message->isTtlCoveredMedia() || (media && media->ttlSeconds() > 0));
+	if (isViewOnce) {
+		if (!_viewOnceGuard) {
+			_viewOnceGuard = std::make_unique<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
+				AyuFeatures::StreamerMode::RequireViewOnceGuard());
+		}
+		if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
+			AyuFeatures::StreamerMode::hideWidgetWindow(_window);
+		}
+	} else {
+		_viewOnceGuard = nullptr;
+		if (!AyuFeatures::StreamerMode::isStreamerModeActive()) {
+			AyuFeatures::StreamerMode::showWidgetWindow(_window);
+		}
+	}
 }
 
 void OverlayWidget::refreshSystemMediaControls() {
@@ -8828,6 +8845,7 @@ Window::SessionController *OverlayWidget::findWindow(bool switchTo) const {
 
 // #TODO unite and check
 void OverlayWidget::clearBeforeHide() {
+	_viewOnceGuard = nullptr;
 	AyuState::disableGhostModeOnStoryClose(_storiesSession);
 	checkSingleViewMediaBurn();
 	_message = nullptr;
@@ -8873,6 +8891,7 @@ void OverlayWidget::clearBeforeHide() {
 }
 
 void OverlayWidget::clearAfterHide() {
+	_viewOnceGuard = nullptr;
 	_recognitionResult = {};
 	_recognitionPendingSessionUniqueId = 0;
 	_recognitionPendingPhotoId = 0;

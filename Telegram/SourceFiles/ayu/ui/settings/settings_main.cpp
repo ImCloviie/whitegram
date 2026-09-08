@@ -1302,6 +1302,39 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 			"Profiles let you keep multiple accounts in one window and "
 			"switch between them quickly. The limit is the maximum number "
 			"of profiles you can create.")));
+
+	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
+
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Приватность"),
+		QString("Privacy")));
+
+	ayu.addSettingToggle({
+		.id = u"whitegram/hideTelegramOnViewOnce"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Скрывать Telegram в режиме стримера при просмотре одноразового контента"),
+			QString("Hide Telegram like streamer mode while viewing view-once media")),
+		.getter = &AyuSettings::hideTelegramOnViewOnce,
+		.setter = &AyuSettings::setHideTelegramOnViewOnce,
+		.icon = { &st::ayuStreamerModeMenuIcon },
+		.keywords = {
+			u"streamer"_q,
+			u"view-once"_q,
+			QString::fromUtf8("стример"),
+			QString::fromUtf8("одноразовые"),
+			QString::fromUtf8("скрыть"),
+		},
+	});
+
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Автоматически скрывает Telegram от программ захвата экрана (OBS, Discord и др.) "
+			"во время просмотра одноразовых сообщений, фото, видео и кружков."),
+		QString(
+			"Automatically hides Telegram from screen capture software (OBS, Discord, etc.) "
+			"while viewing view-once messages, photos, videos, and video notes.")));
 	builder.addSkip();
 });
 

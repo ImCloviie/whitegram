@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
+#include "ayu/features/streamer_mode/streamer_mode.h"
 #include "core/core_settings.h"
 #include "window/window_controller.h"
 #include "mainwindow.h"
@@ -1367,6 +1368,24 @@ void Instance::emitUpdate(AudioMsgId::Type type, CheckCallback check) {
 		if (_roundPlaying != activelyPlayingRound) {
 			_roundPlaying = activelyPlayingRound;
 			Core::App().floatPlayerToggleGifsPaused(activelyPlayingRound);
+		}
+		const auto activelyPlayingTTL = (type == AudioMsgId::Type::Voice)
+			&& !IsPausedOrPausing(state.state)
+			&& !IsStoppedOrStopping(state.state)
+			&& data->current.audio()
+			&& [&] {
+				if (const auto item = data->current.audio()->owner().message(data->current.contextId())) {
+					return item->media() && item->media()->ttlSeconds() > 0;
+				}
+				return false;
+			}();
+		if (activelyPlayingTTL) {
+			if (!_viewOnceGuard) {
+				_viewOnceGuard = std::make_unique<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
+					AyuFeatures::StreamerMode::RequireViewOnceGuard());
+			}
+		} else {
+			_viewOnceGuard = nullptr;
 		}
 		if (type == AudioMsgId::Type::Song) {
 			_listenTracker->update(state);

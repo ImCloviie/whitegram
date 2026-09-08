@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_session.h"
 #include "ayu/data/ayu_database.h"
+#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "data/data_peer.h"
 #include <QBuffer>
 
@@ -2155,6 +2156,7 @@ rpl::producer<GiftAuctionGot> Session::giftAuctionGots() const {
 }
 
 HistoryItem *Session::changeMessageId(PeerId peerId, MsgId wasId, MsgId nowId) {
+	Whitegram::E2EE::RemapMessageId(FullMsgId(peerId, wasId), FullMsgId(peerId, nowId));
 	const auto list = messagesListForInsert(peerId);
 	const auto i = list->find(wasId);
 	if (i == list->end()) {

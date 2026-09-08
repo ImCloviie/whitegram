@@ -482,7 +482,7 @@ rpl::producer<> UiIntegration::forcePopupMenuHideRequests() {
 }
 
 void UiIntegration::preparePopupMenu(not_null<QWidget*> widget) {
-	if (AyuSettings::getInstance().streamerMode()) {
+	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
 		AyuFeatures::StreamerMode::hideWidgetWindow(widget);
 	}
 }

@@ -42,6 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/streamer_mode/streamer_mode.h"
 
 
 namespace ChatHelpers {
@@ -386,6 +387,8 @@ void ShowTTLMediaLayerWidget(
 		parent,
 		std::move(preview));
 	layer->lifetime().add([] { ::Media::Player::instance()->stop(); });
+	layer->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
+		AyuFeatures::StreamerMode::RequireViewOnceGuard());
 	Core::App().screenshotProtection().addContentReason(
 		rpl::single(true),
 		layer->lifetime());

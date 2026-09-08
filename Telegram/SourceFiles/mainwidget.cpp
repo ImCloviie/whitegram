@@ -80,6 +80,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "ayu/features/whitegram_e2ee/whitegram_key_manager.h"
 #include "settings.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
@@ -483,6 +484,8 @@ MainWidget::MainWidget(
 			Core::UpdateChecker().startForced();
 		}
 	}
+
+	Whitegram::E2EE::KeyManager::Instance().init(&session());
 
 	cSetOtherOnline(0);
 

@@ -7,6 +7,7 @@
 #include "ayu/ui/settings/settings_general.h"
 
 #include "lang_auto.h"
+#include "lang/lang_keys.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
@@ -161,6 +162,16 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSectionDivider();
 
 	builder.addSubsectionTitle(tr::ayu_CategoryGeneral());
+
+	const auto viewOnceTitle = Lang::Id().startsWith(u"ru"_q)
+		? u"Скрывать Telegram в режиме стримера при просмотре одноразового контента"_q
+		: u"Hide Telegram like streamer mode while viewing view-once media"_q;
+	ayu.addSettingToggle({
+		.id = u"whitegram/hideTelegramOnViewOnce"_q,
+		.title = rpl::single(QString(viewOnceTitle)),
+		.getter = &AyuSettings::hideTelegramOnViewOnce,
+		.setter = &AyuSettings::setHideTelegramOnViewOnce,
+	});
 
 	const auto controller = builder.controller();
 	ayu.addToggle({

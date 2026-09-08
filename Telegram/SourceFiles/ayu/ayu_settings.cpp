@@ -1404,7 +1404,14 @@ void AyuSettings::setSingleCornerRadius(bool val) {
 void AyuSettings::setStreamerMode(bool val) {
 	if (_streamerMode.current() == val) return;
 	_streamerMode = val;
-	AyuFeatures::StreamerMode::apply(val);
+	AyuFeatures::StreamerMode::sync();
+	save();
+}
+
+void AyuSettings::setHideTelegramOnViewOnce(bool val) {
+	if (_hideTelegramOnViewOnce.current() == val) return;
+	_hideTelegramOnViewOnce = val;
+	AyuFeatures::StreamerMode::sync();
 	save();
 }
 
@@ -1657,6 +1664,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"customArchives", s._customArchives},
 		{"customProfileBackgrounds", s._customProfileBackgrounds},
 		{"streamerMode", s._streamerMode.current()},
+		{"hideTelegramOnViewOnce", s._hideTelegramOnViewOnce.current()},
 		{"musicIslandEnabled", s._musicIslandEnabled.current()},
 		{"musicIslandPosition", s._musicIslandPosition.current()},
 		{"musicIslandHideTopBar", s._musicIslandHideTopBar.current()},
@@ -1820,6 +1828,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 	s._streamerMode = j.value("streamerMode", defaults._streamerMode.current());
+	s._hideTelegramOnViewOnce = j.value("hideTelegramOnViewOnce", defaults._hideTelegramOnViewOnce.current());
 	s._musicIslandEnabled = j.value(
 		"musicIslandEnabled",
 		defaults._musicIslandEnabled.current());

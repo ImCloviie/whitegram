@@ -291,6 +291,10 @@ QString UiIntegration::emojiCacheFolder() {
 	return cWorkingDir() + "tdata/emoji";
 }
 
+QString UiIntegration::fontsCacheFolder() {
+	return cWorkingDir() + "tdata/fonts";
+}
+
 QString UiIntegration::openglCheckFilePath() {
 	return OpenGLCheckFilePath();
 }

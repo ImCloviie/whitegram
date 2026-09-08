@@ -14,11 +14,11 @@ def _win32_qt5_version(arch):
 
 def resolve(arch):
     if sys.platform == 'darwin':
-        os.environ['QT'] = '6.11.1'
+        os.environ['QT'] = '6.11.2'
     elif sys.platform == 'win32':
         if arch == 'arm' or 'qt6' in sys.argv:
             print('Choosing Qt 6.')
-            os.environ['QT'] = '6.11.1'
+            os.environ['QT'] = '6.11.2'
         else:
             qt_version = _win32_qt5_version(arch)
             print('Choosing Qt 5 (' + qt_version + ').')

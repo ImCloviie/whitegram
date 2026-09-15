@@ -85,4 +85,8 @@ struct SeparateId {
 		const SeparateId &) = default;
 };
 
+[[nodiscard]] bool SeparateWindowThreadAvailable(SeparateId id);
+[[nodiscard]] bool SeparateWindowLocked(SeparateId id);
+[[nodiscard]] bool CanShowSeparateWindow(SeparateId id);
+
 } // namespace Window

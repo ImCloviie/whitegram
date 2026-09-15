@@ -25,6 +25,7 @@
 #include "media/player/media_player_instance.h"
 #include "media/view/media_view_playback_progress.h"
 #include "styles/palette.h"
+#include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_chat_helpers.h"
@@ -48,7 +49,6 @@ namespace {
 
 constexpr auto kShowDuration = crl::time(320);
 constexpr auto kExpandDuration = crl::time(280);
-constexpr auto kSnapDuration = crl::time(360);
 constexpr auto kShadowLayers = 7;
 constexpr auto kBlurredCoverSize = 64;
 constexpr auto kBlurRadius = 14;
@@ -251,6 +251,12 @@ void PaintNoCover(QPainter &p, const QRectF &rect, const QColor &color) {
 		QRectF(QPointF(), QSizeF(cache.pixmap.size())));
 }
 
+[[nodiscard]] int PercentNominal(int pixel, int usable) {
+	return (usable <= 0)
+		? 500
+		: std::clamp(int(base::SafeRound(1000. * pixel / usable)), 0, 1000);
+}
+
 } // namespace
 
 MusicIsland::MusicIsland(
@@ -275,7 +281,6 @@ MusicIsland::MusicIsland(
 		base::install_event_filter(this, parent, [=](not_null<QEvent*> event) {
 			if (event->type() == QEvent::Resize) {
 				if (!_drag) {
-					_snapAnimation.stop();
 					updatePosition();
 				}
 				checkVisibility();
@@ -286,6 +291,15 @@ MusicIsland::MusicIsland(
 
 	setupPlayer();
 	setupSettings();
+	loadCustomBackground();
+
+	_hoverPoll.setInterval(45);
+	_hoverPoll.setSingleShot(false);
+	connect(&_hoverPoll, &QTimer::timeout, this, [=] {
+		if (_shown) {
+			pollHover();
+		}
+	});
 
 	_trackState = Media::Player::instance()->getState(AudioMsgId::Type::Song);
 	handleTrackChanged();
@@ -364,7 +378,19 @@ void MusicIsland::setupSettings() {
 
 	settings->musicIslandPositionChanges(
 	) | rpl::on_next([=](int) {
-		if (!_snapAnimation.animating()) {
+		updatePosition();
+	}, lifetime());
+
+	settings->musicIslandFreeXChanges(
+	) | rpl::on_next([=](int) {
+		if (!_drag) {
+			updatePosition();
+		}
+	}, lifetime());
+
+	settings->musicIslandFreeYChanges(
+	) | rpl::on_next([=](int) {
+		if (!_drag) {
 			updatePosition();
 		}
 	}, lifetime());
@@ -385,8 +411,21 @@ void MusicIsland::setupSettings() {
 		settings->adaptiveCoverColorChanges(),
 		settings->musicIslandCoverColorsChanges(),
 		settings->musicIslandBlurCoverChanges(),
-		settings->musicIslandEqualizerChanges()
+		settings->musicIslandEqualizerChanges(),
+		settings->musicIslandCustomBackgroundEnabledChanges(),
+		settings->musicIslandCustomBackgroundBlurChanges()
 	) | rpl::on_next([=](bool) {
+		loadCustomBackground();
+		update();
+	}, lifetime());
+
+	rpl::merge(
+		settings->musicIslandCustomBackgroundPathChanges() | rpl::to_empty,
+		settings->musicIslandCustomBackgroundOpacityChanges() | rpl::to_empty,
+		settings->musicIslandCustomBackgroundDimChanges() | rpl::to_empty,
+		settings->musicIslandCustomBackgroundModeChanges() | rpl::to_empty
+	) | rpl::on_next([=] {
+		loadCustomBackground();
 		update();
 	}, lifetime());
 }
@@ -473,11 +512,11 @@ void MusicIsland::toggleShown(bool shown) {
 		_hovered = false;
 		_expanded = false;
 		_expandAnimation.stop();
-		_snapAnimation.stop();
 		_marqueeStart = crl::now();
 		updatePosition();
 		show();
 		raise();
+		_hoverPoll.start();
 	} else {
 		_down = false;
 		_pressedPart = Part::None;
@@ -485,6 +524,7 @@ void MusicIsland::toggleShown(bool shown) {
 		_drag = false;
 		_seeking = false;
 		_volumeDragging = false;
+		_hoverPoll.stop();
 	}
 	_shownAnimation.start([=] {
 		update();
@@ -496,12 +536,23 @@ void MusicIsland::toggleShown(bool shown) {
 	_shownChanges.fire_copy(shown);
 }
 
-void MusicIsland::updateExpanded() {
+bool MusicIsland::desiredExpanded() const {
+	if (_seeking || _volumeDragging || _keepExpandedAfterSeek) {
+		return true;
+	}
 	const auto mode = AyuSettings::getInstance().musicIslandExpandMode();
-	const auto expand = _seeking
-		|| _volumeDragging
-		|| _forceExpanded
-		|| ((mode == 0 || mode == 2) && _hovered);
+	switch (mode) {
+	case 0: // On hover only.
+		return _hovered;
+	case 1: // On click only (a click pins/unpins the island).
+		return _forceExpanded;
+	default: // Hover and click.
+		return _hovered || _forceExpanded;
+	}
+}
+
+void MusicIsland::updateExpanded() {
+	const auto expand = desiredExpanded();
 	if (_expanded == expand) {
 		return;
 	}
@@ -525,22 +576,26 @@ void MusicIsland::updatePosition() {
 	const auto outer = QSize(
 		inner.width() + 2 * shadow,
 		inner.height() + 2 * shadow);
-	auto position = cornerPosition(outer);
-	if (_snapAnimation.animating()) {
-		const auto progress = _snapAnimation.value(1.);
-		position = QPoint(
-			anim::interpolate(_dragFrom.x(), position.x(), progress),
-			anim::interpolate(_dragFrom.y(), position.y(), progress));
+	auto position = freeTopLeft(outer);
+	if (const auto parent = parentWidget()) {
+		// Keep the whole island (including its shadow padding) inside the
+		// window when it grows from a free position near an edge.
+		const auto clampMargin = std::max(0, int(st::musicIslandShadow / 2));
+		position.setX(std::clamp(
+			position.x(),
+			clampMargin,
+			std::max(clampMargin, parent->width() - outer.width() - clampMargin)));
+		position.setY(std::clamp(
+			position.y(),
+			clampMargin,
+			std::max(clampMargin, parent->height() - outer.height() - clampMargin)));
 	}
 	setGeometry(QRect(position, outer));
 
-	const auto global = QCursor::pos();
-	const auto local = mapFromGlobal(global);
-	const auto inside = rect().contains(local);
-	if (_hovered != inside) {
-		_hovered = inside;
-		updateExpanded();
-	}
+	// Hover is updated from the OS pointer via pollHover() and the native
+	// enter/move/leave handlers, never by re-reading QCursor during this
+	// geometry change. This keeps expansion smooth near every window edge
+	// without flapping.
 
 	update();
 }
@@ -561,26 +616,6 @@ void MusicIsland::checkLiveAnimation() {
 	}
 }
 
-void MusicIsland::snapToCorner() {
-	const auto parent = parentWidget();
-	if (!parent) {
-		return;
-	}
-	const auto center = geometry().center();
-	const auto left = (center.x() * 2 < parent->width());
-	const auto top = (center.y() * 2 < parent->height());
-	const auto position = (top ? 0 : 2) + (left ? 0 : 1);
-
-	_dragFrom = pos();
-	_snapAnimation.stop();
-	_snapAnimation.start([=] {
-		updatePosition();
-	}, 0., 1., kSnapDuration, anim::easeOutCubic);
-
-	AyuSettings::getInstance().setMusicIslandPosition(position);
-	updatePosition();
-}
-
 float64 MusicIsland::expandProgress() const {
 	return _expandAnimation.value(_expanded ? 1. : 0.);
 }
@@ -597,26 +632,20 @@ QSize MusicIsland::islandSize(float64 expand) const {
 		anim::interpolate(collapsed.height(), expanded.height(), expand));
 }
 
-QPoint MusicIsland::cornerPosition(QSize outer) const {
+QPoint MusicIsland::freeTopLeft(QSize outer) const {
 	const auto parent = parentWidget();
 	if (!parent) {
 		return QPoint();
 	}
-	const auto margin = st::musicIslandScreenMargin;
-	const auto shadow = st::musicIslandShadow;
-	const auto position = std::clamp(
-		AyuSettings::getInstance().musicIslandPosition(),
-		0,
-		3);
-	const auto left = (position == 0) || (position == 2);
-	const auto top = (position < 2);
+	const auto margin = std::max(0, int(st::musicIslandShadow / 2));
+	const auto placementWidth = std::max(1, parent->width() - 2 * margin);
+	const auto placementHeight = std::max(1, parent->height() - 2 * margin);
+	const auto &settings = AyuSettings::getInstance();
+	const auto normX = std::clamp(settings.musicIslandFreeX(), 0, 1000) / 1000.;
+	const auto normY = std::clamp(settings.musicIslandFreeY(), 0, 1000) / 1000.;
 	return QPoint(
-		left
-			? (margin - shadow)
-			: (parent->width() - outer.width() - margin + shadow),
-		top
-			? (margin - shadow)
-			: (parent->height() - outer.height() - margin + shadow));
+		margin + int(base::SafeRound(normX * placementWidth)),
+		margin + int(base::SafeRound(normY * placementHeight)));
 }
 
 MusicIsland::Layout MusicIsland::computeLayout(float64 expand) const {
@@ -709,22 +738,34 @@ MusicIsland::Layout MusicIsland::computeLayout(float64 expand) const {
 		controlSize,
 		controlSize).translated(origin);
 	const auto headerButtonY = st::musicIslandCloseSkip;
+	const auto closeSize = float64(st::musicIslandCloseSize);
+	const auto saveSize = float64(st::musicIslandSaveSize);
+	const auto controlGap = float64(st::musicIslandControlSkip);
+	const auto canSave = canSaveToProfile();
+
+	// Right-aligned top rail packed flush-right: [save?] [close].
+	// Packing from the far right edge inward keeps the row tidy whether or
+	// not the optional "save to profile" control is visible.
+	auto railRight = islandWidth - float64(st::musicIslandCloseSkip);
 	result.close = QRectF(
-		islandWidth - st::musicIslandCloseSkip - st::musicIslandCloseSize,
+		railRight - closeSize,
 		headerButtonY,
-		st::musicIslandCloseSize,
-		st::musicIslandCloseSize).translated(origin);
-	if (canSaveToProfile()) {
+		closeSize,
+		closeSize).translated(origin);
+	auto railCursor = result.close.left() - origin.x() - controlGap - saveSize;
+	if (canSave) {
 		result.saveProfile = QRectF(
-			islandWidth
-				- st::musicIslandCloseSkip
-				- st::musicIslandCloseSize
-				- st::musicIslandSaveSkip
-				- st::musicIslandSaveSize,
+			railCursor,
 			headerButtonY,
-			st::musicIslandSaveSize,
-			st::musicIslandSaveSize).translated(origin);
+			saveSize,
+			saveSize).translated(origin);
 	}
+
+	// The leftmost occupied x of the entire top rail, in island coords, is the
+	// cut-point used to bound how wide the track title may stretch.
+	const auto railCutX = canSave
+		? result.saveProfile.left() - origin.x()
+		: result.close.left() - origin.x();
 
 	const auto volumeRowTop = coverLocal.bottom()
 		+ st::musicIslandVolumeTop;
@@ -778,16 +819,20 @@ MusicIsland::Layout MusicIsland::computeLayout(float64 expand) const {
 	result.performer = QPointF(
 		textLocalX,
 		lerp(collapsedPerformerY, performerY)) + origin;
-	const auto expandedTextWidth = islandWidth
-		- padding
-		- textLocalX
-		- (canSaveToProfile()
-			? (st::musicIslandSaveSize + st::musicIslandSaveSkip)
-			: 0)
-		- st::musicIslandCloseSize
-		- st::musicIslandCloseSkip;
+	const auto expandedTextWidth = std::max(0, int(base::SafeRound(
+		railCutX - textLocalX - 2.)));
 	result.textWidth = std::max(0, int(base::SafeRound(
-		lerp(collapsedTextWidth, expandedTextWidth))));
+		lerp(collapsedTextWidth, float64(expandedTextWidth)))));
+
+	// A dedicated click region covering the title + performer strip, used to
+	// open the source message when the island is expanded ("click the name").
+	const auto blockTop = lerp(collapsedTitleY, titleY);
+	const auto blockBottom = blockTop + titleHeight + performerSkip + performerHeight;
+	result.titleZone = QRectF(
+		textLocalX,
+		blockTop,
+		result.textWidth,
+		blockBottom - blockTop).translated(origin);
 
 	return result;
 }
@@ -914,7 +959,25 @@ void MusicIsland::applyCover(CoverData cover, int generation) {
 	update();
 }
 
-void MusicIsland::activate(Part part) {
+void MusicIsland::loadCustomBackground() {
+	const auto &settings = AyuSettings::getInstance();
+	if (!settings.musicIslandCustomBackgroundEnabled()) {
+		_customBackground = QPixmap();
+		return;
+	}
+	const auto path = settings.musicIslandCustomBackgroundPath();
+	auto image = QImage(path);
+	if (image.isNull()) {
+		_customBackground = QPixmap();
+		return;
+	}
+	if (settings.musicIslandCustomBackgroundBlur()) {
+		image = Images::BlurLargeImage(std::move(image), kBlurRadius);
+	}
+	_customBackground = Ui::PixmapFromImage(std::move(image));
+}
+
+void MusicIsland::activate(Part part, QPoint onPoint) {
 	const auto player = Media::Player::instance();
 	const auto type = AudioMsgId::Type::Song;
 	switch (part) {
@@ -943,22 +1006,49 @@ void MusicIsland::activate(Part part) {
 	case Part::Body: {
 		const auto &settings = AyuSettings::getInstance();
 		const auto mode = settings.musicIslandExpandMode();
-		const auto expanded = expandProgress() > 0.5;
-		const auto clickExpands = (mode == 1 || mode == 2);
+		const auto expanded = expandProgress() > 0.85;
+		const auto inTitleZone = computeLayout(
+			expandProgress()).titleZone.contains(QPointF(onPoint));
+		const auto opensTrack = settings.musicIslandClickOpensTrack();
 
-		if (clickExpands && expanded && _forceExpanded) {
-			_forceExpanded = false;
-			updateExpanded();
-		} else if (clickExpands && !expanded) {
+		if (mode == 0) {
+			// Pure-hover mode: there is no pin concept, a tap on the title
+			// strip simply jumps to the message.
+			if (expanded && inTitleZone && opensTrack) {
+				showTrackMessage();
+			}
+		} else if (!expanded) {
+			// First tap: expand and remember it (keeps the pill open after a
+			// quick hover flicker or when the pointer slides a hair away).
 			_forceExpanded = true;
 			updateExpanded();
-		} else if (expanded && settings.musicIslandClickOpensTrack()) {
+		} else if (inTitleZone && opensTrack) {
+			// Tapping the actual song/artist text opens the source message.
 			showTrackMessage();
+		} else {
+			// Any other tap on the body when already expanded toggles the
+			// "stick open" behaviour.
+			_forceExpanded = !_forceExpanded;
+			updateExpanded();
 		}
 	} break;
 	default:
 		break;
 	}
+}
+
+void MusicIsland::hintLockedPosition() {
+	const auto now = crl::now();
+	if (now - _lockedHintAt < crl::time(3000)) {
+		return;
+	}
+	_lockedHintAt = now;
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	const auto ru = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+	_controller->uiShow()->showToast(ru
+		? QString::fromUtf8("Позиция островка зафиксирована — выключите «Зафиксировать позицию» в настройках Whitegram")
+		: QString("The island position is locked — turn off “Lock the position” in Whitegram settings"));
 }
 
 void MusicIsland::showTrackMessage() {
@@ -1046,6 +1136,11 @@ MusicIsland::Part MusicIsland::partAt(QPoint point) const {
 		} else if (canSaveToProfile()
 			&& layout.saveProfile.contains(QPointF(point))) {
 			return Part::SaveProfile;
+		} else if (layout.titleZone.contains(QPointF(point))) {
+			// Title/artist strip is intentionally NOT a control: it reuses the
+			// Body semantics so a tap can either expand the pill (collapsed)
+			// or jump to the message when already expanded.
+			return Part::Body;
 		} else if (layout.volumeToggle.contains(QPointF(point))) {
 			return Part::VolumeToggle;
 		} else if (layout.playPause.contains(QPointF(point))) {
@@ -1147,36 +1242,69 @@ void MusicIsland::paintBackground(QPainter &p, const Layout &layout) const {
 	p.save();
 	p.setClipPath(path);
 	if (art) {
+		// Soft diagonal wash in the cover's accent colour, deepened toward
+		// the bottom so white text and controls stay readable.
 		auto gradient = QLinearGradient(
 			layout.island.topLeft(),
-			layout.island.bottomRight());
-		gradient.setColorAt(0., AdjustLightness(_cover.accent, 1.35));
-		gradient.setColorAt(1., AdjustLightness(_cover.accent, 0.7));
+			layout.island.bottomLeft());
+		gradient.setColorAt(0., AdjustLightness(_cover.accent, 1.28));
+		gradient.setColorAt(0.55, AdjustLightness(_cover.accent, 1.0));
+		gradient.setColorAt(1., AdjustLightness(_cover.accent, 0.62));
 		p.fillRect(layout.island, gradient);
 
 		if (!_cover.blurred.isNull()
 			&& AyuSettings::getInstance().musicIslandBlurCover()) {
-			p.setOpacity(opacity * 0.5);
+			p.setOpacity(opacity * 0.38);
 			DrawToFill(p, layout.island, _cover.blurred);
 			p.setOpacity(opacity);
 		}
 
-		auto highlight = QLinearGradient(
+		// Gentle bottom vignette for depth, no harsh gloss.
+		auto shade = QLinearGradient(
 			layout.island.topLeft(),
 			layout.island.bottomLeft());
-		highlight.setColorAt(0., QColor(255, 255, 255, 32));
-		highlight.setColorAt(1., QColor(255, 255, 255, 0));
-		p.fillRect(layout.island, highlight);
+		shade.setColorAt(0., QColor(0, 0, 0, 0));
+		shade.setColorAt(0.6, QColor(0, 0, 0, 0));
+		shade.setColorAt(1., QColor(0, 0, 0, 46));
+		p.fillRect(layout.island, shade);
 	} else {
 		p.fillRect(layout.island, st::windowBg);
-		auto highlight = QLinearGradient(
+		auto card = QLinearGradient(
 			layout.island.topLeft(),
 			layout.island.bottomLeft());
-		auto top = st::windowBgOver->c;
-		top.setAlpha(160);
-		highlight.setColorAt(0., top);
-		highlight.setColorAt(1., QColor(0, 0, 0, 0));
-		p.fillRect(layout.island, highlight);
+		card.setColorAt(0., QColor(255, 255, 255, 26));
+		card.setColorAt(0.45, QColor(255, 255, 255, 0));
+		card.setColorAt(1., QColor(0, 0, 0, 26));
+		p.fillRect(layout.island, card);
+	}
+	const auto &settings = AyuSettings::getInstance();
+	if (!_customBackground.isNull()
+		&& settings.musicIslandCustomBackgroundEnabled()) {
+		p.setOpacity(opacity
+			* settings.musicIslandCustomBackgroundOpacity() / 100.);
+		const auto source = QRectF(QPointF(), QSizeF(_customBackground.size()));
+		switch (settings.musicIslandCustomBackgroundMode()) {
+		case 1: {
+			const auto target = source.size().scaled(
+				layout.island.size(),
+				Qt::KeepAspectRatio);
+			p.drawPixmap(QRectF(
+				layout.island.center()
+					- QPointF(target.width() / 2., target.height() / 2.),
+				target), _customBackground, source);
+		} break;
+		case 2:
+			p.drawPixmap(layout.island, _customBackground, source);
+			break;
+		default:
+			DrawToFill(p, layout.island, _customBackground);
+			break;
+		}
+		p.setOpacity(opacity);
+		const auto dim = settings.musicIslandCustomBackgroundDim();
+		if (dim > 0) {
+			p.fillRect(layout.island, QColor(0, 0, 0, 255 * dim / 100));
+		}
 	}
 	p.restore();
 
@@ -1500,16 +1628,22 @@ void MusicIsland::mousePressEvent(QMouseEvent *e) {
 	}
 	_down = true;
 	_downPoint = e->pos();
+	_downGlobalPoint = e->globalPos();
+	_dragStartPosition = pos();
 	if (_pressedPart == Part::Seek) {
 		_seeking = true;
+		_keepExpandedAfterSeek = true;
 		_seekProgress = seekProgressFor(e->pos());
 		_playedText = Ui::FormatDurationText(
 			int64(base::SafeRound(_seekProgress * _durationSeconds)));
 		Media::Player::instance()->startSeeking(AudioMsgId::Type::Song);
+		grabMouse();
+		updateExpanded();
 	} else if (_pressedPart == Part::Volume) {
 		_volumeDragging = true;
 		_volumeDragProgress = volumeProgressFor(e->pos());
-		updateExpanded();
+		applySongVolume(_volumeDragProgress);
+		grabMouse();
 	}
 	update();
 }
@@ -1517,7 +1651,7 @@ void MusicIsland::mousePressEvent(QMouseEvent *e) {
 void MusicIsland::mouseMoveEvent(QMouseEvent *e) {
 	if (_volumeDragging) {
 		_volumeDragProgress = volumeProgressFor(e->pos());
-		update();
+		applySongVolume(_volumeDragProgress);
 		return;
 	} else if (_seeking) {
 		_seekProgress = seekProgressFor(e->pos());
@@ -1526,18 +1660,18 @@ void MusicIsland::mouseMoveEvent(QMouseEvent *e) {
 		update();
 		return;
 	} else if (_drag) {
-		auto target = pos() + (e->pos() - _dragLocalPoint);
+		auto target = _dragStartPosition
+			+ (e->globalPos() - _downGlobalPoint);
 		if (const auto parent = parentWidget()) {
-			const auto margin = st::musicIslandScreenMargin
-				- st::musicIslandShadow;
+			const auto margin = std::max(0, int(st::musicIslandShadow / 2));
 			target.setX(std::clamp(
 				target.x(),
 				margin,
-				parent->width() - width() - margin));
+				std::max(margin, parent->width() - width() - margin)));
 			target.setY(std::clamp(
 				target.y(),
 				margin,
-				parent->height() - height() - margin));
+				std::max(margin, parent->height() - height() - margin)));
 		}
 		move(target);
 		return;
@@ -1545,9 +1679,14 @@ void MusicIsland::mouseMoveEvent(QMouseEvent *e) {
 		&& ((_pressedPart == Part::Body) || (_pressedPart == Part::Cover))
 		&& ((e->pos() - _downPoint).manhattanLength()
 			> QApplication::startDragDistance())) {
+		if (AyuSettings::getInstance().musicIslandLocked()) {
+			hintLockedPosition();
+			updateHovered(e->pos());
+			return;
+		}
 		_drag = true;
-		_dragLocalPoint = e->pos();
-		_snapAnimation.stop();
+		grabMouse();
+		mouseMoveEvent(e);
 		return;
 	}
 	updateHovered(e->pos());
@@ -1560,7 +1699,7 @@ void MusicIsland::updateHovered(QPoint point) {
 		updateCursor();
 		update();
 	}
-	const auto hovered = (part != Part::None);
+	const auto hovered = (part != Part::None) || _keepExpandedAfterSeek;
 	if (_hovered != hovered) {
 		_hovered = hovered;
 		updateExpanded();
@@ -1575,36 +1714,65 @@ void MusicIsland::mouseReleaseEvent(QMouseEvent *e) {
 
 	if (_volumeDragging) {
 		_volumeDragging = false;
+		releaseMouse();
 		applySongVolume(_volumeDragProgress);
 		updateExpanded();
+		updateHovered(e->pos());
 		update();
 		return;
 	} else if (_seeking) {
-		_seeking = false;
 		Media::Player::instance()->finishSeeking(
 			AudioMsgId::Type::Song,
 			_seekProgress);
+		const auto releasePoint = mapFromGlobal(e->globalPos());
+		_seeking = false;
+		_hovered = true;
+		_hoveredPart = partAt(releasePoint);
+		updateCursor();
 		updateExpanded();
 		update();
+		releaseMouse();
+		updateHovered(releasePoint);
 		return;
 	} else if (_drag) {
 		_drag = false;
-		snapToCorner();
+		releaseMouse();
+		if (const auto parent = parentWidget()) {
+			const auto margin = std::max(0, int(st::musicIslandShadow / 2));
+			const auto placementWidth = std::max(
+				1,
+				parent->width() - 2 * margin);
+			const auto placementHeight = std::max(
+				1,
+				parent->height() - 2 * margin);
+			auto &islandSettings = AyuSettings::getInstance();
+			islandSettings.setMusicIslandFreeX(PercentNominal(
+				pos().x() - margin,
+				placementWidth));
+			islandSettings.setMusicIslandFreeY(PercentNominal(
+				pos().y() - margin,
+				placementHeight));
+			updatePosition();
+		}
 		updateHovered(mapFromGlobal(QCursor::pos()));
 		return;
 	}
 	if (was && (part != Part::None) && (partAt(e->pos()) == part)) {
-		activate(part);
+		activate(part, e->pos());
 	}
 	update();
 }
 
 void MusicIsland::enterEventHook(QEnterEvent *e) {
+	_keepExpandedAfterSeek = false;
 	updateHovered(e->pos());
 	return RpWidget::enterEventHook(e);
 }
 
 void MusicIsland::leaveEventHook(QEvent *e) {
+	if (_seeking || _volumeDragging || _drag) {
+		return RpWidget::leaveEventHook(e);
+	}
 	const auto global = QCursor::pos();
 	const auto local = mapFromGlobal(global);
 	if (rect().contains(local)) {
@@ -1615,11 +1783,51 @@ void MusicIsland::leaveEventHook(QEvent *e) {
 		updateCursor();
 		update();
 	}
+	if (_keepExpandedAfterSeek) {
+		_keepExpandedAfterSeek = false;
+	}
 	if (_hovered) {
 		_hovered = false;
 		updateExpanded();
 	}
 	return RpWidget::leaveEventHook(e);
+}
+
+void MusicIsland::pollHover() {
+	if (!_shown || _seeking || _volumeDragging || _drag) {
+		return;
+	}
+	// A periodic pointer check with hysteresis. Native enter events can be
+	// missed when the island appears or grows underneath a stationary cursor,
+	// which used to make "expand on hover" look broken (only a click would
+	// expand it). The generous trail margin while hovered keeps the expanded
+	// state from flapping at the edges.
+	const auto point = mapFromGlobal(QCursor::pos());
+	const auto progress = expandProgress();
+	const auto collapsed = computeLayout(0.).island.marginsAdded(
+		QMarginsF(10., 8., 10., 8.));
+	auto current = computeLayout(progress).island;
+	if (_hovered) {
+		current = current.marginsAdded(QMarginsF(28., 20., 28., 20.));
+	}
+	const auto hovered = _keepExpandedAfterSeek
+		|| collapsed.contains(QPointF(point))
+		|| current.contains(QPointF(point));
+	if (_hovered == hovered) {
+		return;
+	}
+	_hovered = hovered;
+	if (!hovered
+		&& _hoveredPart != Part::None
+		&& !computeLayout(progress).island.contains(QPointF(point))) {
+		_hoveredPart = Part::None;
+		updateCursor();
+	}
+	if (!hovered) {
+		_keepExpandedAfterSeek = false;
+	}
+	updateExpanded();
+	update();
 }
 
 } // namespace AyuUi

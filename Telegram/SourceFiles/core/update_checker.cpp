@@ -1031,6 +1031,7 @@ void HttpChecker::start() {
 	DEBUG_LOG(("Update Info: requesting update state"));
 	auto request = QNetworkRequest(url);
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+	request.setTransferTimeout(int(kUpdaterTimeout));
 	_manager = std::make_unique<QNetworkAccessManager>();
 	_reply = _manager->get(request);
 	_reply->connect(_reply, &QNetworkReply::finished, [=] {
@@ -1222,6 +1223,7 @@ void HttpLoaderActor::sendRequest() {
 		QNetworkRequest::HttpPipeliningAllowedAttribute,
 		true);
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
+	request.setTransferTimeout(int(kUpdaterTimeout));
 	_reply.reset(_manager.get(request));
 	connect(
 		_reply.get(),
@@ -2088,12 +2090,18 @@ void Updater::start(bool forceWait) {
 			startImplementation(
 				&_httpImplementation,
 				std::make_unique<HttpChecker>(_testing));
+			// Whitegram serves updates from the HTTP backend only. The
+			// official Telegram MTP feed can hang when Telegram is slow
+			// or blocked, which left the UI stuck on "Checking...".
+			_mtpImplementation.failed = true;
 		}
-		startImplementation(
-			&_mtpImplementation,
-			std::make_unique<MtpChecker>(
-				LookupCanaryPrivateSession(_session),
-				_testing));
+		if (BuildIsCanary) {
+			startImplementation(
+				&_mtpImplementation,
+				std::make_unique<MtpChecker>(
+					LookupCanaryPrivateSession(_session),
+					_testing));
+		}
 		_checking.fire({});
 	} else {
 		_timer.callOnce((updateInSecs + 5) * crl::time(1000));

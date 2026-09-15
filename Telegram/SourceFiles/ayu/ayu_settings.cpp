@@ -1464,6 +1464,65 @@ void AyuSettings::setMusicIslandClickOpensTrack(bool val) {
 	save();
 }
 
+void AyuSettings::setMusicIslandLocked(bool val) {
+	if (_musicIslandLocked.current() == val) return;
+	_musicIslandLocked = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandFreeX(int val) {
+	val = std::clamp(val, 0, 1000);
+	if (_musicIslandFreeX.current() == val) return;
+	_musicIslandFreeX = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandFreeY(int val) {
+	val = std::clamp(val, 0, 1000);
+	if (_musicIslandFreeY.current() == val) return;
+	_musicIslandFreeY = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandCustomBackgroundEnabled(bool val) {
+	if (_musicIslandCustomBackgroundEnabled.current() == val) return;
+	_musicIslandCustomBackgroundEnabled = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandCustomBackgroundPath(const QString &val) {
+	if (_musicIslandCustomBackgroundPath.current() == val) return;
+	_musicIslandCustomBackgroundPath = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandCustomBackgroundOpacity(int val) {
+	val = std::clamp(val, 0, 100);
+	if (_musicIslandCustomBackgroundOpacity.current() == val) return;
+	_musicIslandCustomBackgroundOpacity = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandCustomBackgroundBlur(bool val) {
+	if (_musicIslandCustomBackgroundBlur.current() == val) return;
+	_musicIslandCustomBackgroundBlur = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandCustomBackgroundDim(int val) {
+	val = std::clamp(val, 0, 100);
+	if (_musicIslandCustomBackgroundDim.current() == val) return;
+	_musicIslandCustomBackgroundDim = val;
+	save();
+}
+
+void AyuSettings::setMusicIslandCustomBackgroundMode(int val) {
+	val = std::clamp(val, 0, 2);
+	if (_musicIslandCustomBackgroundMode.current() == val) return;
+	_musicIslandCustomBackgroundMode = val;
+	save();
+}
+
 void AyuSettings::setConnectionBypassMode(ConnectionBypassMode val) {
 	if (_connectionBypassMode.current() == val) {
 		return;
@@ -1673,6 +1732,15 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"musicIslandBlurCover", s._musicIslandBlurCover.current()},
 		{"musicIslandEqualizer", s._musicIslandEqualizer.current()},
 		{"musicIslandClickOpensTrack", s._musicIslandClickOpensTrack.current()},
+		{"musicIslandLocked", s._musicIslandLocked.current()},
+		{"musicIslandFreeX", s._musicIslandFreeX.current()},
+		{"musicIslandFreeY", s._musicIslandFreeY.current()},
+		{"musicIslandCustomBackgroundEnabled", s._musicIslandCustomBackgroundEnabled.current()},
+		{"musicIslandCustomBackgroundPath", s._musicIslandCustomBackgroundPath.current().toStdString()},
+		{"musicIslandCustomBackgroundOpacity", s._musicIslandCustomBackgroundOpacity.current()},
+		{"musicIslandCustomBackgroundBlur", s._musicIslandCustomBackgroundBlur.current()},
+		{"musicIslandCustomBackgroundDim", s._musicIslandCustomBackgroundDim.current()},
+		{"musicIslandCustomBackgroundMode", s._musicIslandCustomBackgroundMode.current()},
 		{"connectionBypassMode", s._connectionBypassMode.current()},
 		{"connectionBypassSecret", s._connectionBypassSecret.current()},
 		{"messageShotSettings", s._messageShotSettings},
@@ -1865,6 +1933,39 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._musicIslandClickOpensTrack = j.value(
 		"musicIslandClickOpensTrack",
 		defaults._musicIslandClickOpensTrack.current());
+	s._musicIslandLocked = j.value(
+		"musicIslandLocked",
+		defaults._musicIslandLocked.current());
+	s._musicIslandFreeX = std::clamp(
+		j.value("musicIslandFreeX", defaults._musicIslandFreeX.current()),
+		0, 1000);
+	s._musicIslandFreeY = std::clamp(
+		j.value("musicIslandFreeY", defaults._musicIslandFreeY.current()),
+		0, 1000);
+	s._musicIslandCustomBackgroundEnabled = j.value(
+		"musicIslandCustomBackgroundEnabled",
+		defaults._musicIslandCustomBackgroundEnabled.current());
+	s._musicIslandCustomBackgroundPath = QString::fromStdString(j.value(
+		"musicIslandCustomBackgroundPath",
+		defaults._musicIslandCustomBackgroundPath.current().toStdString()));
+	s._musicIslandCustomBackgroundOpacity = std::clamp(
+		j.value(
+			"musicIslandCustomBackgroundOpacity",
+			defaults._musicIslandCustomBackgroundOpacity.current()),
+		0, 100);
+	s._musicIslandCustomBackgroundBlur = j.value(
+		"musicIslandCustomBackgroundBlur",
+		defaults._musicIslandCustomBackgroundBlur.current());
+	s._musicIslandCustomBackgroundDim = std::clamp(
+		j.value(
+			"musicIslandCustomBackgroundDim",
+			defaults._musicIslandCustomBackgroundDim.current()),
+		0, 100);
+	s._musicIslandCustomBackgroundMode = std::clamp(
+		j.value(
+			"musicIslandCustomBackgroundMode",
+			defaults._musicIslandCustomBackgroundMode.current()),
+		0, 2);
 	s._connectionBypassMode = j.value(
 		"connectionBypassMode",
 		defaults._connectionBypassMode.current());

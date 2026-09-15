@@ -11,6 +11,7 @@
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "ui/text/text.h"
+#include <QTimer>
 
 namespace Data {
 class DocumentMedia;
@@ -74,6 +75,7 @@ private:
 		QRectF playPause;
 		QRectF next;
 		QRectF close;
+		QRectF titleZone;
 		QRectF seek;
 		QRectF volumeToggle;
 		QRectF volume;
@@ -94,19 +96,20 @@ private:
 	void handleStateUpdate(const Media::Player::TrackState &state);
 	void checkVisibility();
 	void toggleShown(bool shown);
+	[[nodiscard]] bool desiredExpanded() const;
 	void updateExpanded();
 	void updatePosition();
 	void updateCursor();
 	void updateHovered(QPoint point);
 	void checkLiveAnimation();
-	void snapToCorner();
+	void pollHover();
 
 	[[nodiscard]] float64 expandProgress() const;
 	[[nodiscard]] float64 shownProgress() const;
 	[[nodiscard]] QSize islandSize(float64 expand) const;
 	[[nodiscard]] Layout computeLayout(float64 expand) const;
 	[[nodiscard]] Part partAt(QPoint point) const;
-	[[nodiscard]] QPoint cornerPosition(QSize outer) const;
+	[[nodiscard]] QPoint freeTopLeft(QSize outer) const;
 	[[nodiscard]] float64 displayedProgress() const;
 	[[nodiscard]] float64 seekProgressFor(QPoint point) const;
 	[[nodiscard]] bool fitsInParent() const;
@@ -118,8 +121,10 @@ private:
 	void loadCover();
 	void buildCover(QImage source);
 	void applyCover(CoverData cover, int generation);
+	void loadCustomBackground();
 
-	void activate(Part part);
+	void activate(Part part, QPoint onPoint);
+	void hintLockedPosition();
 	void showTrackMessage();
 	void saveToProfile();
 	void applySongVolume(float64 volume);
@@ -158,13 +163,14 @@ private:
 
 	std::shared_ptr<Data::DocumentMedia> _mediaView;
 	CoverData _cover;
+	QPixmap _customBackground;
 	int _coverGeneration = 0;
 	rpl::lifetime _coverLifetime;
 
 	Ui::Animations::Simple _shownAnimation;
 	Ui::Animations::Simple _expandAnimation;
-	Ui::Animations::Simple _snapAnimation;
 	Ui::Animations::Basic _liveAnimation;
+	QTimer _hoverPoll;
 
 	rpl::event_stream<bool> _shownChanges;
 
@@ -179,9 +185,10 @@ private:
 	Part _pressedPart = Part::None;
 	bool _down = false;
 	QPoint _downPoint;
+	QPoint _downGlobalPoint;
+	QPoint _dragStartPosition;
 	bool _drag = false;
-	QPoint _dragLocalPoint;
-	QPoint _dragFrom;
+	bool _keepExpandedAfterSeek = false;
 
 	bool _seeking = false;
 	bool _volumeDragging = false;
@@ -189,6 +196,7 @@ private:
 	float64 _volumeDragProgress = 0.;
 
 	crl::time _marqueeStart = 0;
+	crl::time _lockedHintAt = 0;
 
 };
 

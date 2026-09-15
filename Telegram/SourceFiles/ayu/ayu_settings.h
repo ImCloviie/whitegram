@@ -955,6 +955,15 @@ public:
 	[[nodiscard]] bool musicIslandBlurCover() const { return _musicIslandBlurCover.current(); }
 	[[nodiscard]] bool musicIslandEqualizer() const { return _musicIslandEqualizer.current(); }
 	[[nodiscard]] bool musicIslandClickOpensTrack() const { return _musicIslandClickOpensTrack.current(); }
+	[[nodiscard]] bool musicIslandLocked() const { return _musicIslandLocked.current(); }
+	[[nodiscard]] int musicIslandFreeX() const { return _musicIslandFreeX.current(); }
+	[[nodiscard]] int musicIslandFreeY() const { return _musicIslandFreeY.current(); }
+	[[nodiscard]] bool musicIslandCustomBackgroundEnabled() const { return _musicIslandCustomBackgroundEnabled.current(); }
+	[[nodiscard]] const QString &musicIslandCustomBackgroundPath() const { return _musicIslandCustomBackgroundPath.current(); }
+	[[nodiscard]] int musicIslandCustomBackgroundOpacity() const { return _musicIslandCustomBackgroundOpacity.current(); }
+	[[nodiscard]] bool musicIslandCustomBackgroundBlur() const { return _musicIslandCustomBackgroundBlur.current(); }
+	[[nodiscard]] int musicIslandCustomBackgroundDim() const { return _musicIslandCustomBackgroundDim.current(); }
+	[[nodiscard]] int musicIslandCustomBackgroundMode() const { return _musicIslandCustomBackgroundMode.current(); }
 
 	[[nodiscard]] ConnectionBypassMode connectionBypassMode() const {
 		return _connectionBypassMode.current();
@@ -1058,6 +1067,15 @@ public:
 	void setMusicIslandBlurCover(bool val);
 	void setMusicIslandEqualizer(bool val);
 	void setMusicIslandClickOpensTrack(bool val);
+	void setMusicIslandLocked(bool val);
+	void setMusicIslandFreeX(int val);
+	void setMusicIslandFreeY(int val);
+	void setMusicIslandCustomBackgroundEnabled(bool val);
+	void setMusicIslandCustomBackgroundPath(const QString &val);
+	void setMusicIslandCustomBackgroundOpacity(int val);
+	void setMusicIslandCustomBackgroundBlur(bool val);
+	void setMusicIslandCustomBackgroundDim(int val);
+	void setMusicIslandCustomBackgroundMode(int val);
   void setConnectionBypassMode(ConnectionBypassMode val);
   void setConnectionBypassSecret(const QString &val);
 
@@ -1257,6 +1275,24 @@ public:
 	[[nodiscard]] rpl::producer<bool> musicIslandCoverColorsChanges() const { return _musicIslandCoverColors.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicIslandBlurCoverChanges() const { return _musicIslandBlurCover.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicIslandEqualizerChanges() const { return _musicIslandEqualizer.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandLockedValue() const { return _musicIslandLocked.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandLockedChanges() const { return _musicIslandLocked.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeXValue() const { return _musicIslandFreeX.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeXChanges() const { return _musicIslandFreeX.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeYValue() const { return _musicIslandFreeY.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeYChanges() const { return _musicIslandFreeY.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundEnabledValue() const { return _musicIslandCustomBackgroundEnabled.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundEnabledChanges() const { return _musicIslandCustomBackgroundEnabled.changes(); }
+	[[nodiscard]] rpl::producer<QString> musicIslandCustomBackgroundPathValue() const { return _musicIslandCustomBackgroundPath.value(); }
+	[[nodiscard]] rpl::producer<QString> musicIslandCustomBackgroundPathChanges() const { return _musicIslandCustomBackgroundPath.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundOpacityValue() const { return _musicIslandCustomBackgroundOpacity.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundOpacityChanges() const { return _musicIslandCustomBackgroundOpacity.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundBlurValue() const { return _musicIslandCustomBackgroundBlur.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundBlurChanges() const { return _musicIslandCustomBackgroundBlur.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundDimValue() const { return _musicIslandCustomBackgroundDim.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundDimChanges() const { return _musicIslandCustomBackgroundDim.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundModeValue() const { return _musicIslandCustomBackgroundMode.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundModeChanges() const { return _musicIslandCustomBackgroundMode.changes(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsValue() const { return _improveLinkPreviews.value(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsChanges() const { return _improveLinkPreviews.changes(); }
 	[[nodiscard]] rpl::producer<bool> crashReportingValue() const { return _crashReporting.value(); }
@@ -1603,6 +1639,15 @@ private:
   rpl::variable<bool> _musicIslandBlurCover = true;
   rpl::variable<bool> _musicIslandEqualizer = true;
   rpl::variable<bool> _musicIslandClickOpensTrack = true;
+  rpl::variable<bool> _musicIslandLocked = false;
+  rpl::variable<int> _musicIslandFreeX = 500;
+  rpl::variable<int> _musicIslandFreeY = 862;
+  rpl::variable<bool> _musicIslandCustomBackgroundEnabled = false;
+  rpl::variable<QString> _musicIslandCustomBackgroundPath;
+  rpl::variable<int> _musicIslandCustomBackgroundOpacity = 100;
+  rpl::variable<bool> _musicIslandCustomBackgroundBlur = false;
+  rpl::variable<int> _musicIslandCustomBackgroundDim = 35;
+  rpl::variable<int> _musicIslandCustomBackgroundMode = 0;
   rpl::variable<ConnectionBypassMode> _connectionBypassMode =
 	  ConnectionBypassMode::Auto;
   rpl::variable<QString> _connectionBypassSecret;

@@ -4,15 +4,20 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import sys
 from pathlib import Path
 
 import paramiko
 
 ROOT = Path(__file__).resolve().parents[1]
-HOST = "31.76.111.240"
-USER = "whitegram"
-PASSWORD = "KFd@&*SDd78@fds@g"
+HOST = os.environ.get("WHITEGRAM_DEPLOY_HOST", "31.76.111.240")
+USER = os.environ.get("WHITEGRAM_DEPLOY_USER", "deploy")
+SSH_KEY = Path(os.environ.get(
+	"WHITEGRAM_DEPLOY_KEY",
+	Path.home() / ".ssh/vps_deploy_ed25519",
+))
 
 VERSION_FILE = ROOT.parent / "Telegram/build/version"
 CURRENT_JSON = ROOT / "data/updates/current.json"
@@ -40,23 +45,48 @@ def main() -> int:
 	if link != f"/updates/{pack_name}":
 		print(f"Warning: current.json link is {link!r}, expected /updates/{pack_name}")
 
+	if not SSH_KEY.is_file():
+		raise RuntimeError(f"SSH key not found: {SSH_KEY}")
+
 	client = paramiko.SSHClient()
-	client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-	client.connect(HOST, username=USER, password=PASSWORD, timeout=60)
+	client.load_system_host_keys()
+	client.connect(
+		HOST,
+		username=USER,
+		key_filename=str(SSH_KEY),
+		look_for_keys=False,
+		allow_agent=False,
+		timeout=60,
+	)
+	remote_pack = f"{REMOTE_DATA}/updates/{pack_name}"
+	uploads = (
+		(local_pack, remote_pack),
+		(CURRENT_JSON, f"{REMOTE_DATA}/updates/current.json"),
+		(CLIENT_INFO, f"{REMOTE_DATA}/client-info.json"),
+	)
 	sftp = client.open_sftp()
 	try:
-		remote_pack = f"{REMOTE_DATA}/updates/{pack_name}"
-		print(f"Uploading {local_pack.name} ({local_pack.stat().st_size} bytes)...")
-		sftp.put(str(local_pack), remote_pack)
-		with sftp.file(f"{REMOTE_DATA}/updates/current.json", "w") as f:
-			f.write(CURRENT_JSON.read_text(encoding="utf-8"))
-		print("uploaded current.json")
-		with sftp.file(f"{REMOTE_DATA}/client-info.json", "w") as f:
-			f.write(CLIENT_INFO.read_text(encoding="utf-8"))
-		print("uploaded client-info.json")
+		for local, remote in uploads:
+			temporary = f"/tmp/{Path(remote).name}.{os.getpid()}"
+			print(f"Uploading {local.name} ({local.stat().st_size} bytes)...")
+			sftp.put(str(local), temporary)
+			command = "sudo install -m 0644 -- {source} {target}".format(
+				source=shlex.quote(temporary),
+				target=shlex.quote(remote),
+			)
+			_, stdout, stderr = client.exec_command(command)
+			status = stdout.channel.recv_exit_status()
+			if status:
+				raise RuntimeError(stderr.read().decode("utf-8", errors="replace"))
+			print(f"uploaded {Path(remote).name}")
 	finally:
 		sftp.close()
-	client.exec_command("sudo systemctl restart whitegram-backend")
+	_, stdout, stderr = client.exec_command(
+		"sudo systemctl restart whitegram-backend"
+	)
+	status = stdout.channel.recv_exit_status()
+	if status:
+		raise RuntimeError(stderr.read().decode("utf-8", errors="replace"))
 	client.close()
 	print("done")
 	return 0

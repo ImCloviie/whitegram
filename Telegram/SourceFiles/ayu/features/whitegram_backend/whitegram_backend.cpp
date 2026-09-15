@@ -33,6 +33,7 @@ namespace {
 
 constexpr auto kDefaultBaseUrl = "http://31.76.111.240:8787";
 constexpr auto kDefaultApiKey = "WgProd_k7Hx9mP2vQ4nR8sT1uY6zA3bC5dE0fJ";
+constexpr auto kBackendRequestTimeout = 15 * 1000;
 
 [[nodiscard]] int CompareVersionStrings(
 		const QString &left,
@@ -612,6 +613,7 @@ void FetchClientInfo() {
 	request.setAttribute(
 		QNetworkRequest::RedirectPolicyAttribute,
 		QNetworkRequest::NoLessSafeRedirectPolicy);
+	request.setTransferTimeout(kBackendRequestTimeout);
 	const auto reply = Service::Instance().accessManager().get(request);
 	QObject::connect(reply, &QNetworkReply::finished, [=] {
 		const auto guard = gsl::finally([&] { reply->deleteLater(); });
@@ -663,6 +665,7 @@ void CheckUpdateAvailability() {
 	request.setAttribute(
 		QNetworkRequest::RedirectPolicyAttribute,
 		QNetworkRequest::NoLessSafeRedirectPolicy);
+	request.setTransferTimeout(kBackendRequestTimeout);
 	const auto reply = Service::Instance().accessManager().get(request);
 	QObject::connect(reply, &QNetworkReply::finished, [=] {
 		const auto guard = gsl::finally([&] { reply->deleteLater(); });

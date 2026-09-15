@@ -1992,6 +1992,34 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 	};
 }
 
+[[nodiscard]] std::vector<QString> MusicIslandBackgroundModeOptions() {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+	return std::vector<QString>{
+		isRu ? QString::fromUtf8("Заполнить") : QString("Fill"),
+		isRu ? QString::fromUtf8("Вписать") : QString("Fit"),
+		isRu ? QString::fromUtf8("Растянуть") : QString("Stretch"),
+	};
+}
+
+[[nodiscard]] QString MusicIslandBackgroundCurrentText(const QString &path) {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+	if (path.isEmpty()) {
+		return isRu
+			? QString::fromUtf8("Фон не выбран")
+			: QString("No background selected");
+	}
+	if (!QFileInfo::exists(path)) {
+		return isRu
+			? QString::fromUtf8("Файл не найден")
+			: QString("File not found");
+	}
+	return QFileInfo(path).fileName();
+}
+
 const auto kWhitegramMusicIslandMeta = BuildHelper({
 	.id = WhitegramMusicIsland::Id(),
 	.parentId = MainId(),
@@ -2063,15 +2091,23 @@ const auto kWhitegramMusicIslandMeta = BuildHelper({
 	ayu.addChooseButton({
 		.id = u"whitegram/musicIslandPosition"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Угол окна"),
-			QString("Window corner")),
+			QString::fromUtf8("Позиция островка"),
+			QString("Island position")),
 		.boxTitle = trWhitegram(
-			QString::fromUtf8("Угол окна"),
-			QString("Window corner")),
-		.initialSelection = settings->musicIslandPosition(),
+			QString::fromUtf8("Позиция островка"),
+			QString("Island position")),
+		.initialSelection = ([&] {
+			const auto left = settings->musicIslandFreeX() < 500;
+			const auto top = settings->musicIslandFreeY() < 500;
+			return (top ? 0 : 2) + (left ? 0 : 1);
+		})(),
 		.options = MusicIslandCornerOptions(),
 		.setter = [](int index) {
-			AyuSettings::getInstance().setMusicIslandPosition(index);
+			auto &islandSettings = AyuSettings::getInstance();
+			islandSettings.setMusicIslandFreeX(
+				(index == 0 || index == 2) ? 0 : 1000);
+			islandSettings.setMusicIslandFreeY(
+				(index < 2) ? 0 : 1000);
 		},
 		.icon = { &st::menuIconPin },
 		.keywords = {
@@ -2083,17 +2119,203 @@ const auto kWhitegramMusicIslandMeta = BuildHelper({
 			QString::fromUtf8("перетаскивание"),
 		},
 	});
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicIslandLocked"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Зафиксировать позицию"),
+			QString("Lock the position")),
+		.getter = &AyuSettings::musicIslandLocked,
+		.setter = &AyuSettings::setMusicIslandLocked,
+		.icon = { &st::menuIconPin },
+		.keywords = {
+			u"lock"_q,
+			u"pin"_q,
+			u"fixed"_q,
+			QString::fromUtf8("закрепить"),
+			QString::fromUtf8("позиция"),
+		},
+	});
 
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Выберите угол, в котором островок появится при запуске "
-			"трека. Его можно перетащить мышью — он с анимацией "
-			"прилипнет к ближайшему углу и запомнит новое место."),
+			"Островок можно перетащить в любую точку окна и опустить — "
+			"место запомнится. «Зафиксировать позицию» запрещает "
+			"случайное перемещение перетаскиванием, пока включено."),
 		QString(
-			"Pick the corner where the island appears when a track "
-			"starts. You can also drag it — it snaps to the nearest "
-			"corner with an animation and remembers the new spot.")));
+			"Drag the island anywhere in the window and drop it — the "
+			"spot is remembered. 'Lock the position' prevents accidental "
+			"dragging while it stays on.")));
+	builder.addSkip();
+
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Фон островка"),
+		QString("Island background")));
+
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicIslandCustomBackgroundEnabled"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Свой фон картинкой"),
+			QString("Custom image background")),
+		.getter = &AyuSettings::musicIslandCustomBackgroundEnabled,
+		.setter = &AyuSettings::setMusicIslandCustomBackgroundEnabled,
+		.icon = { &st::menuIconPhoto },
+		.keywords = {
+			u"background"_q,
+			u"image"_q,
+			u"photo"_q,
+			QString::fromUtf8("фон"),
+			QString::fromUtf8("картинка"),
+			QString::fromUtf8("фото"),
+		},
+	});
+
+	builder.add([=](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		const auto label = Ui::CreateChild<Ui::FlatLabel>(
+			ctx.container.get(),
+			rpl::single(QString()),
+			st::boxLabel);
+		label->setAttribute(Qt::WA_TransparentForMouseEvents);
+		label->setTextColorOverride(st::windowActiveTextFg->c);
+
+		AyuSettings::getInstance().musicIslandCustomBackgroundPathValue(
+		) | rpl::on_next([=](const QString &path) {
+			const auto missing = !path.isEmpty() && !QFileInfo::exists(path);
+			label->setText(MusicIslandBackgroundCurrentText(path));
+			label->setTextColorOverride(missing
+				? st::boxTextFgError->c
+				: st::windowActiveTextFg->c);
+			label->setToolTip(path);
+		}, label->lifetime());
+
+		return {
+			.widget = object_ptr<Ui::FlatLabel>::fromRaw(label),
+			.margin = st::boxRowPadding,
+		};
+	});
+
+	builder.addButton({
+		.id = u"whitegram/musicIslandCustomBackgroundChoose"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Выбрать картинку…"),
+			QString("Choose image…")),
+		.icon = { &st::menuIconFile },
+		.onClick = [=] {
+			const auto filters = u"Image files (*.png *.jpg *.jpeg *.webp *.bmp *.gif);;"_q
+				+ FileDialog::AllFilesFilter();
+			FileDialog::GetOpenPath(
+				Core::App().getFileDialogParent(),
+				u"Open image file"_q,
+				filters,
+				[=](const FileDialog::OpenResult &result) {
+					if (result.paths.isEmpty()) {
+						return;
+					}
+					auto &backgroundSettings = AyuSettings::getInstance();
+					backgroundSettings.setMusicIslandCustomBackgroundPath(
+						result.paths.front());
+					if (!backgroundSettings.musicIslandCustomBackgroundEnabled()) {
+						backgroundSettings.setMusicIslandCustomBackgroundEnabled(true);
+					}
+				});
+		},
+	});
+
+	builder.addButton({
+		.id = u"whitegram/musicIslandCustomBackgroundReset"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Убрать свой фон"),
+			QString("Remove custom background")),
+		.icon = { &st::menuIconRestore },
+		.onClick = [=] {
+			auto &backgroundSettings = AyuSettings::getInstance();
+			backgroundSettings.setMusicIslandCustomBackgroundPath(QString());
+			backgroundSettings.setMusicIslandCustomBackgroundEnabled(false);
+		},
+	});
+
+	ayu.addChooseButton({
+		.id = u"whitegram/musicIslandCustomBackgroundMode"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Заполнение фоном"),
+			QString("Background fit")),
+		.boxTitle = trWhitegram(
+			QString::fromUtf8("Заполнение фоном"),
+			QString("Background fit")),
+		.initialSelection = settings->musicIslandCustomBackgroundMode(),
+		.options = MusicIslandBackgroundModeOptions(),
+		.setter = [](int index) {
+			AyuSettings::getInstance().setMusicIslandCustomBackgroundMode(index);
+		},
+		.icon = { &st::menuIconPhoto },
+		.keywords = {
+			u"fit"_q,
+			u"fill"_q,
+			u"stretch"_q,
+			QString::fromUtf8("заполнение"),
+			QString::fromUtf8("вписать"),
+			QString::fromUtf8("растянуть"),
+		},
+	});
+
+	ayu.addSlider({
+		.id = u"whitegram/musicIslandCustomBackgroundOpacity"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Прозрачность фона"),
+			QString("Background opacity")),
+		.steps = 101,
+		.current = settings->musicIslandCustomBackgroundOpacity(),
+		.indexToValue = [](int index) { return index; },
+		.onFinalChanged = [](int value) {
+			AyuSettings::getInstance().setMusicIslandCustomBackgroundOpacity(value);
+		},
+		.formatLabel = [](int value) {
+			return QString::number(value) + u'%';
+		},
+		.keywords = { u"opacity"_q, QString::fromUtf8("прозрачность") },
+	});
+
+	ayu.addSlider({
+		.id = u"whitegram/musicIslandCustomBackgroundDim"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Затемнение фона"),
+			QString("Background dimming")),
+		.steps = 101,
+		.current = settings->musicIslandCustomBackgroundDim(),
+		.indexToValue = [](int index) { return index; },
+		.onFinalChanged = [](int value) {
+			AyuSettings::getInstance().setMusicIslandCustomBackgroundDim(value);
+		},
+		.formatLabel = [](int value) {
+			return QString::number(value) + u'%';
+		},
+		.keywords = { u"dim"_q, QString::fromUtf8("затемнение") },
+	});
+
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicIslandCustomBackgroundBlur"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Размыть фон"),
+			QString("Blur background")),
+		.getter = &AyuSettings::musicIslandCustomBackgroundBlur,
+		.setter = &AyuSettings::setMusicIslandCustomBackgroundBlur,
+		.icon = { &st::menuIconPhoto },
+		.keywords = {
+			u"blur"_q,
+			QString::fromUtf8("размытие"),
+			QString::fromUtf8("блюр"),
+		},
+	});
+
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Свой фон применяется ко всем трекам поверх обычного "
+			"оформления островка. Затемнение помогает сохранить "
+			"читаемость текста."),
+		QString(
+			"The custom background applies to every track on top of the "
+			"regular island styling. Dimming keeps the text readable.")));
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
@@ -2157,19 +2379,22 @@ const auto kWhitegramMusicIslandMeta = BuildHelper({
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"«При наведении» — пилюля раскрывается, когда курсор над "
-			"островком. «По клику» — только по нажатию. «Наведение и "
-			"клик» — работают оба способа. Клик по названию в "
-			"раскрытом виде открывает сообщение с треком, если включено "
-			"ниже. Полоса плеера — штатная панель над чатом; её можно "
-			"скрыть, чтобы остался только островок."),
+			"«При наведении» — пилюля раскрывается, пока курсор над "
+			"островком, и сворачивается, когда вы уводите его. "
+			"«По клику» — раскрывается только по нажатию, повторное "
+			"нажатие сворачивает. «Наведение и клик» — сочетает оба "
+			"способа: клик «закрепляет» открытый плеер. Клик по названию "
+			"трека в раскрытом виде открывает сообщение с ним (если "
+			"включено ниже). Полоса плеера — штатная панель над чатом; "
+			"её можно скрыть, чтобы остался только островок."),
 		QString(
-			"On hover expands when the cursor is over the island. On "
-			"click expands only when you tap it. Hover and click "
-			"supports both. Clicking the title in the expanded view "
-			"opens the track message when enabled below. The player "
-			"bar is the standard panel above the chat; hide it to "
-			"keep only the island.")));
+			"On hover expands while the cursor is over the island and "
+			"collapses when you move away. On click expands only when you "
+			"tap it; tapping again collapses it back. Hover and click "
+			"supports both: a click pins the opened player open. Clicking "
+			"the track name in the expanded view opens its message when "
+			"enabled below. The player bar is the standard panel above the "
+			"chat; hide it to keep only the island.")));
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(

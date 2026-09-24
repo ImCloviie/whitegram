@@ -36,6 +36,7 @@
 #include "ui/text/format_values.h"
 #include "styles/style_boxes.h"
 #include "ayu/ui/settings/ayu_builder.h"
+#include "ui/toast/toast.h"
 #include "ui/painter.h"
 #include "ui/boxes/single_choice_box.h"
 #include "ui/vertical_list.h"
@@ -1927,13 +1928,23 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 			QString("Set header background"),
 			QString::fromUtf8("Убрать фон шапки"),
 			QString("Remove header background"));
+		addZone(
+			Zone::Full,
+			QString::fromUtf8("Установить фон всего профиля"),
+			QString("Set full profile background"),
+			QString::fromUtf8("Убрать фон всего профиля"),
+			QString("Remove full profile background"));
 	}
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Фон отображается в шапке профиля. "
+			"Фон шапки покрывает только верх профиля, фон всего "
+			"профиля тянется через весь экран. Поддерживаются фото "
+			"и видео — видео проигрывается. "
 			"Другие пользователи Whitegram тоже его увидят."),
 		QString(
-			"The background is shown in the profile header. "
+			"The header background covers only the top of the profile, "
+			"the full background spans the whole screen. Photos and "
+			"videos are supported — videos play. "
 			"Other Whitegram users will see it too.")));
 	builder.addSkip();
 
@@ -1989,6 +2000,7 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 		isRu ? QString::fromUtf8("Сверху справа") : QString("Top right"),
 		isRu ? QString::fromUtf8("Снизу слева") : QString("Bottom left"),
 		isRu ? QString::fromUtf8("Снизу справа") : QString("Bottom right"),
+		isRu ? QString::fromUtf8("Свободное перемещение") : QString("Free movement"),
 	};
 }
 
@@ -2097,13 +2109,26 @@ const auto kWhitegramMusicIslandMeta = BuildHelper({
 			QString::fromUtf8("Позиция островка"),
 			QString("Island position")),
 		.initialSelection = ([&] {
-			const auto left = settings->musicIslandFreeX() < 500;
-			const auto top = settings->musicIslandFreeY() < 500;
-			return (top ? 0 : 2) + (left ? 0 : 1);
+			if (settings->musicIslandPosition() == 4) {
+				return 4;
+			}
+			const auto x = settings->musicIslandFreeX();
+			const auto y = settings->musicIslandFreeY();
+			if (x <= 50 && y <= 50) return 0;
+			if (x >= 950 && y <= 50) return 1;
+			if (x <= 50 && y >= 950) return 2;
+			if (x >= 950 && y >= 950) return 3;
+			return 4;
 		})(),
 		.options = MusicIslandCornerOptions(),
 		.setter = [](int index) {
 			auto &islandSettings = AyuSettings::getInstance();
+			if (index == 4) {
+				islandSettings.setMusicIslandPosition(4);
+				islandSettings.setMusicIslandLocked(false);
+				return;
+			}
+			islandSettings.setMusicIslandPosition(index);
 			islandSettings.setMusicIslandFreeX(
 				(index == 0 || index == 2) ? 0 : 1000);
 			islandSettings.setMusicIslandFreeY(
@@ -2114,11 +2139,33 @@ const auto kWhitegramMusicIslandMeta = BuildHelper({
 			u"corner"_q,
 			u"position"_q,
 			u"drag"_q,
+			u"free"_q,
 			QString::fromUtf8("угол"),
 			QString::fromUtf8("положение"),
 			QString::fromUtf8("перетаскивание"),
+			QString::fromUtf8("свободное"),
 		},
 	});
+
+	builder.addButton({
+		.id = u"whitegram/musicIslandFreeMovement"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Свободное перемещение"),
+			QString("Free movement")),
+		.icon = { &st::menuIconUnpin },
+		.onClick = [=] {
+			auto &islandSettings = AyuSettings::getInstance();
+			islandSettings.setMusicIslandPosition(4);
+			islandSettings.setMusicIslandLocked(false);
+			const auto id = Lang::GetInstance().id();
+			const auto baseId = Lang::GetInstance().baseId();
+			const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+			Ui::Toast::Show(isRu
+				? QString::fromUtf8("Свободное перемещение включено — теперь островок можно перетаскивать")
+				: QString("Free movement enabled — you can now drag the island"));
+		},
+	});
+
 	ayu.addSettingToggle({
 		.id = u"whitegram/musicIslandLocked"_q,
 		.title = trWhitegram(

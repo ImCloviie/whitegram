@@ -214,6 +214,10 @@ void SessionPrivate::appendTestConnection(
 		priority
 	});
 	const auto weak = _testConnections.back().data.get();
+	if (!weak) {
+		_testConnections.pop_back();
+		return;
+	}
 	connect(weak, &AbstractConnection::error, [=](int errorCode) {
 		onError(weak, errorCode);
 	});
@@ -242,7 +246,7 @@ void SessionPrivate::appendTestConnection(
 		//|| isUploadDcId(_shiftedDcId)
 		|| (_realDcType == DcType::Cdn);
 	const auto protocolDcId = getProtocolDcId();
-	InvokeQueued(_testConnections.back().data, [=] {
+	InvokeQueued(weak, [=] {
 		weak->connectToServer(
 			ip,
 			port,
@@ -1245,7 +1249,9 @@ void SessionPrivate::waitConnectedFailed() {
 	DEBUG_LOG(("MTP Info: can't connect in %1ms").arg(_waitForConnected));
 	auto maxTimeout = kMaxConnectedTimeout;
 	for (const auto &connection : _testConnections) {
-		accumulate_max(maxTimeout, connection.data->fullConnectTimeout());
+		if (connection.data) {
+			accumulate_max(maxTimeout, connection.data->fullConnectTimeout());
+		}
 	}
 	if (_waitForConnected < maxTimeout) {
 		_waitForConnected = std::min(maxTimeout, 2 * _waitForConnected);
@@ -1262,8 +1268,11 @@ void SessionPrivate::waitBetterFailed() {
 }
 
 void SessionPrivate::connectingTimedOut() {
-	for (const auto &connection : _testConnections) {
-		connection.data->timedOut();
+	const auto testConnections = base::take(_testConnections);
+	for (const auto &connection : testConnections) {
+		if (connection.data) {
+			connection.data->timedOut();
+		}
 	}
 	doDisconnect();
 }
@@ -2389,11 +2398,13 @@ void SessionPrivate::onConnected(
 		_testConnections,
 		connection.get(),
 		[](const TestConnection &test) { return test.data.get(); });
-	Assert(i != end(_testConnections));
+	if (i == end(_testConnections) || !i->data) {
+		return;
+	}
 	const auto my = i->priority;
 	const auto j = ranges::find_if(
 		_testConnections,
-		[&](const TestConnection &test) { return test.priority > my; });
+		[&](const TestConnection &test) { return test.data && (test.priority > my); });
 	if (j != end(_testConnections)) {
 		DEBUG_LOG(("MTP Info: connection %1 succeed, waiting for %2.").arg(
 			i->data->tag(),
@@ -2402,6 +2413,7 @@ void SessionPrivate::onConnected(
 	} else {
 		DEBUG_LOG(("MTP Info: connection through IPv4 succeed."));
 		_waitForBetterTimer.cancel();
+		_waitForConnectedTimer.cancel();
 		_connection = std::move(i->data);
 		_testConnections.clear();
 		checkAuthKey();
@@ -2428,13 +2440,13 @@ void SessionPrivate::confirmBestConnection() {
 		_testConnections,
 		std::less<>(),
 		[](const TestConnection &test) {
-			return test.data->isConnected() ? test.priority : -1;
+			return (test.data && test.data->isConnected()) ? test.priority : -1;
 		});
-	Assert(i != end(_testConnections));
-	if (!i->data->isConnected()) {
+	if (i == end(_testConnections) || !i->data || !i->data->isConnected()) {
 		return;
 	}
 
+	_waitForConnectedTimer.cancel();
 	DEBUG_LOG(("MTP Info: can't connect through better, using %1."
 		).arg(i->data->tag()));
 
@@ -2447,10 +2459,11 @@ void SessionPrivate::confirmBestConnection() {
 void SessionPrivate::removeTestConnection(
 		not_null<AbstractConnection*> connection) {
 	_testConnections.erase(
-		ranges::remove(
+		ranges::remove_if(
 			_testConnections,
-			connection.get(),
-			[](const TestConnection &test) { return test.data.get(); }),
+			[&](const TestConnection &test) {
+				return !test.data || (test.data.get() == connection.get());
+			}),
 		end(_testConnections));
 }
 

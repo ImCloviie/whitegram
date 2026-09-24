@@ -1685,7 +1685,7 @@ private:
 
   rpl::variable<int64> _totalTimeSpent = 0;
   rpl::variable<bool> _showTimeSpentInDrawer = false;
-  rpl::variable<bool> _whitegramAutoUpdate = false;
+  rpl::variable<bool> _whitegramAutoUpdate = true;
   rpl::variable<bool> _hasSelfDestructPassword = false;
   QString _selfDestructSalt;
   QString _selfDestructHash;

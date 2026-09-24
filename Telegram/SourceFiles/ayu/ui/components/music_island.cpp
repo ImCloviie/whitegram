@@ -971,6 +971,14 @@ void MusicIsland::loadCustomBackground() {
 		_customBackground = QPixmap();
 		return;
 	}
+	constexpr auto kMaxSide = 1920;
+	if (std::max(image.width(), image.height()) > kMaxSide) {
+		image = image.scaled(
+			kMaxSide,
+			kMaxSide,
+			Qt::KeepAspectRatio,
+			Qt::SmoothTransformation);
+	}
 	if (settings.musicIslandCustomBackgroundBlur()) {
 		image = Images::BlurLargeImage(std::move(image), kBlurRadius);
 	}
@@ -1629,6 +1637,7 @@ void MusicIsland::mousePressEvent(QMouseEvent *e) {
 	_down = true;
 	_downPoint = e->pos();
 	_downGlobalPoint = e->globalPos();
+	_lastMousePos = e->globalPos();
 	_dragStartPosition = pos();
 	if (_pressedPart == Part::Seek) {
 		_seeking = true;
@@ -1659,9 +1668,27 @@ void MusicIsland::mouseMoveEvent(QMouseEvent *e) {
 			int64(base::SafeRound(_seekProgress * _durationSeconds)));
 		update();
 		return;
-	} else if (_drag) {
-		auto target = _dragStartPosition
-			+ (e->globalPos() - _downGlobalPoint);
+	}
+
+	if (!_drag
+		&& _down
+		&& ((_pressedPart == Part::Body) || (_pressedPart == Part::Cover))
+		&& ((e->pos() - _downPoint).manhattanLength()
+			> QApplication::startDragDistance())) {
+		if (AyuSettings::getInstance().musicIslandLocked()) {
+			hintLockedPosition();
+			updateHovered(e->pos());
+			return;
+		}
+		_drag = true;
+	}
+
+	if (_drag) {
+		const auto currentMousePos = e->globalPos();
+		const auto delta = currentMousePos - _lastMousePos;
+		_lastMousePos = currentMousePos;
+
+		auto target = pos() + delta;
 		if (const auto parent = parentWidget()) {
 			const auto margin = std::max(0, int(st::musicIslandShadow / 2));
 			target.setX(std::clamp(
@@ -1675,20 +1702,8 @@ void MusicIsland::mouseMoveEvent(QMouseEvent *e) {
 		}
 		move(target);
 		return;
-	} else if (_down
-		&& ((_pressedPart == Part::Body) || (_pressedPart == Part::Cover))
-		&& ((e->pos() - _downPoint).manhattanLength()
-			> QApplication::startDragDistance())) {
-		if (AyuSettings::getInstance().musicIslandLocked()) {
-			hintLockedPosition();
-			updateHovered(e->pos());
-			return;
-		}
-		_drag = true;
-		grabMouse();
-		mouseMoveEvent(e);
-		return;
 	}
+
 	updateHovered(e->pos());
 }
 
@@ -1736,7 +1751,6 @@ void MusicIsland::mouseReleaseEvent(QMouseEvent *e) {
 		return;
 	} else if (_drag) {
 		_drag = false;
-		releaseMouse();
 		if (const auto parent = parentWidget()) {
 			const auto margin = std::max(0, int(st::musicIslandShadow / 2));
 			const auto placementWidth = std::max(
@@ -1746,6 +1760,7 @@ void MusicIsland::mouseReleaseEvent(QMouseEvent *e) {
 				1,
 				parent->height() - 2 * margin);
 			auto &islandSettings = AyuSettings::getInstance();
+			islandSettings.setMusicIslandPosition(4);
 			islandSettings.setMusicIslandFreeX(PercentNominal(
 				pos().x() - margin,
 				placementWidth));

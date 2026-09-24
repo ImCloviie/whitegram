@@ -58,15 +58,22 @@ public:
 private:
 	void loadImage(const QString &path);
 	void loadVideo(const QString &path);
+	void restartVideo();
+	void invalidateCover();
 	void handleClipNotification(Media::Clip::Notification notification);
-	void ensureVideoStarted(QSize frame);
+	[[nodiscard]] Media::Clip::FrameRequest videoRequest(QSize target) const;
+	[[nodiscard]] QImage coverForTarget(QSize target);
 
 	Fn<void()> _repaint;
 	uint64 _peerId = 0;
 	Zone _zone = Zone::Full;
 	QImage _image;
 	Media::Clip::ReaderPointer _video;
-	QSize _videoFrameSize;
+	QString _videoPath;
+	QImage _lastVideoFrame;
+	QImage _coverCache;
+	QSize _coverTarget;
+	bool _frameAvailable = false;
 };
 
 } // namespace AyuFeatures::CustomProfileBackground

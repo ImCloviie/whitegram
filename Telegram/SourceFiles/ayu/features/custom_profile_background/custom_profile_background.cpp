@@ -99,7 +99,7 @@ struct BackgroundSource {
 
 bool IsVideoFile(const QString &path) {
 	const auto mime = QMimeDatabase().mimeTypeForFile(path);
-	return mime.inherits(u"video/"_q);
+	return mime.isValid() && mime.name().startsWith(u"video/"_q);
 }
 
 bool HasBackground(uint64 peerId, Zone zone) {
@@ -107,18 +107,25 @@ bool HasBackground(uint64 peerId, Zone zone) {
 }
 
 std::optional<Zone> TopRendererZone(uint64 peerId) {
-	if (HasBackground(peerId, Zone::Top)) {
+	if (HasBackground(peerId, Zone::Full)) {
+		return Zone::Full;
+	} else if (HasBackground(peerId, Zone::Top)) {
 		return Zone::Top;
 	}
 	return std::nullopt;
 }
 
 std::optional<Zone> BottomRendererZone(uint64 peerId) {
+	if (HasBackground(peerId, Zone::Full)) {
+		return Zone::Full;
+	} else if (HasBackground(peerId, Zone::Bottom)) {
+		return Zone::Bottom;
+	}
 	return std::nullopt;
 }
 
 bool UsesFullBackground(uint64 peerId) {
-	return false;
+	return HasBackground(peerId, Zone::Full);
 }
 
 QString StoreBackgroundFile(
@@ -133,7 +140,7 @@ QString StoreBackgroundFile(
 	QDir().mkpath(dir);
 	const auto suffix = info.suffix().isEmpty()
 		? u"bin"_q
-		: info.suffix();
+		: info.suffix().toLower().left(10);
 	const auto destination = dir
 		+ QString::number(peerId)
 		+ u'_'
@@ -167,6 +174,14 @@ void PickBackground(
 				return;
 			}
 			const auto source = result.paths.front();
+			if (!QFileInfo(source).isFile()
+				|| (!IsVideoFile(source)
+					&& !QImageReader(source).canRead())) {
+				controller->showToast(IsRussian()
+					? u"Выберите фото или видео."_q
+					: u"Choose a photo or video."_q);
+				return;
+			}
 			const auto stored = StoreBackgroundFile(peerId, zone, source);
 			if (stored.isEmpty()) {
 				controller->showToast(IsRussian()
@@ -219,7 +234,15 @@ void Renderer::setPeer(uint64 peerId, Zone zone) {
 void Renderer::clear() {
 	_image = QImage();
 	_video = Media::Clip::ReaderPointer();
-	_videoFrameSize = QSize();
+	_videoPath = QString();
+	_lastVideoFrame = QImage();
+	_frameAvailable = false;
+	invalidateCover();
+}
+
+void Renderer::invalidateCover() {
+	_coverCache = QImage();
+	_coverTarget = QSize();
 }
 
 void Renderer::loadImage(const QString &path) {
@@ -236,15 +259,32 @@ void Renderer::loadImage(const QString &path) {
 		}
 	}
 	_image = reader.read();
+	invalidateCover();
 	if (_image.isNull()) {
-		_image = QImage(path);
+		auto fallback = QImage(path);
+		constexpr auto kMaxSide = 4096;
+		if (!fallback.isNull()
+			&& std::max(fallback.width(), fallback.height()) > kMaxSide) {
+			fallback = fallback.scaled(
+				kMaxSide,
+				kMaxSide,
+				Qt::KeepAspectRatio,
+				Qt::SmoothTransformation);
+		}
+		_image = std::move(fallback);
 	}
 	if (!_image.isNull()) {
 		_repaint();
+	} else {
+		LOG(("Whitegram Background: could not decode image."));
 	}
 }
 
 void Renderer::loadVideo(const QString &path) {
+	_videoPath = path;
+	_lastVideoFrame = QImage();
+	_frameAvailable = false;
+	invalidateCover();
 	const auto weak = base::make_weak(this);
 	_video = Media::Clip::MakeReader(path, [=](
 			Media::Clip::Notification notification) {
@@ -256,32 +296,54 @@ void Renderer::loadVideo(const QString &path) {
 	});
 }
 
+void Renderer::restartVideo() {
+	if (_videoPath.isEmpty()) {
+		return;
+	}
+	loadVideo(_videoPath);
+}
+
 void Renderer::handleClipNotification(Media::Clip::Notification notification) {
 	using namespace Media::Clip;
 	switch (notification) {
 	case Notification::Reinit:
 		if (_video && _video->state() == State::Error) {
+			LOG(("Whitegram Background: video decode error, dropping."));
 			_video = Media::Clip::ReaderPointer();
-		} else {
-			ensureVideoStarted(_videoFrameSize);
+			_videoPath = QString();
+			_lastVideoFrame = QImage();
+			_frameAvailable = false;
+			invalidateCover();
 		}
 		_repaint();
 		break;
 	case Notification::Repaint:
 		if (_video && !_video->currentDisplayed()) {
+			_frameAvailable = true;
 			_repaint();
 		}
 		break;
 	}
 }
 
-void Renderer::ensureVideoStarted(QSize frame) {
-	if (!_video || !_video->ready() || _video->started()) {
-		return;
-	} else if (frame.isEmpty()) {
-		return;
+Media::Clip::FrameRequest Renderer::videoRequest(QSize target) const {
+	return { .frame = target };
+}
+
+QImage Renderer::coverForTarget(QSize target) {
+	const auto &source = _video ? _lastVideoFrame : _image;
+	if (source.isNull() || target.isEmpty()) {
+		return QImage();
 	}
-	_video->start({ .frame = frame });
+	constexpr auto kMaxCoverHeight = 8192;
+	const auto capped = QSize(
+		target.width(),
+		std::min(target.height(), kMaxCoverHeight));
+	if (capped != _coverTarget || _coverCache.isNull()) {
+		_coverCache = PrepareCoverImage(source, capped);
+		_coverTarget = capped;
+	}
+	return _coverCache;
 }
 
 bool Renderer::active() const {
@@ -297,20 +359,24 @@ void Renderer::paint(
 		return;
 	}
 	const auto target = QSize(rect.width(), coverHeight);
-	QImage frame;
+	if (target.isEmpty()) {
+		return;
+	}
 	if (_video) {
-		_videoFrameSize = target;
-		if (_video->ready() && !_video->started()) {
-			ensureVideoStarted(target);
-		}
-		if (_video->started()) {
-			frame = _video->current({ .frame = target }, crl::now());
+		using namespace Media::Clip;
+		if (_video->state() == State::Finished) {
+			restartVideo();
+		} else if (_video->ready() && !_video->started()) {
+			_video->start(videoRequest(target));
+		} else if (_frameAvailable) {
+			_frameAvailable = false;
+			_lastVideoFrame = _video->current(
+				videoRequest(target),
+				crl::now());
+			invalidateCover();
 		}
 	}
-	if (frame.isNull()) {
-		frame = _image;
-	}
-	const auto prepared = PrepareCoverImage(frame, target);
+	const auto prepared = coverForTarget(target);
 	if (prepared.isNull()) {
 		return;
 	}
@@ -320,13 +386,14 @@ void Renderer::paint(
 		std::max(prepared.height() - 1, 0));
 	const auto sliceBottom = std::min(sliceTop + rect.height(), prepared.height());
 	const auto sliceHeight = sliceBottom - sliceTop;
-	if (sliceHeight <= 0) {
+	const auto sliceWidth = std::min(rect.width(), prepared.width());
+	if (sliceHeight <= 0 || sliceWidth <= 0) {
 		return;
 	}
 	p.drawImage(
 		rect.topLeft(),
 		prepared,
-		QRect(0, sliceTop, prepared.width(), sliceHeight));
+		QRect(0, sliceTop, sliceWidth, sliceHeight));
 	auto hq = PainterHighQualityEnabler(p);
 	p.fillRect(rect, QColor(0, 0, 0, 72));
 }

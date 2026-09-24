@@ -410,7 +410,7 @@ MainMenu::MainMenu(
 
 	_telegram->setMarkedText(tr::link(
 		u"Whitegram"_q,
-		u"https://ayugram.one"_q));
+		u"https://github.com/ImCloviie"_q));
 	_telegram->setLinksTrusted();
 	setupFooterBetaBadge();
 	// The canary version is too long for the "Version {version}" form.

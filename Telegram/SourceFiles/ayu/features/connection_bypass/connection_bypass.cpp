@@ -84,7 +84,7 @@ enum class RestartKind {
 }
 
 [[nodiscard]] bool clearLegacyLocalProxy() {
-	if (!Core::IsAppLaunched()) {
+	if (!Core::IsAppLaunched() || !Core::App().domain().started()) {
 		return false;
 	}
 	auto &settings = Core::App().settings().proxy();

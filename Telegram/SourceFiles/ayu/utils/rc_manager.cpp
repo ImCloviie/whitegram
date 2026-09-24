@@ -89,7 +89,7 @@ bool RCManager::tryRetryWithExteraFallback() {
 	LOG(("RCManager: switching to extera fallback endpoint"));
 	_useExteraFallback = true;
 	_retryAttempted = true;
-	sendRequest();
+	InvokeQueued(this, [=] { sendRequest(); });
 	return true;
 }
 
@@ -224,14 +224,12 @@ bool RCManager::applyResponse(const QByteArray &response) {
 
 void RCManager::gotFailure(QNetworkReply::NetworkError e) {
 	LOG(("RCManager: Error %1").arg(e));
+	clearSentRequest();
 	if (tryRetryWithExteraFallback()) {
 		LOG(("RCManager: retrying request with extera fallback endpoint"));
 		return;
 	}
 	LOG(("RCManager: no retry left for failed request"));
-	if (const auto reply = base::take(_reply)) {
-		reply->deleteLater();
-	}
 }
 
 void RCManager::clearSentRequest() {
@@ -241,7 +239,9 @@ void RCManager::clearSentRequest() {
 	}
 	disconnect(reply, &QNetworkReply::finished, nullptr, nullptr);
 	disconnect(reply, &QNetworkReply::errorOccurred, nullptr, nullptr);
-	reply->abort();
+	if (reply->isRunning()) {
+		reply->abort();
+	}
 	reply->deleteLater();
 }
 

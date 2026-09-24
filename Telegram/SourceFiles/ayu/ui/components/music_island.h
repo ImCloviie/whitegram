@@ -186,6 +186,7 @@ private:
 	bool _down = false;
 	QPoint _downPoint;
 	QPoint _downGlobalPoint;
+	QPoint _lastMousePos;
 	QPoint _dragStartPosition;
 	bool _drag = false;
 	bool _keepExpandedAfterSeek = false;

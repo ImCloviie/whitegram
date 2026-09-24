@@ -1966,7 +1966,9 @@ void Updater::handleReady() {
 	_action = Action::Ready;
 	if (!Quitting()) {
 		cSetLastUpdateCheck(base::unixtime::now());
-		Local::writeSettings();
+		if (Core::IsAppLaunched()) {
+			Local::writeSettings();
+		}
 	}
 }
 
@@ -1994,7 +1996,9 @@ void Updater::scheduleNext() {
 	stop();
 	if (!Quitting()) {
 		cSetLastUpdateCheck(base::unixtime::now());
-		Local::writeSettings();
+		if (Core::IsAppLaunched()) {
+			Local::writeSettings();
+		}
 		start(true);
 	}
 }

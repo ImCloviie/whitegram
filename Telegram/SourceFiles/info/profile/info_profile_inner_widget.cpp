@@ -826,7 +826,7 @@ int InnerWidget::detailsBackgroundSpanHeight() const {
 
 int InnerWidget::detailsBackgroundTopBarHeight() const {
 	if (const auto top = _topBar.get()) {
-		return top->maximumHeight();
+		return std::max(top->height(), 1);
 	}
 	return st::infoProfileTopBarHeightMax;
 }
@@ -835,13 +835,13 @@ void InnerWidget::updateDetailsBackgroundSections() {
 	const auto totalHeight = detailsBackgroundSpanHeight();
 	if (_detailsBackgroundHeight != totalHeight) {
 		_detailsBackgroundHeight = totalHeight;
-		if (const auto top = _topBar.get()) {
-			const auto detailsHeight = AyuFeatures::CustomProfileBackground::UsesFullBackground(
-				_peer->id.value)
-				? totalHeight
-				: 0;
-			top->setCustomBackgroundDetailsHeight(detailsHeight);
-		}
+	}
+	if (const auto top = _topBar.get()) {
+		const auto detailsHeight = AyuFeatures::CustomProfileBackground::UsesFullBackground(
+			_peer->id.value)
+			? totalHeight
+			: 0;
+		top->setCustomBackgroundDetailsHeight(detailsHeight);
 	}
 	syncScrollBackgroundLayer();
 }

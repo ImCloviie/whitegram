@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_channel.h"
 #include "core/update_checker.h"
 #include "core/version.h"
+#include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/painter.h"
@@ -41,16 +42,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 rpl::producer<TextWithEntities> Text() {
-	return tr::lng_about_text2(
-		lt_gpl_link,
-		rpl::single(Ui::Text::Link(
-			"GNU GPL",
-			"https://github.com/AyuGram/AyuGramDesktop/blob/dev/LICENSE")),
-		lt_github_link,
-		rpl::single(Ui::Text::Link(
-			"GitHub",
-			"https://github.com/AyuGram/AyuGramDesktop")),
-		tr::marked);
+	const auto github = u"https://github.com/ImCloviie"_q;
+	const auto ruPrefix = QString::fromUtf8("Whitegram Desktop — улучшенный форк Telegram Desktop с дополнительными функциями, эксклюзивной кастомизацией и уникальными возможностями. Создан на основе открытого исходного кода Telegram Desktop и AyuGram. Распространяется под лицензией ");
+	const auto enPrefix = QString("Whitegram Desktop is an enhanced fork of Telegram Desktop with extra features, exclusive customization, and unique capabilities. Built on the open source code of Telegram Desktop and AyuGram. Distributed under the ");
+	const auto ruMiddle = QString::fromUtf8(". Исходный код — на ");
+	const auto enMiddle = QString(" license. Source code is on ");
+	return rpl::single(rpl::empty) | rpl::then(
+		Lang::GetInstance().idChanges() | rpl::to_empty
+	) | rpl::map([=] {
+		const auto id = Lang::GetInstance().id();
+		const auto baseId = Lang::GetInstance().baseId();
+		const auto ru = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+		auto result = TextWithEntities{ .text = ru ? ruPrefix : enPrefix };
+		result.append(Ui::Text::Link(u"GNU GPL"_q, github));
+		result.append(ru ? ruMiddle : enMiddle);
+		result.append(Ui::Text::Link(u"GitHub"_q, github));
+		result.append(u"."_q);
+		return result;
+	});
 }
 
 } // namespace

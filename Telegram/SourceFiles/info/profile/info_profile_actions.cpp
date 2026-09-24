@@ -1132,6 +1132,14 @@ void AddProfileBackgroundZoneControls(
 		IsRussianUi()
 			? u"Убрать фон шапки"_q
 			: u"Remove header background"_q);
+	addZone(
+		Zone::Full,
+		IsRussianUi()
+			? u"Установить фон всего профиля"_q
+			: u"Set full profile background"_q,
+		IsRussianUi()
+			? u"Убрать фон всего профиля"_q
+			: u"Remove full profile background"_q);
 }
 
 rpl::producer<CreditsAmount> AddCurrencyAction(
@@ -1320,6 +1328,7 @@ public:
 	void buildSections();
 
 private:
+	void addSection(Section section);
 	[[nodiscard]] Section makePersonalChannel(not_null<UserData*> user);
 	[[nodiscard]] Section makeInfo();
 	[[nodiscard]] Section makeCustomProfileBackground(not_null<UserData*> user);
@@ -1465,6 +1474,13 @@ DetailsFiller::DetailsFiller(
 void DetailsFiller::setDetailsSectionCreated(
 		Fn<void(not_null<Ui::RpWidget*>)> callback) {
 	_detailsSectionCreated = std::move(callback);
+}
+
+void DetailsFiller::addSection(Section section) {
+	if (_detailsSectionCreated && section.widget) {
+		_detailsSectionCreated(section.widget.get());
+	}
+	_stack->add(std::move(section));
 }
 
 template <typename T>
@@ -2080,10 +2096,6 @@ Section DetailsFiller::makeInfo() {
 	raw->toggleOn(tracker.atLeastOneShownValue());
 	raw->finishAnimating();
 
-	if (_detailsSectionCreated) {
-		_detailsSectionCreated(raw);
-	}
-
 	return Section{
 		.widget = std::move(wrap),
 		.shown = raw->toggledValue(),
@@ -2546,9 +2558,6 @@ Section DetailsFiller::makeCustomProfileBackground(not_null<UserData*> user) {
 	const auto controller = _controller->parentController();
 	AddProfileBackgroundZoneControls(raw->entity(), controller, peerId);
 	raw->toggleOn(rpl::single(true));
-	if (_detailsSectionCreated) {
-		_detailsSectionCreated(raw);
-	}
 	return Section{
 		.widget = std::move(wrap),
 		.shown = raw->toggledValue(),
@@ -2974,28 +2983,28 @@ void DetailsFiller::buildSections() {
 	Expects(!_topic || !_topic->creating());
 
 	if (const auto user = _sublist ? nullptr : _peer->asUser()) {
-		_stack->add(makePersonalChannel(user));
+		addSection(makePersonalChannel(user));
 		_stack->addPlainSeparator();
 	}
 	if (Data::PeerLinkedCommunityId(_peer)) {
-		_stack->add(makeCommunityLink(_peer));
+		addSection(makeCommunityLink(_peer));
 		addCommunityHiddenNote();
 		_stack->addPlainSeparator();
 	}
-	_stack->add(makeInfo());
+	addSection(makeInfo());
 	if (const auto user = _peer->asUser()) {
 		if (user->isSelf()) {
-			_stack->add(makeCustomProfileBackground(user));
+			addSection(makeCustomProfileBackground(user));
 			_stack->addPlainSeparator();
 		}
-		_stack->add(makeAddAsContact(user));
+		addSection(makeAddAsContact(user));
 		addBotVerify();
 		if (const auto info = user->botInfo.get()) {
 			if (info->hasMainApp) {
 				addMainApp(user);
 			}
 			if (info->canManageEmojiStatus) {
-				_stack->add(makeBotPermissions(user));
+				addSection(makeBotPermissions(user));
 			}
 			if (const auto id = user->botManagerId()) {
 				if (const auto mgr = user->owner().userLoaded(id)) {
@@ -3006,16 +3015,16 @@ void DetailsFiller::buildSections() {
 		if (!_sublist) {
 			auto reactionSection = makeReportOrDeleteReaction();
 			if (reactionSection.widget) {
-				_stack->add(std::move(reactionSection));
+				addSection(std::move(reactionSection));
 			}
 		}
 	} else if (const auto channel = _peer->asChannel()) {
 		addBotVerify();
 		if (!channel->isMegagroup()) {
-			_stack->add(makeViewChannel(channel));
+			addSection(makeViewChannel(channel));
 		}
 		if (const auto forum = channel->forum()) {
-			_stack->add(makeTopicsList(forum));
+			addSection(makeTopicsList(forum));
 		}
 	}
 }
@@ -3397,6 +3406,14 @@ void ActionsFiller::addCustomProfileBackgroundAction(not_null<UserData*> user) {
 		IsRussianUi()
 			? u"Убрать фон шапки"_q
 			: u"Remove header background"_q);
+	addZone(
+		Zone::Full,
+		IsRussianUi()
+			? u"Установить фон всего профиля"_q
+			: u"Set full profile background"_q,
+		IsRussianUi()
+			? u"Убрать фон всего профиля"_q
+			: u"Remove full profile background"_q);
 
 	_wrap->add(object_ptr<Ui::FixedHeightWidget>(
 		_wrap,

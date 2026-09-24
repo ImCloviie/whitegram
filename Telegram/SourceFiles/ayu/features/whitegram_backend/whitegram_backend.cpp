@@ -131,7 +131,7 @@ using CacheMap = std::map<uint64, std::vector<CachedBackground>>;
 
 [[nodiscard]] bool PathIsVideo(const QString &path) {
 	const auto mime = QMimeDatabase().mimeTypeForFile(path);
-	return mime.inherits(u"video/"_q);
+	return mime.isValid() && mime.name().startsWith(u"video/"_q);
 }
 
 [[nodiscard]] QString DiskCachedPath(uint64 userId, Zone zone) {

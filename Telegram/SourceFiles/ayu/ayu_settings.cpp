@@ -1903,7 +1903,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._musicIslandPosition = std::clamp(
 		j.value("musicIslandPosition", defaults._musicIslandPosition.current()),
 		0,
-		3);
+		4);
 	s._musicIslandHideTopBar = j.value(
 		"musicIslandHideTopBar",
 		defaults._musicIslandHideTopBar.current());

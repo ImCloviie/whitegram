@@ -87,20 +87,33 @@ ClickHandlerPtr MakeViewOnceClickHandler(QString url) {
 }
 
 TextWithEntities FormatOneTimeMessageBubbleText(not_null<const HistoryItem*> item) {
-	auto result = TextWithEntities();
-	result.text = u"🔒 Одноразовое сообщение\n👁️ Нажмите, чтобы просмотреть"_q;
-
 	const auto peerId = item->history()->peer->id.value;
 	const auto msgId = item->id.bare;
 	const auto viewOnceUrl = QString(u"tg://whitegram_view_once?peer=%1&id=%2"_q)
 		.arg(peerId)
 		.arg(msgId);
 
+	auto result = TextWithEntities();
+	const auto bubbleText = u"🔒 Одноразовое сообщение Whitegram"_q;
+	const auto hintLine = u"Нажмите, чтобы открыть"_q;
+	const auto profileLine = u"Установка: https://t.me/imcloviie"_q;
+
+	result.text = bubbleText + u"\n\n"_q + hintLine + u"\n\n"_q + profileLine;
 	result.entities.push_back(EntityInText(
 		EntityType::CustomUrl,
 		0,
-		result.text.size(),
+		bubbleText.length(),
 		viewOnceUrl));
+	result.entities.push_back(EntityInText(
+		EntityType::CustomUrl,
+		bubbleText.length() + u"\n\n"_q.length(),
+		bubbleText.length() + u"\n\n"_q.length() + hintLine.length(),
+		viewOnceUrl));
+	result.entities.push_back(EntityInText(
+		EntityType::Url,
+		result.text.length() - profileLine.length(),
+		profileLine.length(),
+		u"https://t.me/imcloviie"_q));
 
 	return result;
 }

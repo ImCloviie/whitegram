@@ -34,6 +34,7 @@ public:
 	~AyuMusicButton();
 
 	void updateData(MusicButtonData data);
+	void setProfileBackgroundTransparent(bool transparent);
 
 	rpl::producer<> onReady() const {
 		return _onReady.events();
@@ -56,6 +57,7 @@ private:
 	QString _titleText;
 
 	std::optional<QColor> _overrideBg;
+	bool _profileBackgroundTransparent = false;
 
 };
 

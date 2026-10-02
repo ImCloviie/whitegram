@@ -6,6 +6,7 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
+#include "ayu/ui/utils/lyrics_engine.h"
 #include "data/data_audio_msg_id.h"
 #include "media/audio/media_audio.h"
 #include "ui/effects/animations.h"
@@ -24,6 +25,10 @@ class PlaybackProgress;
 namespace Window {
 class SessionController;
 } // namespace Window
+
+namespace AyuUi {
+class LyricsWindow;
+} // namespace AyuUi
 
 namespace AyuUi {
 
@@ -59,6 +64,8 @@ private:
 		VolumeToggle,
 		Volume,
 		SaveProfile,
+		LyricsButton,
+		LyricsZone,
 	};
 
 	struct CoverData {
@@ -80,6 +87,8 @@ private:
 		QRectF volumeToggle;
 		QRectF volume;
 		QRectF saveProfile;
+		QRectF lyricsButton;
+		QRectF lyricsBox;
 		QRectF equalizer;
 		QRectF collapsedProgress;
 		QPointF title;
@@ -142,6 +151,8 @@ private:
 	void paintSeek(QPainter &p, const Layout &layout, float64 opacity) const;
 	void paintVolume(QPainter &p, const Layout &layout, float64 opacity) const;
 	void paintTimes(QPainter &p, const Layout &layout, float64 opacity) const;
+	void paintLyrics(QPainter &p, const Layout &layout, float64 opacity) const;
+	void paintFloatingLine(QPainter &p, const Layout &layout) const;
 	void paintEqualizer(QPainter &p, const Layout &layout, float64 opacity) const;
 	void paintCollapsedProgress(
 		QPainter &p,
@@ -190,6 +201,25 @@ private:
 	QPoint _dragStartPosition;
 	bool _drag = false;
 	bool _keepExpandedAfterSeek = false;
+
+	// Lyrics (LRCLIB, LRC-синхронизация + арт-режим слов).
+	Ayu::Ui::Lyrics::Data _lyrics;
+	bool _lyricsLoading = false;
+	int _lyricsGeneration = 0;
+	int _lyricsActive = -1;
+	float64 _lyricsProgress = -1.;
+	int64 _lyricsPositionMs = 0;
+	crl::time _lyricsLineChangedAt = 0;
+	Ui::Animations::Simple _lyricsFade;
+	LyricsWindow *_lyricsWindow = nullptr;
+
+	void requestLyrics();
+	void applyLyrics(Ayu::Ui::Lyrics::Data data, int generation);
+	void updateLyricsPosition();
+	[[nodiscard]] bool lyricsPanelVisible(float64 expand) const;
+	[[nodiscard]] bool hasLyrics() const;
+	void openLyricsWindow();
+	[[nodiscard]] QString floatingLineText() const;
 
 	bool _seeking = false;
 	bool _volumeDragging = false;

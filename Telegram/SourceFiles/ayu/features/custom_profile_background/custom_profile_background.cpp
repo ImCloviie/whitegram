@@ -12,18 +12,27 @@
 #include "core/application.h"
 #include "core/file_utilities.h"
 #include "crl/crl.h"
+#include "data/data_peer.h"
 #include "lang/lang_instance.h"
 #include "media/clip/media_clip_reader.h"
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
+#include "ui/qt_object_factory.h"
+#include "ui/rp_widget.h"
+#include "ui/style/style_core_scale.h"
 #include "window/window_session_controller.h"
+#include "styles/style_info.h"
+#include "styles/style_layers.h"
 
+#include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QMimeDatabase>
 #include <QtGui/QImageReader>
+#include <QtGui/QBrush>
 #include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
 
 #include <optional>
 
@@ -31,6 +40,12 @@ namespace AyuFeatures::CustomProfileBackground {
 namespace {
 
 using Zone = ::CustomProfileBackground::Zone;
+
+constexpr auto kMaxImageSide = 4096;
+constexpr auto kMaxCoverSide = 4096;
+constexpr auto kMaxVideoSide = 1280;
+constexpr auto kHeaderOverlayAlpha = 70;
+constexpr auto kContentOverlayAlpha = 150;
 
 [[nodiscard]] bool IsRussian() {
 	const auto id = Lang::GetInstance().id();
@@ -57,17 +72,15 @@ using Zone = ::CustomProfileBackground::Zone;
 	if (source.isNull() || target.isEmpty()) {
 		return QImage();
 	}
-	const auto scaled = source.scaled(
+	auto scaled = source.scaled(
 		target,
 		Qt::KeepAspectRatioByExpanding,
 		Qt::SmoothTransformation);
-	const auto left = (scaled.width() - target.width()) / 2;
-	const auto top = (scaled.height() - target.height()) / 2;
-	return scaled.copy(
-		left,
-		top,
-		target.width(),
-		target.height());
+	const auto left = std::max((scaled.width() - target.width()) / 2, 0);
+	const auto top = std::max((scaled.height() - target.height()) / 2, 0);
+	auto result = scaled.copy(left, top, target.width(), target.height());
+	result.setDevicePixelRatio(1.);
+	return result;
 }
 
 struct BackgroundSource {
@@ -106,10 +119,15 @@ bool HasBackground(uint64 peerId, Zone zone) {
 	return ResolveBackground(peerId, zone).has_value();
 }
 
+QString BackgroundFileName(uint64 peerId, Zone zone) {
+	if (const auto source = ResolveBackground(peerId, zone)) {
+		return QFileInfo(source->path).fileName();
+	}
+	return QString();
+}
+
 std::optional<Zone> TopRendererZone(uint64 peerId) {
-	if (HasBackground(peerId, Zone::Full)) {
-		return Zone::Full;
-	} else if (HasBackground(peerId, Zone::Top)) {
+	if (HasBackground(peerId, Zone::Top)) {
 		return Zone::Top;
 	}
 	return std::nullopt;
@@ -128,6 +146,14 @@ bool UsesFullBackground(uint64 peerId) {
 	return HasBackground(peerId, Zone::Full);
 }
 
+bool UsesInfoBackground(uint64 peerId) {
+	return HasBackground(peerId, Zone::Bottom) && !UsesFullBackground(peerId);
+}
+
+bool BackgroundEnabledFor(not_null<PeerData*> peer) {
+	return peer->isUser();
+}
+
 QString StoreBackgroundFile(
 		uint64 peerId,
 		Zone zone,
@@ -141,17 +167,24 @@ QString StoreBackgroundFile(
 	const auto suffix = info.suffix().isEmpty()
 		? u"bin"_q
 		: info.suffix().toLower().left(10);
+	const auto prefix = QString::number(peerId) + u'_' + ZoneTag(zone);
 	const auto destination = dir
-		+ QString::number(peerId)
+		+ prefix
 		+ u'_'
-		+ ZoneTag(zone)
+		+ QString::number(QDateTime::currentMSecsSinceEpoch())
 		+ u'.'
 		+ suffix;
-	if (QFile::exists(destination)) {
-		QFile::remove(destination);
-	}
 	if (!QFile::copy(sourcePath, destination)) {
 		return QString();
+	}
+	// A playing video may still hold an old file open, so removal can fail.
+	const auto old = QDir(dir).entryInfoList(
+		{ prefix + u"*"_q },
+		QDir::Files);
+	for (const auto &entry : old) {
+		if (entry.absoluteFilePath() != QFileInfo(destination).absoluteFilePath()) {
+			QFile::remove(entry.absoluteFilePath());
+		}
 	}
 	return destination;
 }
@@ -212,18 +245,91 @@ void EnsureRemoteBackgrounds(uint64 peerId) {
 	Whitegram::Backend::FetchProfileBackgrounds(peerId);
 }
 
+void PaintFullOverlay(
+		QPainter &p,
+		const QRect &target,
+		int panelTop,
+		int panelHeight,
+		int headerHeight,
+		const QColor &tint) {
+	if (target.isEmpty() || panelHeight <= 0) {
+		return;
+	}
+	auto header = tint;
+	header.setAlpha(kHeaderOverlayAlpha);
+	auto content = tint;
+	content.setAlpha(kContentOverlayAlpha);
+	const auto zero = target.y() - panelTop;
+	auto gradient = QLinearGradient(
+		0,
+		zero,
+		0,
+		zero + std::max(headerHeight, 1));
+	gradient.setColorAt(0., header);
+	gradient.setColorAt(1., content);
+	p.fillRect(target, QBrush(gradient));
+}
+
 Renderer::Renderer(Fn<void()> repaint)
 : _repaint(std::move(repaint)) {
 }
 
-void Renderer::setPeer(uint64 peerId, Zone zone) {
-	_peerId = peerId;
-	_zone = zone;
-	clear();
-	const auto background = ResolveBackground(peerId, zone);
-	if (!background) {
+void Renderer::setPaintMetrics(
+		int scrollTop,
+		int topSkip,
+		int contentHeight,
+		int paneHeight) {
+	if (_scrollTop == scrollTop
+		&& _topSkip == topSkip
+		&& _contentHeight == contentHeight
+		&& _paneHeight == paneHeight) {
 		return;
 	}
+	_scrollTop = scrollTop;
+	_topSkip = topSkip;
+	_contentHeight = contentHeight;
+	_paneHeight = paneHeight;
+	_repaint();
+}
+
+int Renderer::paintCoverHeight() const {
+	// Scaling the image to the whole pane keeps the framing stable while
+	// the profile content of any length scrolls over it.
+	if (_paneHeight > 0) {
+		return _paneHeight;
+	}
+	return (_contentHeight > 0)
+		? (_topSkip + _contentHeight)
+		: 0;
+}
+
+int Renderer::paintVisibleBottom() const {
+	// A pane height means the background should fill the whole pane, so
+	// it must not be clipped at the end of the cover block.
+	if (_paneHeight > 0) {
+		return _paneHeight;
+	}
+	return (_contentHeight > 0)
+		? (_topSkip - _scrollTop + _contentHeight)
+		: -1;
+}
+
+void Renderer::setPeer(uint64 peerId, Zone zone) {
+	const auto background = ResolveBackground(peerId, zone);
+	if (!background) {
+		clear();
+		return;
+	}
+	if (_peerId == peerId
+		&& _zone == zone
+		&& _path == background->path
+		&& (!_image.isNull() || _video)) {
+		return;
+	}
+	clear();
+	_peerId = peerId;
+	_zone = zone;
+	_path = background->path;
 	if (background->isVideo) {
 		loadVideo(background->path);
 	} else {
@@ -232,6 +338,8 @@ void Renderer::setPeer(uint64 peerId, Zone zone) {
 }
 
 void Renderer::clear() {
+	_peerId = 0;
+	_path = QString();
 	_image = QImage();
 	_video = Media::Clip::ReaderPointer();
 	_videoPath = QString();
@@ -246,33 +354,30 @@ void Renderer::invalidateCover() {
 }
 
 void Renderer::loadImage(const QString &path) {
-	QImageReader reader(path);
+	auto reader = QImageReader(path);
 	reader.setAutoTransform(true);
 	const auto size = reader.size();
-	if (size.isValid()) {
-		constexpr auto kMaxSide = 4096;
-		if (size.width() > kMaxSide || size.height() > kMaxSide) {
-			reader.setScaledSize(size.scaled(
-				kMaxSide,
-				kMaxSide,
-				Qt::KeepAspectRatio));
-		}
+	if (size.isValid()
+		&& (size.width() > kMaxImageSide || size.height() > kMaxImageSide)) {
+		reader.setScaledSize(size.scaled(
+			kMaxImageSide,
+			kMaxImageSide,
+			Qt::KeepAspectRatio));
 	}
 	_image = reader.read();
-	invalidateCover();
 	if (_image.isNull()) {
 		auto fallback = QImage(path);
-		constexpr auto kMaxSide = 4096;
 		if (!fallback.isNull()
-			&& std::max(fallback.width(), fallback.height()) > kMaxSide) {
+			&& std::max(fallback.width(), fallback.height()) > kMaxImageSide) {
 			fallback = fallback.scaled(
-				kMaxSide,
-				kMaxSide,
+				kMaxImageSide,
+				kMaxImageSide,
 				Qt::KeepAspectRatio,
 				Qt::SmoothTransformation);
 		}
 		_image = std::move(fallback);
 	}
+	invalidateCover();
 	if (!_image.isNull()) {
 		_repaint();
 	} else {
@@ -282,9 +387,7 @@ void Renderer::loadImage(const QString &path) {
 
 void Renderer::loadVideo(const QString &path) {
 	_videoPath = path;
-	_lastVideoFrame = QImage();
 	_frameAvailable = false;
-	invalidateCover();
 	const auto weak = base::make_weak(this);
 	_video = Media::Clip::MakeReader(path, [=](
 			Media::Clip::Notification notification) {
@@ -300,7 +403,8 @@ void Renderer::restartVideo() {
 	if (_videoPath.isEmpty()) {
 		return;
 	}
-	loadVideo(_videoPath);
+	const auto path = _videoPath;
+	loadVideo(path);
 }
 
 void Renderer::handleClipNotification(Media::Clip::Notification notification) {
@@ -326,8 +430,20 @@ void Renderer::handleClipNotification(Media::Clip::Notification notification) {
 	}
 }
 
-Media::Clip::FrameRequest Renderer::videoRequest(QSize target) const {
-	return { .frame = target };
+Media::Clip::FrameRequest Renderer::videoRequest() const {
+	const auto ratio = style::DevicePixelRatio();
+	auto size = QSize(
+		std::max(_video->width(), 1),
+		std::max(_video->height(), 1));
+	if (size.width() > kMaxVideoSide || size.height() > kMaxVideoSide) {
+		size = size.scaled(kMaxVideoSide, kMaxVideoSide, Qt::KeepAspectRatio);
+	}
+	return {
+		.frame = QSize(
+			std::max(size.width() / ratio, 1),
+			std::max(size.height() / ratio, 1)),
+		.factor = ratio,
+	};
 }
 
 QImage Renderer::coverForTarget(QSize target) {
@@ -335,67 +451,303 @@ QImage Renderer::coverForTarget(QSize target) {
 	if (source.isNull() || target.isEmpty()) {
 		return QImage();
 	}
-	constexpr auto kMaxCoverHeight = 8192;
-	const auto capped = QSize(
-		target.width(),
-		std::min(target.height(), kMaxCoverHeight));
-	if (capped != _coverTarget || _coverCache.isNull()) {
-		_coverCache = PrepareCoverImage(source, capped);
-		_coverTarget = capped;
+	if (target != _coverTarget || _coverCache.isNull()) {
+		const auto ratio = style::DevicePixelRatio();
+		auto pixels = QSize(target.width() * ratio, target.height() * ratio);
+		if (pixels.width() > kMaxCoverSide || pixels.height() > kMaxCoverSide) {
+			pixels = pixels.scaled(
+				kMaxCoverSide,
+				kMaxCoverSide,
+				Qt::KeepAspectRatio);
+		}
+		_coverCache = PrepareCoverImage(source, pixels);
+		_coverTarget = target;
 	}
 	return _coverCache;
 }
 
 bool Renderer::active() const {
-	return !_image.isNull() || (_video && _video->ready());
+	return !_image.isNull()
+		|| (_video && (_video->ready() || !_lastVideoFrame.isNull()));
 }
 
-void Renderer::paint(
+bool Renderer::paint(
 		QPainter &p,
 		const QRect &rect,
 		int coverHeight,
-		int sourceY) {
+		int sourceY,
+		int overlayAlpha) {
 	if (!active() || coverHeight <= 0 || rect.isEmpty()) {
-		return;
+		return false;
 	}
 	const auto target = QSize(rect.width(), coverHeight);
-	if (target.isEmpty()) {
-		return;
-	}
 	if (_video) {
 		using namespace Media::Clip;
-		if (_video->state() == State::Finished) {
-			restartVideo();
-		} else if (_video->ready() && !_video->started()) {
-			_video->start(videoRequest(target));
-		} else if (_frameAvailable) {
-			_frameAvailable = false;
-			_lastVideoFrame = _video->current(
-				videoRequest(target),
-				crl::now());
+		const auto state = _video->state();
+		if (state == State::Error) {
+			_video = Media::Clip::ReaderPointer();
+			_lastVideoFrame = QImage();
 			invalidateCover();
+			return false;
+		} else if (state == State::Finished) {
+			const auto path = _videoPath;
+			_video = Media::Clip::ReaderPointer();
+			if (!path.isEmpty()) {
+				crl::on_main([weak = base::make_weak(this), path] {
+					if (const auto strong = weak.get()) {
+						strong->loadVideo(path);
+					}
+				});
+			}
+		} else if (_video->ready() && !_video->started()) {
+			const auto request = videoRequest();
+			if (!request.frame.isEmpty()) {
+				_video->start(request);
+			}
+		} else if (_frameAvailable && _video->started()) {
+			_frameAvailable = false;
+			auto frame = _video->current(videoRequest(), crl::now());
+			if (!frame.isNull()) {
+				_lastVideoFrame = std::move(frame);
+				invalidateCover();
+			}
 		}
 	}
 	const auto prepared = coverForTarget(target);
 	if (prepared.isNull()) {
+		return false;
+	}
+	const auto sliceTop = std::clamp(sourceY, 0, target.height() - 1);
+	const auto sliceHeight = std::min(rect.height(), target.height() - sliceTop);
+	if (sliceHeight <= 0) {
+		return false;
+	}
+	const auto scaleX = prepared.width() / float64(target.width());
+	const auto scaleY = prepared.height() / float64(target.height());
+	const auto destination = QRect(
+		rect.x(),
+		rect.y(),
+		rect.width(),
+		sliceHeight);
+	const auto source = QRectF(
+		0.,
+		sliceTop * scaleY,
+		rect.width() * scaleX,
+		sliceHeight * scaleY);
+	{
+		auto hq = PainterHighQualityEnabler(p);
+		p.drawImage(QRectF(destination), prepared, source);
+	}
+	if (overlayAlpha > 0) {
+		p.fillRect(destination, QColor(0, 0, 0, overlayAlpha));
+	}
+	return true;
+}
+
+namespace {
+
+class FullBackgroundLayer final : public Ui::RpWidget {
+public:
+	FullBackgroundLayer(
+		not_null<Ui::RpWidget*> host,
+		Fn<PeerData*()> peer,
+		Fn<bool()> roundTopCorners,
+		FullProfileBackgroundBounds bounds);
+
+	[[nodiscard]] base::weak_ptr<Renderer> renderer();
+
+protected:
+	void paintEvent(QPaintEvent *e) override;
+
+private:
+	void reload();
+
+	const Fn<PeerData*()> _peer;
+	const Fn<bool()> _roundTopCorners;
+	const FullProfileBackgroundBounds _bounds;
+	Renderer _renderer;
+
+};
+
+FullBackgroundLayer::FullBackgroundLayer(
+		not_null<Ui::RpWidget*> host,
+		Fn<PeerData*()> peer,
+		Fn<bool()> roundTopCorners,
+		FullProfileBackgroundBounds bounds)
+: RpWidget(host)
+, _peer(std::move(peer))
+, _roundTopCorners(std::move(roundTopCorners))
+, _bounds(std::move(bounds))
+, _renderer([=] { update(); }) {
+	setAttribute(Qt::WA_TransparentForMouseEvents);
+	host->sizeValue(
+	) | rpl::on_next(crl::guard(host, [=](QSize size) {
+		setGeometry(QRect(QPoint(), size));
+	}), lifetime());
+	AyuSettings::getInstance().customProfileBackgroundChanges(
+	) | rpl::on_next([=] {
+		reload();
+	}, lifetime());
+	Whitegram::Backend::profileBackgroundUpdates(
+	) | rpl::on_next([=](uint64 userId) {
+		const auto peer = _peer ? _peer() : nullptr;
+		if (peer && (peer->id.value == userId)) {
+			reload();
+		}
+	}, lifetime());
+	lower();
+	show();
+	reload();
+}
+
+base::weak_ptr<Renderer> FullBackgroundLayer::renderer() {
+	return base::make_weak(&_renderer);
+}
+
+void FullBackgroundLayer::reload() {
+	const auto peer = _peer ? _peer() : nullptr;
+	if (peer
+		&& BackgroundEnabledFor(peer)
+		&& UsesFullBackground(peer->id.value)) {
+		_renderer.setPeer(peer->id.value, Zone::Full);
+	} else {
+		_renderer.clear();
+	}
+	if (const auto parent = parentWidget()) {
+		parent->update();
+	}
+}
+
+void FullBackgroundLayer::paintEvent(QPaintEvent *e) {
+	if (!_renderer.active()) {
 		return;
 	}
-	const auto sliceTop = std::clamp(
-		sourceY,
+	const auto cover = _renderer.paintCoverHeight();
+	const auto extent = (cover > 0) ? cover : height();
+	const auto limit = _renderer.paintVisibleBottom();
+	const auto bottom = (limit >= 0) ? limit : height();
+	auto p = QPainter(this);
+	if (_roundTopCorners && _roundTopCorners()) {
+		const auto radius = st::boxRadius;
+		auto path = QPainterPath();
+		path.addRoundedRect(
+			rect() + QMargins{ 0, 0, 0, radius + 1 },
+			radius,
+			radius);
+		p.setClipPath(path);
+	}
+	const auto clip = e->rect();
+	const auto paintBottom = std::min(clip.bottom() + 1, std::max(bottom, 0));
+	if (clip.top() >= paintBottom) {
+		return;
+	}
+	const auto slice = QRect(
 		0,
-		std::max(prepared.height() - 1, 0));
-	const auto sliceBottom = std::min(sliceTop + rect.height(), prepared.height());
-	const auto sliceHeight = sliceBottom - sliceTop;
-	const auto sliceWidth = std::min(rect.width(), prepared.width());
-	if (sliceHeight <= 0 || sliceWidth <= 0) {
+		clip.top(),
+		width(),
+		paintBottom - clip.top());
+	if (_renderer.paint(p, slice, extent, slice.y(), 0)) {
+		PaintFullOverlay(
+			p,
+			slice,
+			slice.y(),
+			extent,
+			st::infoProfileTopBarHeightMax,
+			st::windowBg->c);
+	}
+}
+
+class InfoBackgroundLayer final : public Ui::RpWidget {
+public:
+	InfoBackgroundLayer(
+		not_null<Ui::RpWidget*> host,
+		Fn<PeerData*()> peer);
+
+protected:
+	void paintEvent(QPaintEvent *e) override;
+
+private:
+	void reload();
+
+	const Fn<PeerData*()> _peer;
+	Renderer _renderer;
+
+};
+
+InfoBackgroundLayer::InfoBackgroundLayer(
+		not_null<Ui::RpWidget*> host,
+		Fn<PeerData*()> peer)
+: RpWidget(host)
+, _peer(std::move(peer))
+, _renderer([=] { update(); }) {
+	setAttribute(Qt::WA_TransparentForMouseEvents);
+	host->sizeValue(
+	) | rpl::on_next(crl::guard(host, [=](QSize size) {
+		setGeometry(QRect(QPoint(), size));
+	}), lifetime());
+	AyuSettings::getInstance().customProfileBackgroundChanges(
+	) | rpl::on_next([=] {
+		reload();
+	}, lifetime());
+	Whitegram::Backend::profileBackgroundUpdates(
+	) | rpl::on_next([=](uint64 userId) {
+		const auto peer = _peer ? _peer() : nullptr;
+		if (peer && (peer->id.value == userId)) {
+			reload();
+		}
+	}, lifetime());
+	lower();
+	show();
+	reload();
+}
+
+void InfoBackgroundLayer::reload() {
+	const auto peer = _peer ? _peer() : nullptr;
+	if (peer
+		&& BackgroundEnabledFor(peer)
+		&& UsesInfoBackground(peer->id.value)) {
+		_renderer.setPeer(peer->id.value, Zone::Bottom);
+	} else {
+		_renderer.clear();
+	}
+	if (const auto parent = parentWidget()) {
+		parent->update();
+	}
+}
+
+void InfoBackgroundLayer::paintEvent(QPaintEvent *e) {
+	if (!_renderer.active()) {
 		return;
 	}
-	p.drawImage(
-		rect.topLeft(),
-		prepared,
-		QRect(0, sliceTop, sliceWidth, sliceHeight));
-	auto hq = PainterHighQualityEnabler(p);
-	p.fillRect(rect, QColor(0, 0, 0, 72));
+	auto p = QPainter(this);
+	const auto clip = e->rect();
+	const auto slice = QRect(0, clip.y(), width(), clip.height());
+	if (_renderer.paint(p, slice, height(), slice.y(), 0)) {
+		auto tint = st::windowBg->c;
+		tint.setAlpha(kContentOverlayAlpha);
+		p.fillRect(slice, tint);
+	}
+}
+
+} // namespace
+
+base::weak_ptr<Renderer> SetupFullBackgroundLayer(
+		not_null<Ui::RpWidget*> host,
+		Fn<PeerData*()> peer,
+		Fn<bool()> roundTopCorners,
+		FullProfileBackgroundBounds bounds) {
+	const auto layer = Ui::CreateChild<FullBackgroundLayer>(
+		host.get(),
+		std::move(peer),
+		std::move(roundTopCorners),
+		std::move(bounds));
+	return layer->renderer();
+}
+
+void AttachInfoBackgroundLayer(
+		not_null<Ui::RpWidget*> host,
+		Fn<PeerData*()> peer) {
+	Ui::CreateChild<InfoBackgroundLayer>(host.get(), std::move(peer));
 }
 
 } // namespace AyuFeatures::CustomProfileBackground

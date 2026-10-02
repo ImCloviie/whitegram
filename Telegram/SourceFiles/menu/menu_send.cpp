@@ -753,7 +753,13 @@ FillMenuResult FillSendMenu(
 	if (sending && type != Type::Reminder && peerIsUser(PeerId(details.barePeerId))) {
 		auto ttlSubmenu = std::make_unique<Ui::PopupMenu>(menu, st::popupMenuWithIcons);
 
-		ttlSubmenu->addAction(u"Один просмотр (до закрытия)"_q, [=] {
+		const auto ttlTitle = ttlSubmenu->addAction(
+			u"Сквозное E2E-шифрование • Whitegram"_q,
+			[] {});
+		ttlTitle->setEnabled(false);
+		ttlSubmenu->addSeparator();
+
+		ttlSubmenu->addAction(u"👁  Один просмотр"_q, [=] {
 			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 0 }, details);
 		});
 		ttlSubmenu->addAction(u"3 секунды"_q, [=] {
@@ -768,25 +774,26 @@ FillMenuResult FillSendMenu(
 		ttlSubmenu->addAction(u"1 минута"_q, [=] {
 			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 60 }, details);
 		});
-		ttlSubmenu->addAction(u"Никогда (бессрочно)"_q, [=] {
+		ttlSubmenu->addAction(u"Бессрочно"_q, [=] {
 			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = -1 }, details);
 		});
-		ttlSubmenu->addAction(u"Ввести своё время..."_q, [=] {
+		ttlSubmenu->addAction(u"Выбрать своё время…"_q, [=] {
 			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = -999 }, details);
 		});
 
 		ttlSubmenu->addSeparator();
 
 		const auto descAction = ttlSubmenu->addAction(
-			u"Сообщение исчезнет через указанное время после просмотра."_q,
+			u"Сообщение видно только вам и получателю. "_q
+				+ u"В других клиентах оно не откроется."_q,
 			[] {});
 		descAction->setEnabled(false);
 
 		menu->addAction(
-			u"🔒  Одноразовое сообщение"_q,
+			u"Одноразовое сообщение"_q,
 			std::move(ttlSubmenu),
-			&st::menuIconTTL,
-			&st::menuIconTTL);
+			&st::menuIconLock,
+			&st::menuIconLock);
 
 		menu->addSeparator(&st::expandedMenuSeparator);
 	}

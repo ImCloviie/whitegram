@@ -421,8 +421,8 @@ StartResult Start() {
 		fclose(f);
 
 		LOG(("Opened '%1' for reading, the previous "
-			"AyuGram Desktop launch was not finished properly :( "
-			"Crash log size: %2").arg(ReportPath).arg(lastdump.size()));
+			"%2 launch was not finished properly :( "
+			"Crash log size: %3").arg(ReportPath).arg(AppName.utf16()).arg(lastdump.size()));
 
 		return lastdump;
 	}

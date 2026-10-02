@@ -1884,70 +1884,6 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 			"Tap an icon to apply it to the app, the taskbar and the tray.")));
 	builder.addSkip();
 
-
-	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Фон профиля"),
-		QString("Profile background")));
-	{
-		const auto controller = builder.controller();
-		const auto peerId = controller->session().userPeerId().value;
-		using Zone = AyuFeatures::CustomProfileBackground::Zone;
-		const auto addZone = [&](
-				Zone zone,
-				const QString &setRu,
-				const QString &setEn,
-				const QString &removeRu,
-				const QString &removeEn) {
-			builder.addButton({
-				.id = u"whitegram/setProfileBackground/"_q
-					+ QString::number(int(zone)),
-				.title = trWhitegram(setRu, setEn),
-				.icon = { &st::menuIconPhoto },
-				.onClick = [=] {
-					AyuFeatures::CustomProfileBackground::PickBackground(
-						controller,
-						peerId,
-						zone);
-				},
-			});
-			builder.addButton({
-				.id = u"whitegram/removeProfileBackground/"_q
-					+ QString::number(int(zone)),
-				.title = trWhitegram(removeRu, removeEn),
-				.icon = { &st::menuIconDelete },
-				.onClick = [=] {
-					AyuFeatures::CustomProfileBackground::RemoveBackground(
-						peerId,
-						zone);
-				},
-			});
-		};
-		addZone(
-			Zone::Top,
-			QString::fromUtf8("Установить фон шапки"),
-			QString("Set header background"),
-			QString::fromUtf8("Убрать фон шапки"),
-			QString("Remove header background"));
-		addZone(
-			Zone::Full,
-			QString::fromUtf8("Установить фон всего профиля"),
-			QString("Set full profile background"),
-			QString::fromUtf8("Убрать фон всего профиля"),
-			QString("Remove full profile background"));
-	}
-	builder.addDividerText(trWhitegram(
-		QString::fromUtf8(
-			"Фон шапки покрывает только верх профиля, фон всего "
-			"профиля тянется через весь экран. Поддерживаются фото "
-			"и видео — видео проигрывается. "
-			"Другие пользователи Whitegram тоже его увидят."),
-		QString(
-			"The header background covers only the top of the profile, "
-			"the full background spans the whole screen. Photos and "
-			"videos are supported — videos play. "
-			"Other Whitegram users will see it too.")));
-	builder.addSkip();
-
 	builder.addSubsectionTitle(trWhitegram(
 		QString::fromUtf8("Боковое меню"),
 		QString("Side menu")));
@@ -1977,7 +1913,19 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 		.targetSection = WhitegramStartupAnim::Id(),
 		.icon = { &st::menuIconShowAll },
 	});
-	builder.addSkip();
+	// "Фон профиля" lives on the "My Profile" page (settings_information.cpp),
+	// next to the photo and the bio, so it is not listed here.
+});
+
+const auto kWhitegramProfileBackgroundMeta = BuildHelper({
+	.id = WhitegramProfileBackground::Id(),
+	.parentId = WhitegramAppearance::Id(),
+	.title = QString::fromUtf8("Фон профиля"),
+	.icon = &st::menuIconPhoto,
+}, [](SectionBuilder &builder) {
+	// Kept only so the section id stays registered; the actual UI lives on the
+	// "My Profile" page (settings_information.cpp).
+	Q_UNUSED(builder);
 });
 
 [[nodiscard]] std::vector<QString> MusicIslandExpandModeOptions() {
@@ -1988,6 +1936,17 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 		isRu ? QString::fromUtf8("При наведении") : QString("On hover"),
 		isRu ? QString::fromUtf8("По клику") : QString("On click"),
 		isRu ? QString::fromUtf8("Наведение и клик") : QString("Hover and click"),
+	};
+}
+
+[[nodiscard]] std::vector<QString> MusicLyricsAnimationOptions() {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+	return std::vector<QString>{
+		isRu ? QString::fromUtf8("Караоке-заливка") : QString("Karaoke fill"),
+		isRu ? QString::fromUtf8("Мягкий fade + glow") : QString("Soft fade + glow"),
+		isRu ? QString::fromUtf8("Пульс в бит") : QString("Beat pulse"),
 	};
 }
 
@@ -2504,6 +2463,152 @@ const auto kWhitegramMusicIslandMeta = BuildHelper({
 			"The island picks an accent colour from the track cover. "
 			"Without cover art, or with colours off, it uses the "
 			"regular app theme.")));
+	builder.addSkip();
+
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Текст песни (Lyrics)"),
+		QString("Lyrics")));
+
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicLyricsEnabled"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Показывать текст песни"),
+			QString("Show lyrics")),
+		.getter = &AyuSettings::musicLyricsEnabled,
+		.setter = &AyuSettings::setMusicLyricsEnabled,
+		.icon = { &st::menuIconShowInChat },
+		.keywords = {
+			u"lyrics"_q,
+			u"text"_q,
+			u"karaoke"_q,
+			QString::fromUtf8("текст"),
+			QString::fromUtf8("лирика"),
+			QString::fromUtf8("караоке"),
+		},
+	});
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicLyricsShowInIsland"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Панель текста в островке"),
+			QString("Lyrics panel in the island")),
+		.getter = &AyuSettings::musicLyricsShowInIsland,
+		.setter = &AyuSettings::setMusicLyricsShowInIsland,
+		.icon = { &st::menuIconExpand },
+		.keywords = {
+			u"panel"_q,
+			QString::fromUtf8("панель"),
+		},
+	});
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicLyricsFloatingLine"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Строка текста в свёрнутом виде"),
+			QString("Lyrics line when collapsed")),
+		.getter = &AyuSettings::musicLyricsFloatingLine,
+		.setter = &AyuSettings::setMusicLyricsFloatingLine,
+		.icon = { &st::menuIconShowInChat },
+		.keywords = {
+			u"line"_q,
+			QString::fromUtf8("строка"),
+		},
+	});
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicLyricsKaraokeButton"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Кнопка окна-караоке"),
+			QString("Karaoke window button")),
+		.getter = &AyuSettings::musicLyricsKaraokeButton,
+		.setter = &AyuSettings::setMusicLyricsKaraokeButton,
+		.icon = { &st::menuIconUnpin },
+		.keywords = {
+			u"window"_q,
+			u"karaoke"_q,
+			QString::fromUtf8("окно"),
+		},
+	});
+	ayu.addChooseButton({
+		.id = u"whitegram/musicLyricsAnimation"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Анимация текста"),
+			QString("Lyrics animation")),
+		.boxTitle = trWhitegram(
+			QString::fromUtf8("Анимация текста"),
+			QString("Lyrics animation")),
+		.initialSelection = settings->musicLyricsAnimation(),
+		.options = MusicLyricsAnimationOptions(),
+		.setter = [](int index) {
+			AyuSettings::getInstance().setMusicLyricsAnimation(index);
+		},
+		.icon = { &st::menuIconStats },
+		.keywords = {
+			u"animation"_q,
+			u"karaoke"_q,
+			u"glow"_q,
+			QString::fromUtf8("анимация"),
+		},
+	});
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicLyricsArtScatter"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Арт-разброс слов (наклон и сдвиг)"),
+			QString("Artistic word scatter")),
+		.getter = &AyuSettings::musicLyricsArtScatter,
+		.setter = &AyuSettings::setMusicLyricsArtScatter,
+		.icon = { &st::menuIconChangeColors },
+		.keywords = {
+			u"art"_q,
+			u"scatter"_q,
+			QString::fromUtf8("арт"),
+			QString::fromUtf8("разброс"),
+		},
+	});
+	ayu.addSettingToggle({
+		.id = u"whitegram/musicLyricsBlur"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Затемнённая подложка для читаемости"),
+			QString("Dimmed backdrop for readability")),
+		.getter = &AyuSettings::musicLyricsBlur,
+		.setter = &AyuSettings::setMusicLyricsBlur,
+		.icon = { &st::menuIconPhoto },
+		.keywords = {
+			u"blur"_q,
+			u"read"_q,
+			QString::fromUtf8("читаемость"),
+		},
+	});
+	ayu.addSlider({
+		.id = u"whitegram/musicLyricsFontScale"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Размер текста"),
+			QString("Lyrics text size")),
+		.steps = 19,
+		.current = settings->musicLyricsFontScale(),
+		.indexToValue = [](int index) { return 70 + index * 5; },
+		.onFinalChanged = [](int value) {
+			AyuSettings::getInstance().setMusicLyricsFontScale(value);
+		},
+		.formatLabel = [](int value) {
+			return QString::number(value) + u'%';
+		},
+		.keywords = { u"font"_q, u"size"_q, QString::fromUtf8("размер") },
+	});
+
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Текст подгружается с LRCLIB (бесплатно, с таймингами строк) "
+			"и кэшируется. Клик по панели текста открывает окно-караоке "
+			"со всем текстом и автопрокруткой за текущей строкой. "
+			"Если таймингов нет — строки мягко прокручиваются по "
+			"прогрессу трека. Тёмная подложка и тень keep текст "
+			"читаемым поверх любой обложки."),
+		QString(
+			"Lyrics load from LRCLIB (free, with line timings) and are "
+			"cached. Clicking the lyrics panel opens a karaoke window "
+			"with the full text auto-scrolling to the current line. "
+			"Without timings lines softly follow track progress. "
+			"A dark backdrop and shadow keep text readable over any "
+			"cover art.")));
 	builder.addSkip();
 });
 
@@ -3822,6 +3927,9 @@ Type WhitegramTimeSpentId() {
 Type WhitegramStartupSoundId() { return WhitegramStartupSound::Id(); }
 Type WhitegramAppearanceId() { return WhitegramAppearance::Id(); }
 Type WhitegramMusicIslandId() { return WhitegramMusicIsland::Id(); }
+Type WhitegramProfileBackgroundId() {
+	return WhitegramProfileBackground::Id();
+}
 Type WhitegramStartupAnimId() { return WhitegramStartupAnim::Id(); }
 Type WhitegramArchivesId() { return WhitegramArchives::Id(); }
 Type WhitegramBypassId() { return WhitegramBypass::Id(); }
@@ -3931,6 +4039,23 @@ rpl::producer<QString> WhitegramMusicIsland::title() {
 void WhitegramMusicIsland::setupContent() {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 	build(content, kWhitegramMusicIslandMeta.build);
+	Ui::ResizeFitChild(this, content);
+}
+
+WhitegramProfileBackground::WhitegramProfileBackground(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent, controller) {
+	setupContent();
+}
+rpl::producer<QString> WhitegramProfileBackground::title() {
+	return trWhitegram(
+		QString::fromUtf8("Фон профиля"),
+		QString("Profile background"));
+}
+void WhitegramProfileBackground::setupContent() {
+	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+	build(content, kWhitegramProfileBackgroundMeta.build);
 	Ui::ResizeFitChild(this, content);
 }
 

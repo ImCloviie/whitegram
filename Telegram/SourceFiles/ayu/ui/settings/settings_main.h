@@ -118,6 +118,18 @@ private:
   void setupContent();
 };
 
+class WhitegramProfileBackground : public Section<WhitegramProfileBackground> {
+public:
+  WhitegramProfileBackground(
+      QWidget *parent,
+      not_null<Window::SessionController *> controller);
+
+  [[nodiscard]] rpl::producer<QString> title() override;
+
+private:
+  void setupContent();
+};
+
 class WhitegramStartupAnim : public Section<WhitegramStartupAnim> {
 public:
   WhitegramStartupAnim(QWidget *parent,
@@ -183,6 +195,7 @@ private:
 [[nodiscard]] Type WhitegramStartupSoundId();
 [[nodiscard]] Type WhitegramAppearanceId();
 [[nodiscard]] Type WhitegramMusicIslandId();
+[[nodiscard]] Type WhitegramProfileBackgroundId();
 [[nodiscard]] Type WhitegramStartupAnimId();
 [[nodiscard]] Type WhitegramArchivesId();
 [[nodiscard]] Type WhitegramBypassId();

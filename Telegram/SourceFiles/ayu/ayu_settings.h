@@ -964,6 +964,14 @@ public:
 	[[nodiscard]] bool musicIslandCustomBackgroundBlur() const { return _musicIslandCustomBackgroundBlur.current(); }
 	[[nodiscard]] int musicIslandCustomBackgroundDim() const { return _musicIslandCustomBackgroundDim.current(); }
 	[[nodiscard]] int musicIslandCustomBackgroundMode() const { return _musicIslandCustomBackgroundMode.current(); }
+	[[nodiscard]] bool musicLyricsEnabled() const { return _musicLyricsEnabled.current(); }
+	[[nodiscard]] bool musicLyricsShowInIsland() const { return _musicLyricsShowInIsland.current(); }
+	[[nodiscard]] bool musicLyricsFloatingLine() const { return _musicLyricsFloatingLine.current(); }
+	[[nodiscard]] bool musicLyricsKaraokeButton() const { return _musicLyricsKaraokeButton.current(); }
+	[[nodiscard]] int musicLyricsAnimation() const { return _musicLyricsAnimation.current(); }
+	[[nodiscard]] bool musicLyricsArtScatter() const { return _musicLyricsArtScatter.current(); }
+	[[nodiscard]] bool musicLyricsBlur() const { return _musicLyricsBlur.current(); }
+	[[nodiscard]] int musicLyricsFontScale() const { return _musicLyricsFontScale.current(); }
 
 	[[nodiscard]] ConnectionBypassMode connectionBypassMode() const {
 		return _connectionBypassMode.current();
@@ -1076,6 +1084,14 @@ public:
 	void setMusicIslandCustomBackgroundBlur(bool val);
 	void setMusicIslandCustomBackgroundDim(int val);
 	void setMusicIslandCustomBackgroundMode(int val);
+	void setMusicLyricsEnabled(bool val);
+	void setMusicLyricsShowInIsland(bool val);
+	void setMusicLyricsFloatingLine(bool val);
+	void setMusicLyricsKaraokeButton(bool val);
+	void setMusicLyricsAnimation(int val);
+	void setMusicLyricsArtScatter(bool val);
+	void setMusicLyricsBlur(bool val);
+	void setMusicLyricsFontScale(int val);
   void setConnectionBypassMode(ConnectionBypassMode val);
   void setConnectionBypassSecret(const QString &val);
 
@@ -1293,6 +1309,14 @@ public:
 	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundDimChanges() const { return _musicIslandCustomBackgroundDim.changes(); }
 	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundModeValue() const { return _musicIslandCustomBackgroundMode.value(); }
 	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundModeChanges() const { return _musicIslandCustomBackgroundMode.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsEnabledChanges() const { return _musicLyricsEnabled.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsShowInIslandChanges() const { return _musicLyricsShowInIsland.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsFloatingLineChanges() const { return _musicLyricsFloatingLine.changes(); }
+	[[nodiscard]] rpl::producer<int> musicLyricsAnimationChanges() const { return _musicLyricsAnimation.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsArtScatterChanges() const { return _musicLyricsArtScatter.changes(); }
+	[[nodiscard]] rpl::producer<int> musicLyricsFontScaleChanges() const { return _musicLyricsFontScale.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsKaraokeButtonChanges() const { return _musicLyricsKaraokeButton.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsBlurChanges() const { return _musicLyricsBlur.changes(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsValue() const { return _improveLinkPreviews.value(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsChanges() const { return _improveLinkPreviews.changes(); }
 	[[nodiscard]] rpl::producer<bool> crashReportingValue() const { return _crashReporting.value(); }
@@ -1648,6 +1672,14 @@ private:
   rpl::variable<bool> _musicIslandCustomBackgroundBlur = false;
   rpl::variable<int> _musicIslandCustomBackgroundDim = 35;
   rpl::variable<int> _musicIslandCustomBackgroundMode = 0;
+  rpl::variable<bool> _musicLyricsEnabled = true;
+  rpl::variable<bool> _musicLyricsShowInIsland = true;
+  rpl::variable<bool> _musicLyricsFloatingLine = true;
+  rpl::variable<bool> _musicLyricsKaraokeButton = true;
+  rpl::variable<int> _musicLyricsAnimation = 0;
+  rpl::variable<bool> _musicLyricsArtScatter = true;
+  rpl::variable<bool> _musicLyricsBlur = true;
+  rpl::variable<int> _musicLyricsFontScale = 100;
   rpl::variable<ConnectionBypassMode> _connectionBypassMode =
 	  ConnectionBypassMode::Auto;
   rpl::variable<QString> _connectionBypassSecret;

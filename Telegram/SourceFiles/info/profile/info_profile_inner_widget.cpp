@@ -87,7 +87,8 @@ void AddSavedMusic(
 		not_null<Ui::VerticalLayout*> layout,
 		not_null<Controller*> controller,
 		not_null<PeerData*> peer,
-		rpl::producer<std::optional<QColor>> topBarColor) {
+		rpl::producer<std::optional<QColor>> topBarColor,
+		rpl::producer<bool> fullProfileBackground) {
 	const auto wrap = layout->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 			layout,
@@ -97,7 +98,8 @@ void AddSavedMusic(
 			wrap->entity(),
 			controller,
 			peer,
-			std::move(topBarColor)),
+			std::move(topBarColor),
+			std::move(fullProfileBackground)),
 		anim::type::instant);
 }
 
@@ -170,29 +172,6 @@ void AddUnofficialSecurityRiskWarning(
 		anim::type::instant);
 }
 
-class DetailsBackgroundLayer final : public Ui::RpWidget {
-public:
-	DetailsBackgroundLayer(
-		not_null<QWidget*> parent,
-		Fn<void(QPainter&, const QRect&)> callback)
-	: Ui::RpWidget(parent)
-	, _callback(std::move(callback)) {
-		setAttribute(Qt::WA_TransparentForMouseEvents);
-	}
-
-protected:
-	void paintEvent(QPaintEvent *e) override {
-		auto p = QPainter(this);
-		if (_callback) {
-			_callback(p, rect());
-		}
-	}
-
-private:
-	Fn<void(QPainter&, const QRect&)> _callback;
-
-};
-
 } // namespace
 
 InnerWidget::InnerWidget(
@@ -206,32 +185,31 @@ InnerWidget::InnerWidget(
 , _topic(_controller->key().topic())
 , _sublist(_controller->key().sublist())
 , _savedMessages(_controller->key().savedMessages() != nullptr)
-, _customBackground(std::make_unique<AyuFeatures::CustomProfileBackground::Renderer>([=] {
-	syncScrollBackgroundLayer();
-}))
 , _content(setupContent(this, origin)) {
-	AyuFeatures::CustomProfileBackground::EnsureRemoteBackgrounds(_peer->id.value);
-	reloadCustomBackground();
-	AyuSettings::getInstance().customProfileBackgroundChanges(
-	) | rpl::on_next([=] {
-		reloadCustomBackground();
-		updateDetailsBackgroundSections();
-	}, lifetime());
-	Whitegram::Backend::profileBackgroundUpdates(
-	) | rpl::filter([=](uint64 userId) {
-		return userId == _peer->id.value;
-	}) | rpl::on_next([=] {
-		reloadCustomBackground();
-		updateDetailsBackgroundSections();
-	}, lifetime());
 	_content->heightValue(
 	) | rpl::on_next([this](int height) {
 		if (!_inResize) {
 			resizeToWidth(width());
 			updateDesiredHeight();
 		}
-		updateDetailsBackgroundSections();
 	}, lifetime());
+}
+
+bool InnerWidget::fullProfileBackgroundActive() const {
+	namespace Background = AyuFeatures::CustomProfileBackground;
+	return !_savedMessages
+		&& !_topic
+		&& !_sublist
+		&& Background::BackgroundEnabledFor(_peer)
+		&& Background::UsesFullBackground(_peer->id.value);
+}
+
+int InnerWidget::fullProfileCoverHeight() const {
+	return _fullProfileCoverHeight.current();
+}
+
+rpl::producer<int> InnerWidget::fullProfileCoverHeightValue() const {
+	return _fullProfileCoverHeight.value();
 }
 
 rpl::producer<> InnerWidget::backRequest() const {
@@ -258,37 +236,45 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 
 	auto result = object_ptr<Ui::VerticalLayout>(parent);
 
-	if (!_savedMessages) {
+	if (!_savedMessages && !(_topic && _topic->creating())) {
+		const auto coverLayout = result->add(
+			object_ptr<Ui::VerticalLayout>(result));
 		const auto musicPeer = _sublist
 			? _sublist->sublistPeer().get()
 			: _peer.get();
+		auto fullProfileBackground = rpl::single(
+			rpl::empty
+		) | rpl::then(rpl::merge(
+			AyuSettings::getInstance().customProfileBackgroundChanges(),
+			Whitegram::Backend::profileBackgroundUpdates() | rpl::to_empty
+		)) | rpl::map([=] {
+			return fullProfileBackgroundActive();
+		}) | rpl::distinct_until_changed();
 		AddSavedMusic(
-			result.data(),
+			coverLayout,
 			_controller,
 			musicPeer,
-			_topBarColor.value());
+			_topBarColor.value(),
+			std::move(fullProfileBackground));
 		if (const auto user = _peer->asUser()) {
-			AddUnofficialSecurityRiskWarning(result.data(), user);
+			AddUnofficialSecurityRiskWarning(coverLayout, user);
 		}
+		auto detailsStack = SectionStack(coverLayout);
+		BuildProfileDetailsSections(
+			detailsStack,
+			_controller,
+			_peer,
+			_topic,
+			_sublist,
+			origin);
+		detailsStack.finalize();
+		_fullProfileCoverHeight = coverLayout->heightValue();
 	}
 
 	auto stack = SectionStack(result.data());
 	if (_topic && _topic->creating()) {
 		stack.finalize();
 		return result;
-	}
-
-	if (!_savedMessages) {
-		BuildProfileDetailsSections(
-			stack,
-			_controller,
-			_peer,
-			_topic,
-			_sublist,
-			origin,
-			[=](not_null<Ui::RpWidget*> section) {
-				setupDetailsBackground(section);
-			});
 	}
 
 	const auto thirdColumn = (_controller->wrap() == Wrap::Side);
@@ -658,201 +644,7 @@ base::weak_qptr<Ui::RpWidget> InnerWidget::createPinnedToTop(
 	}
 	_topBarColor = content->edgeColor();
 	_topBar = content;
-	if (_detailsBackgroundHeight > 0) {
-		content->setCustomBackgroundDetailsHeight(_detailsBackgroundHeight);
-	}
-	content->heightValue(
-	) | rpl::on_next([=] {
-		updateDetailsBackgroundSections();
-	}, lifetime());
-	updateDetailsBackgroundSections();
 	return base::make_weak(not_null<Ui::RpWidget*>{ content });
-}
-
-void InnerWidget::setupDetailsBackground(not_null<Ui::RpWidget*> section) {
-	addDetailsBackgroundSection(section);
-}
-
-void InnerWidget::setupScrollBackgroundPaint(
-		not_null<Ui::ScrollArea*> scroll) {
-	_scrollBackgroundScroll = scroll;
-	const auto layerParent = UseClassicProfileScroll()
-		? static_cast<QWidget*>(scroll.get())
-		: scroll->viewport();
-	const auto layer = Ui::CreateChild<DetailsBackgroundLayer>(
-		layerParent,
-		[this](QPainter &p, const QRect &) {
-			if (const auto bg = _scrollBackgroundLayer.data()) {
-				paintDetailsBackgroundsOn(p, bg);
-			}
-		});
-	layer->setAttribute(Qt::WA_TransparentForMouseEvents);
-	if (UseClassicProfileScroll()) {
-		layer->stackUnder(this);
-	} else {
-		layer->lower();
-	}
-	layer->show();
-	_scrollBackgroundLayer = layer;
-
-	const auto sync = [=] {
-		syncScrollBackgroundLayer();
-	};
-	sync();
-	sizeValue(
-	) | rpl::on_next([=] {
-		sync();
-	}, layer->lifetime());
-	scroll->scrollTopValue(
-	) | rpl::on_next([=] {
-		sync();
-	}, layer->lifetime());
-	widthValue(
-	) | rpl::on_next([=] {
-		sync();
-	}, layer->lifetime());
-	_content->heightValue(
-	) | rpl::on_next([=] {
-		sync();
-	}, layer->lifetime());
-}
-
-void InnerWidget::syncScrollBackgroundLayer() {
-	const auto layer = _scrollBackgroundLayer.data();
-	if (!layer) {
-		return;
-	}
-	const auto layerParent = layer->parentWidget();
-	if (!layerParent) {
-		return;
-	}
-	const auto topLeft = mapTo(layerParent, QPoint(0, 0));
-	layer->setGeometry(QRect(topLeft, size()));
-	layer->update();
-}
-
-void InnerWidget::paintDetailsBackgroundsOn(
-		QPainter &p,
-		not_null<QWidget*> target) {
-	if (!_customBackground || !_customBackground->active()) {
-		return;
-	}
-	const auto peerId = _peer->id.value;
-	if (!AyuFeatures::CustomProfileBackground::BottomRendererZone(peerId)) {
-		return;
-	}
-	for (const auto &entry : _detailsBackgroundSections) {
-		const auto raw = entry.data();
-		if (!raw || raw->height() <= 0) {
-			continue;
-		}
-		const auto pos = raw->mapTo(target, QPoint(0, 0));
-		paintSectionBackgroundAt(
-			raw,
-			p,
-			QRect(0, pos.y(), target->width(), raw->height()));
-	}
-}
-
-void InnerWidget::addDetailsBackgroundSection(not_null<Ui::RpWidget*> section) {
-	_detailsBackgroundSections.push_back(section.get());
-
-	section->geometryValue(
-	) | rpl::on_next([=] {
-		updateDetailsBackgroundSections();
-	}, section->lifetime());
-
-	section->sizeValue(
-	) | rpl::on_next([=] {
-		updateDetailsBackgroundSections();
-	}, section->lifetime());
-
-	updateDetailsBackgroundSections();
-}
-
-void InnerWidget::paintSectionBackgroundAt(
-		not_null<Ui::RpWidget*> section,
-		QPainter &p,
-		const QRect &rect) {
-	if (!_customBackground || !_customBackground->active()) {
-		return;
-	}
-	const auto peerId = _peer->id.value;
-	const auto bottomZone = AyuFeatures::CustomProfileBackground::BottomRendererZone(
-		peerId);
-	if (!bottomZone.has_value() || rect.isEmpty()) {
-		return;
-	}
-	const auto sectionHeight = rect.height();
-	const auto isFull = AyuFeatures::CustomProfileBackground::UsesFullBackground(
-		peerId);
-	if (!isFull) {
-		const auto first = _detailsBackgroundSections.empty()
-			? nullptr
-			: _detailsBackgroundSections.front().data();
-		if (section.get() != first) {
-			return;
-		}
-		_customBackground->paint(p, rect, sectionHeight, 0);
-		return;
-	}
-	const auto topBarMax = detailsBackgroundTopBarHeight();
-	auto sectionOffset = 0;
-	for (const auto &entry : _detailsBackgroundSections) {
-		const auto raw = entry.data();
-		if (!raw) {
-			continue;
-		} else if (raw == section.get()) {
-			break;
-		}
-		sectionOffset += raw->height();
-	}
-	const auto coverHeight = topBarMax + detailsBackgroundSpanHeight();
-	const auto sourceY = topBarMax + sectionOffset;
-	_customBackground->paint(p, rect, coverHeight, sourceY);
-}
-
-int InnerWidget::detailsBackgroundSpanHeight() const {
-	auto total = 0;
-	for (const auto &entry : _detailsBackgroundSections) {
-		if (const auto raw = entry.data()) {
-			total += raw->height();
-		}
-	}
-	return total;
-}
-
-int InnerWidget::detailsBackgroundTopBarHeight() const {
-	if (const auto top = _topBar.get()) {
-		return std::max(top->height(), 1);
-	}
-	return st::infoProfileTopBarHeightMax;
-}
-
-void InnerWidget::updateDetailsBackgroundSections() {
-	const auto totalHeight = detailsBackgroundSpanHeight();
-	if (_detailsBackgroundHeight != totalHeight) {
-		_detailsBackgroundHeight = totalHeight;
-	}
-	if (const auto top = _topBar.get()) {
-		const auto detailsHeight = AyuFeatures::CustomProfileBackground::UsesFullBackground(
-			_peer->id.value)
-			? totalHeight
-			: 0;
-		top->setCustomBackgroundDetailsHeight(detailsHeight);
-	}
-	syncScrollBackgroundLayer();
-}
-
-void InnerWidget::reloadCustomBackground() {
-	const auto peerId = _peer->id.value;
-	if (const auto zone = AyuFeatures::CustomProfileBackground::BottomRendererZone(
-			peerId)) {
-		_customBackground->setPeer(peerId, *zone);
-	} else {
-		_customBackground->clear();
-	}
-	updateDetailsBackgroundSections();
 }
 
 base::weak_qptr<Ui::RpWidget> InnerWidget::createPinnedToBottom(

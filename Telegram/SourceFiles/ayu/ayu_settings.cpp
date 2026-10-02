@@ -1523,6 +1523,56 @@ void AyuSettings::setMusicIslandCustomBackgroundMode(int val) {
 	save();
 }
 
+void AyuSettings::setMusicLyricsEnabled(bool val) {
+	if (_musicLyricsEnabled.current() == val) return;
+	_musicLyricsEnabled = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsShowInIsland(bool val) {
+	if (_musicLyricsShowInIsland.current() == val) return;
+	_musicLyricsShowInIsland = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsFloatingLine(bool val) {
+	if (_musicLyricsFloatingLine.current() == val) return;
+	_musicLyricsFloatingLine = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsKaraokeButton(bool val) {
+	if (_musicLyricsKaraokeButton.current() == val) return;
+	_musicLyricsKaraokeButton = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsAnimation(int val) {
+	val = std::clamp(val, 0, 2);
+	if (_musicLyricsAnimation.current() == val) return;
+	_musicLyricsAnimation = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsArtScatter(bool val) {
+	if (_musicLyricsArtScatter.current() == val) return;
+	_musicLyricsArtScatter = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsBlur(bool val) {
+	if (_musicLyricsBlur.current() == val) return;
+	_musicLyricsBlur = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsFontScale(int val) {
+	val = std::clamp(val, 70, 160);
+	if (_musicLyricsFontScale.current() == val) return;
+	_musicLyricsFontScale = val;
+	save();
+}
+
 void AyuSettings::setConnectionBypassMode(ConnectionBypassMode val) {
 	if (_connectionBypassMode.current() == val) {
 		return;
@@ -1741,6 +1791,14 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"musicIslandCustomBackgroundBlur", s._musicIslandCustomBackgroundBlur.current()},
 		{"musicIslandCustomBackgroundDim", s._musicIslandCustomBackgroundDim.current()},
 		{"musicIslandCustomBackgroundMode", s._musicIslandCustomBackgroundMode.current()},
+		{"musicLyricsEnabled", s._musicLyricsEnabled.current()},
+		{"musicLyricsShowInIsland", s._musicLyricsShowInIsland.current()},
+		{"musicLyricsFloatingLine", s._musicLyricsFloatingLine.current()},
+		{"musicLyricsKaraokeButton", s._musicLyricsKaraokeButton.current()},
+		{"musicLyricsAnimation", s._musicLyricsAnimation.current()},
+		{"musicLyricsArtScatter", s._musicLyricsArtScatter.current()},
+		{"musicLyricsBlur", s._musicLyricsBlur.current()},
+		{"musicLyricsFontScale", s._musicLyricsFontScale.current()},
 		{"connectionBypassMode", s._connectionBypassMode.current()},
 		{"connectionBypassSecret", s._connectionBypassSecret.current()},
 		{"messageShotSettings", s._messageShotSettings},
@@ -1783,6 +1841,22 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 				badHosts[host.toStdString()] = until;
 			}
 			return badHosts;
+		}()},
+		// Mirrors come from the server and would otherwise be lost on every
+		// restart, leaving only the built-in hosts.
+		{"bypassServerMirrors", [&] {
+			auto mirrors = nlohmann::json::array();
+			for (const auto &value : s._bypassServerMirrors) {
+				mirrors.push_back(value.toStdString());
+			}
+			return mirrors;
+		}()},
+		{"bypassServerMirrorHosts", [&] {
+			auto hosts = nlohmann::json::array();
+			for (const auto &value : s._bypassServerMirrorHosts) {
+				hosts.push_back(value.toStdString());
+			}
+			return hosts;
 		}()}
 	};
 }
@@ -1966,6 +2040,34 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 			"musicIslandCustomBackgroundMode",
 			defaults._musicIslandCustomBackgroundMode.current()),
 		0, 2);
+	s._musicLyricsEnabled = j.value(
+		"musicLyricsEnabled",
+		defaults._musicLyricsEnabled.current());
+	s._musicLyricsShowInIsland = j.value(
+		"musicLyricsShowInIsland",
+		defaults._musicLyricsShowInIsland.current());
+	s._musicLyricsFloatingLine = j.value(
+		"musicLyricsFloatingLine",
+		defaults._musicLyricsFloatingLine.current());
+	s._musicLyricsKaraokeButton = j.value(
+		"musicLyricsKaraokeButton",
+		defaults._musicLyricsKaraokeButton.current());
+	s._musicLyricsAnimation = std::clamp(
+		j.value(
+			"musicLyricsAnimation",
+			defaults._musicLyricsAnimation.current()),
+		0, 2);
+	s._musicLyricsArtScatter = j.value(
+		"musicLyricsArtScatter",
+		defaults._musicLyricsArtScatter.current());
+	s._musicLyricsBlur = j.value(
+		"musicLyricsBlur",
+		defaults._musicLyricsBlur.current());
+	s._musicLyricsFontScale = std::clamp(
+		j.value(
+			"musicLyricsFontScale",
+			defaults._musicLyricsFontScale.current()),
+		70, 160);
 	s._connectionBypassMode = j.value(
 		"connectionBypassMode",
 		defaults._connectionBypassMode.current());
@@ -2108,6 +2210,32 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 			it = s._bypassBadHostsUntil.erase(it);
 		} else {
 			++it;
+		}
+	}
+
+	s._bypassServerMirrors.clear();
+	if (j.contains("bypassServerMirrors") && j["bypassServerMirrors"].is_array()) {
+		for (const auto &entry : j["bypassServerMirrors"]) {
+			if (entry.is_string()) {
+				const auto value = QString::fromStdString(
+					entry.get<std::string>()).trimmed();
+				if (!value.isEmpty()) {
+					s._bypassServerMirrors.push_back(value);
+				}
+			}
+		}
+	}
+	s._bypassServerMirrorHosts.clear();
+	if (j.contains("bypassServerMirrorHosts")
+		&& j["bypassServerMirrorHosts"].is_array()) {
+		for (const auto &entry : j["bypassServerMirrorHosts"]) {
+			if (entry.is_string()) {
+				const auto value = QString::fromStdString(
+					entry.get<std::string>()).trimmed();
+				if (!value.isEmpty()) {
+					s._bypassServerMirrorHosts.push_back(value);
+				}
+			}
 		}
 	}
 }

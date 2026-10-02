@@ -223,6 +223,13 @@ void AyuMusicButton::updateData(MusicButtonData data) {
 	resizeToWidth(widthNoMargins());
 }
 
+void AyuMusicButton::setProfileBackgroundTransparent(bool transparent) {
+	if (_profileBackgroundTransparent != transparent) {
+		_profileBackgroundTransparent = transparent;
+		update();
+	}
+}
+
 void AyuMusicButton::downloadAndMakeCover(FullMsgId msgId) {
 	if (_mediaView && _mediaView->owner()->isSongWithCover() && !_mediaView->thumbnail()) {
 		const auto settings = &_mediaView->owner()->session().settings().autoDownload();
@@ -320,31 +327,39 @@ void AyuMusicButton::makeCover() {
 }
 
 void AyuMusicButton::paintEvent(QPaintEvent *e) {
-	if (!_currentCover) {
-		return;
-	}
-
 	auto p = Painter(this);
 
 	const auto &font = st::infoMusicButtonTitle.style.font;
 	const auto skip = st::normalFont->spacew / 2;
 	const auto size = font->height + skip + font->height;
 
-	const auto &settings = AyuSettings::getInstance();
-	const auto cover = _currentCover.value();
-	if (cover.noCover || !settings.adaptiveCoverColor()) {
-		p.fillRect(e->rect(), cover.bg);
-		paintRipple(p, QPoint());
+	if (!_profileBackgroundTransparent && _currentCover) {
+		const auto &settings = AyuSettings::getInstance();
+		const auto cover = _currentCover.value();
+		if (cover.noCover || !settings.adaptiveCoverColor()) {
+			p.fillRect(e->rect(), cover.bg);
+			paintRipple(p, QPoint());
+		} else {
+			QRadialGradient gradient(rect().topRight(), rect().width() * 2.0);
+			gradient.setColorAt(0, cover.bg);
+			gradient.setColorAt(1, QColor::fromRgb(AdjustHsl(cover.bg.rgb(), 1.5f)));
+			p.fillRect(rect(), gradient);
+		}
 	} else {
-		QRadialGradient gradient(rect().topRight(), rect().width() * 2.0);
-		gradient.setColorAt(0, cover.bg);
-		gradient.setColorAt(1, QColor::fromRgb(AdjustHsl(cover.bg.rgb(), 1.5f)));
-		p.fillRect(rect(), gradient);
+		paintRipple(p, QPoint());
 	}
 
+	if (!_currentCover) {
+		return;
+	}
+	const auto cover = _currentCover.value();
 	if (!cover.pix.isNull()) {
 		auto hq = PainterHighQualityEnabler(p);
-		const auto coverRect = QRect(st::infoMusicButtonPadding.left(), st::infoMusicButtonPadding.top(), size, size);
+		const auto coverRect = QRect(
+			st::infoMusicButtonPadding.left(),
+			st::infoMusicButtonPadding.top(),
+			size,
+			size);
 		p.drawPixmap(coverRect, cover.pix);
 	}
 }

@@ -97,6 +97,7 @@ public:
 	rpl::producer<Dialogs::Stories::Content> titleStories() override;
 
 private:
+	void setupFullProfileBackground();
 	void saveState(not_null<Memento*> memento);
 	void restoreState(not_null<Memento*> memento);
 	void setupTabsStripFloat();

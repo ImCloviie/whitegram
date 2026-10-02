@@ -54,7 +54,8 @@ rpl::producer<bool> SetupSavedMusic(
 		not_null<Ui::VerticalLayout*> container,
 		not_null<Info::Controller*> controller,
 		not_null<PeerData*> peer,
-		rpl::producer<std::optional<QColor>> topBarColor) {
+		rpl::producer<std::optional<QColor>> topBarColor,
+		rpl::producer<bool> fullProfileBackground) {
 	const auto hasMusic = container->lifetime().make_state<
 		rpl::variable<bool>>(false);
 	auto musicValue = Data::SavedMusic::Supported(peer->id)
@@ -74,10 +75,12 @@ rpl::producer<bool> SetupSavedMusic(
 
 	rpl::combine(
 		std::move(musicValue),
-		std::move(topBarColor)
+		std::move(topBarColor),
+		std::move(fullProfileBackground)
 	) | rpl::on_next([=](
 			HistoryItem *item,
-			std::optional<QColor> color) {
+			std::optional<QColor> color,
+			bool transparent) {
 		while (divider->entity()->count()) {
 			delete divider->entity()->widgetAt(0);
 		}
@@ -101,6 +104,8 @@ rpl::producer<bool> SetupSavedMusic(
 				musicButton->ease = anim::easeOutCubic;
 				musicButton->setDuration(250);
 				musicButton->entity()->setAcceptBoth(true);
+				musicButton->entity()->setProfileBackgroundTransparent(
+					transparent);
 				musicButton->entity()->clicks() | rpl::filter([=](Qt::MouseButton mouseButton)
 				{
 					return mouseButton == Qt::RightButton;

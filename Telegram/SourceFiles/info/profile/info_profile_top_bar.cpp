@@ -462,7 +462,10 @@ TopBar::TopBar(
 , _customBackground([this] { update(); }) {
 	setObjectName(u"profileTopBar"_q);
 	_peer->updateFull();
-	AyuFeatures::CustomProfileBackground::EnsureRemoteBackgrounds(_peer->id.value);
+	if (AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)) {
+		AyuFeatures::CustomProfileBackground::EnsureRemoteBackgrounds(
+			_peer->id.value);
+	}
 	reloadCustomBackground();
 	AyuSettings::getInstance().customProfileBackgroundChanges(
 	) | rpl::on_next([=] {
@@ -471,7 +474,8 @@ TopBar::TopBar(
 	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::filter([=](uint64 userId) {
-		return userId == _peer->id.value;
+		return AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
+			&& userId == _peer->id.value;
 	}) | rpl::on_next([=] {
 		reloadCustomBackground();
 		update();
@@ -2947,16 +2951,14 @@ void TopBar::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
 	const auto geometry = userpicGeometry();
 	const auto clipBounds = e->region().boundingRect();
-	const auto hasCustomBg = _customBackground.active();
+	const auto topCoverHeight = std::max(
+		height(),
+		(maximumHeight() < QWIDGETSIZE_MAX) ? maximumHeight() : 0);
+	const auto hasCustomBg = paintFullProfileBackground(p)
+		|| (_customBackground.active()
+			&& _customBackground.paint(p, rect(), topCoverHeight, 0));
 
-	if (hasCustomBg) {
-		const auto isFull = AyuFeatures::CustomProfileBackground::UsesFullBackground(
-			_peer->id.value);
-		const auto coverHeight = isFull
-			? (maximumHeight() + _customBackgroundDetailsHeight)
-			: maximumHeight();
-		_customBackground.paint(p, rect(), coverHeight, 0);
-	} else if (_hasGradientBg && _cachedGradient.isNull()) {
+	if (!hasCustomBg && _hasGradientBg && _cachedGradient.isNull()) {
 		const auto collectible = effectiveCollectible();
 		const auto colorProfile = effectiveColorProfile();
 		const auto offset = QPoint(
@@ -4069,15 +4071,63 @@ TopBarActionButtonStyle TopBar::mapActionStyle(
 	}
 }
 
-void TopBar::setCustomBackgroundDetailsHeight(int height) {
-	if (_customBackgroundDetailsHeight != height) {
-		_customBackgroundDetailsHeight = height;
-		update();
+void TopBar::setFullProfileBackground(
+		base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> renderer,
+		Fn<int()> coverContentHeight) {
+	_fullBackground = std::move(renderer);
+	_fullBackgroundCoverHeight = std::move(coverContentHeight);
+	reloadCustomBackground();
+	update();
+}
+
+bool TopBar::fullProfileBackgroundAllowed() const {
+	return !_savedMessages
+		&& !_key.topic()
+		&& !_key.sublist()
+		&& AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
+		&& AyuFeatures::CustomProfileBackground::UsesFullBackground(
+			_peer->id.value);
+}
+
+bool TopBar::paintFullProfileBackground(QPainter &p) {
+	const auto full = _fullBackground.get();
+	const auto parent = parentWidget();
+	if (!full || !parent || !full->active()) {
+		return false;
 	}
+	if (_roundEdges) {
+		const auto radius = st::boxRadius;
+		auto path = QPainterPath();
+		path.addRoundedRect(
+			rect() + QMargins{ 0, 0, 0, radius + 1 },
+			radius,
+			radius);
+		p.setClipPath(path);
+	}
+	const auto panel = QRect(-x(), 0, parent->width(), height());
+	const auto coverHeight = full->paintCoverHeight();
+	const auto scaleHeight = (coverHeight > 0) ? coverHeight : parent->height();
+	const auto painted = full->paint(p, panel, scaleHeight, y(), 0);
+	if (painted) {
+		AyuFeatures::CustomProfileBackground::PaintFullOverlay(
+			p,
+			panel,
+			y(),
+			scaleHeight,
+			st::infoProfileTopBarHeightMax,
+			st::windowBg->c);
+	}
+	p.setClipping(false);
+	return painted;
 }
 
 void TopBar::reloadCustomBackground() {
 	const auto peerId = _peer->id.value;
+	if (!AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
+		|| (_fullBackground && fullProfileBackgroundAllowed())) {
+		_customBackground.clear();
+		return;
+	}
 	if (const auto zone = AyuFeatures::CustomProfileBackground::TopRendererZone(
 			peerId)) {
 		_customBackground.setPeer(peerId, *zone);

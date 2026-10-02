@@ -4681,13 +4681,32 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 			.arg(peerId)
 			.arg(msgId);
 
-		text.text = u"🔒 Одноразовое сообщение\n👁️ Нажмите, чтобы просмотреть"_q;
-		text.entities.clear();
-		text.entities.push_back(EntityInText(
+		// The whole bubble opens the local view-once box in this client.
+		// Other clients see the plain text below with a link to the author's
+		// profile, but they cannot decrypt the zero-width payload.
+		const auto bubbleText = u"🔒 Одноразовое сообщение Whitegram"_q;
+		const auto hintLine = u"Нажмите, чтобы открыть"_q;
+		const auto profileLine = u"Установка: https://t.me/imcloviie"_q;
+
+		auto finalText = TextWithEntities();
+		finalText.text = bubbleText + u"\n\n"_q + hintLine + u"\n\n"_q + profileLine;
+		finalText.entities.push_back(EntityInText(
 			EntityType::CustomUrl,
 			0,
-			text.text.size(),
+			bubbleText.length(),
 			viewOnceUrl));
+		finalText.entities.push_back(EntityInText(
+			EntityType::CustomUrl,
+			bubbleText.length() + u"\n\n"_q.length(),
+			bubbleText.length() + u"\n\n"_q.length() + hintLine.length(),
+			viewOnceUrl));
+		finalText.entities.push_back(EntityInText(
+			EntityType::Url,
+			finalText.text.length() - profileLine.length(),
+			profileLine.length(),
+			u"https://t.me/imcloviie"_q));
+
+		text = finalText;
 	} else {
 		const auto &settings = AyuSettings::getInstance();
 		if (settings.filterZalgo()) {

@@ -145,6 +145,8 @@ set(ayugram_files
         ayu/ui/utils/palette.h
         ayu/ui/utils/itunes_search.cpp
         ayu/ui/utils/itunes_search.h
+        ayu/ui/utils/lyrics_engine.cpp
+        ayu/ui/utils/lyrics_engine.h
         ayu/ui/settings/account_profiles_box.cpp
         ayu/ui/settings/account_profiles_box.h
         ayu/ui/settings/custom_archives_box.cpp
@@ -215,6 +217,8 @@ set(ayugram_files
         ayu/ui/components/message_preview.h
         ayu/ui/components/music_island.cpp
         ayu/ui/components/music_island.h
+        ayu/ui/components/lyrics_window.cpp
+        ayu/ui/components/lyrics_window.h
         ayu/ui/components/saved_music.cpp
         ayu/ui/components/saved_music.h
         ayu/libs/json.hpp

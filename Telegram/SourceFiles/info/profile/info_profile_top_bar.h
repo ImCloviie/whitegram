@@ -148,7 +148,9 @@ public:
 		Wrap wrap);
 
 	rpl::producer<std::optional<QColor>> edgeColor() const;
-	void setCustomBackgroundDetailsHeight(int height);
+	void setFullProfileBackground(
+		base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> renderer,
+		Fn<int()> coverContentHeight = nullptr);
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -221,6 +223,8 @@ private:
 	void refreshTabSubtitle();
 	void paintTabSubtitle(QPainter &p);
 	void reloadCustomBackground();
+	[[nodiscard]] bool fullProfileBackgroundAllowed() const;
+	bool paintFullProfileBackground(QPainter &p);
 	void updateRightButtonsPosition();
 	void updateTabGroupActive();
 	[[nodiscard]] bool tabSwapActive() const;
@@ -394,7 +398,8 @@ private:
 	std::shared_ptr<Data::EmojiStatusCollectible> _localCollectible;
 
 	AyuFeatures::CustomProfileBackground::Renderer _customBackground;
-	int _customBackgroundDetailsHeight = 0;
+	base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> _fullBackground;
+	Fn<int()> _fullBackgroundCoverHeight;
 
 };
 

@@ -460,14 +460,16 @@ void UploadProfileBackground(
 		+ QString::number(userId)
 		+ u'/'
 		+ ZoneName(zone));
-	auto file = std::make_unique<QFile>(path);
+	const auto file = new QFile(path);
 	if (!file->open(QIODevice::ReadOnly)) {
+		delete file;
 		return;
 	}
 	const auto disposition = u"form-data; name=\"file\"; filename=\""_q
 		+ info.fileName()
 		+ u'"';
-	auto multipart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+	const auto multipart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+	file->setParent(multipart);
 	auto filePart = QHttpPart();
 	filePart.setHeader(
 		QNetworkRequest::ContentDispositionHeader,
@@ -475,7 +477,7 @@ void UploadProfileBackground(
 	filePart.setHeader(
 		QNetworkRequest::ContentTypeHeader,
 		QByteArray("application/octet-stream"));
-	filePart.setBodyDevice(file.get());
+	filePart.setBodyDevice(file);
 	multipart->append(filePart);
 
 	auto isVideoPart = QHttpPart();
@@ -484,8 +486,6 @@ void UploadProfileBackground(
 		QByteArray("form-data; name=\"isVideo\""));
 	isVideoPart.setBody(isVideo ? "true" : "false");
 	multipart->append(isVideoPart);
-
-	file->setParent(multipart);
 	const auto reply = Service::Instance().accessManager().put(
 		AuthorizedRequest(url),
 		multipart);

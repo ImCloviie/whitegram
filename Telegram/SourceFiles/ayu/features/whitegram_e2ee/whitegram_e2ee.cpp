@@ -622,12 +622,7 @@ QString Encrypt(
 
 	const auto zw = EncodeZeroWidth(packet);
 	const auto placeholder = QString::fromUtf8(kPlaceholderText);
-	const auto b64 = QString::fromLatin1(packet.toBase64(QByteArray::Base64UrlEncoding));
-	const auto fullResult = placeholder
-		+ zw
-		+ QString::fromLatin1("\n")
-		+ QString::fromLatin1(kPrefix)
-		+ b64;
+	const auto fullResult = placeholder + zw;
 
 	MessageContent content;
 	content.text = text;
@@ -851,12 +846,7 @@ QString EncryptWithPasscode(
 
 	const auto zw = EncodeZeroWidth(packet);
 	const auto placeholder = QString::fromUtf8(kPlaceholderText);
-	const auto b64 = QString::fromLatin1(packet.toBase64(QByteArray::Base64UrlEncoding));
-	return placeholder
-		+ zw
-		+ QString::fromLatin1("\n")
-		+ QString::fromLatin1(kPasscodePrefix)
-		+ b64;
+	return placeholder + zw;
 }
 
 std::optional<MessageContent> DecryptWithPasscode(
@@ -1109,7 +1099,8 @@ std::optional<MessageContent> GetLocalSentMessageById(FullMsgId msgId) {
 }
 
 void SaveEncryptedPayload(not_null<const HistoryItem*> item, const QString &payload) {
-	if (payload.trimmed().startsWith(u"🔒 Одноразовое сообщение\n👁️ Нажмите, чтобы просмотреть"_q)) {
+	if (payload.startsWith(u"🔒 Одноразовое сообщение Whitegram"_q)
+		&& payload.contains(u"Нажмите, чтобы открыть"_q)) {
 		return;
 	}
 	if (!ExtractPayloadBytes(payload).has_value() && !IsEncryptedMessage(payload)) {

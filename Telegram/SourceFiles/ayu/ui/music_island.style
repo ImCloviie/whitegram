@@ -77,3 +77,16 @@ musicIslandIconVolume0: icon{{ "player/player_mini_off", windowFg }};
 musicIslandIconVolume1: icon{{ "player/player_mini_half", windowFg }};
 musicIslandIconVolume2: icon{{ "player/player_mini_full", windowFg }};
 musicIslandIconSaveProfile: icon{{ "menu/sound_add", windowFg }};
+
+musicIslandLyricsTop: 8px;
+musicIslandLyricsHeight: 76px;
+musicIslandLyricsRadius: 14px;
+musicIslandLyricsButtonSize: 24px;
+
+musicIslandLyricsStyle: TextStyle(defaultTextStyle) {
+	font: font(13px semibold);
+}
+musicIslandLyricsSubStyle: TextStyle(defaultTextStyle) {
+	font: font(12px);
+}
+musicIslandIconLyrics: icon{{ "chat/ai_letters", windowFg }};

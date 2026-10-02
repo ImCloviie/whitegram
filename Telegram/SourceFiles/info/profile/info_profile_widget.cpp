@@ -11,7 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "info/profile/info_profile_inner_widget.h"
 #include "info/profile/info_profile_members.h"
+#include "info/profile/info_profile_top_bar.h"
 #include "info/profile/tabs/info_profile_tabs_host.h"
+#include "info/info_wrap_widget.h"
 #include "info/settings/info_settings_widget.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/ui_utility.h"
@@ -23,6 +25,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "info/info_controller.h"
 #include "base/event_filter.h"
+
+// AyuGram includes
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QScrollBar>
@@ -218,7 +223,62 @@ Widget::Widget(
 	}
 
 	setupTabsStripFloat();
-	_inner->setupScrollBackgroundPaint(scroll());
+	setupFullProfileBackground();
+}
+
+void Widget::setupFullProfileBackground() {
+	namespace Background = AyuFeatures::CustomProfileBackground;
+	const auto bounds = Background::FullProfileBackgroundBounds{
+		.scrollTop = [=] { return scrollTopSave(); },
+		.topSkip = [=] { return innerTopReserve(); },
+		.contentHeight = [=] { return _inner->fullProfileCoverHeight(); },
+	};
+	const auto renderer = Background::SetupFullBackgroundLayer(
+		this,
+		[=]() -> PeerData* {
+			const auto key = controller()->key();
+			return (key.topic() || key.sublist() || key.savedMessages())
+				? nullptr
+				: key.peer();
+		},
+		[=] { return controller()->wrap() == Wrap::Layer; },
+		bounds);
+	const auto applyMetrics = [=, weak = renderer] {
+		if (const auto strong = weak.get()) {
+			// The pane height makes the background cover the whole pane, so
+			// that it stays visible below the details and down to the end of
+			// the profile scroll, instead of ending with the cover block.
+			strong->setPaintMetrics(
+				scrollTopSave(),
+				innerTopReserve(),
+				_inner->fullProfileCoverHeight(),
+				height());
+		}
+	};
+	scrollTopValue(
+	) | rpl::on_next([=](int) {
+		applyMetrics();
+	}, lifetime());
+	heightValue(
+	) | rpl::on_next([=](int) {
+		applyMetrics();
+	}, lifetime());
+	_inner->fullProfileCoverHeightValue(
+	) | rpl::on_next([=](int) {
+		applyMetrics();
+	}, lifetime());
+	if (_pinnedToTop) {
+		_pinnedToTop->heightValue(
+		) | rpl::on_next([=](int) {
+			applyMetrics();
+		}, _pinnedToTop->lifetime());
+	}
+	applyMetrics();
+	if (const auto top = dynamic_cast<TopBar*>(_pinnedToTop.get())) {
+		top->setFullProfileBackground(
+			renderer,
+			[=] { return _inner->fullProfileCoverHeight(); });
+	}
 }
 
 void Widget::setupTabsStripFloat() {

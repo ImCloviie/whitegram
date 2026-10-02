@@ -87,6 +87,8 @@ public:
 
 	[[nodiscard]] rpl::producer<int> albumIdChanges() const;
 	[[nodiscard]] rpl::producer<Data::StoryAlbumUpdate> changes() const;
+	[[nodiscard]] int fullProfileCoverHeight() const;
+	[[nodiscard]] rpl::producer<int> fullProfileCoverHeightValue() const;
 
 	bool hasFlexibleTopBar() const;
 	base::weak_qptr<Ui::RpWidget> createPinnedToTop(
@@ -167,6 +169,7 @@ private:
 	rpl::event_stream<> _backClicks;
 	rpl::event_stream<> _showFinished;
 	rpl::variable<std::optional<QColor>> _topBarColor;
+	rpl::variable<int> _fullProfileCoverHeight;
 
 	Ui::VisibleRange _visibleRange;
 

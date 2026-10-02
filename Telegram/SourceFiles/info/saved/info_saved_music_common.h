@@ -31,6 +31,7 @@ rpl::producer<bool> SetupSavedMusic(
 	not_null<Ui::VerticalLayout*> container,
 	not_null<Info::Controller*> controller,
 	not_null<PeerData*> peer,
-	rpl::producer<std::optional<QColor>> topBarColor);
+	rpl::producer<std::optional<QColor>> topBarColor,
+	rpl::producer<bool> fullProfileBackground = rpl::single(false));
 
 } // namespace Info::Saved

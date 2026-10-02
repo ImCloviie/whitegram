@@ -10,8 +10,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "data/data_stories.h"
 #include "info/stories/info_stories_inner_widget.h"
+#include "info/profile/info_profile_top_bar.h"
 #include "info/info_controller.h"
 #include "info/info_memento.h"
+#include "info/info_wrap_widget.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/scroll_area.h"
@@ -20,6 +22,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
+
+// AyuGram includes
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QScrollBar>
@@ -146,6 +151,48 @@ Widget::Widget(
 	_inner->backRequest() | rpl::on_next([=] {
 		checkBeforeClose([=] { controller->showBackFromStack(); });
 	}, _inner->lifetime());
+
+	const auto renderer
+		= AyuFeatures::CustomProfileBackground::SetupFullBackgroundLayer(
+			this,
+			[=]() -> PeerData* {
+				const auto peer = controller->key().storiesPeer();
+				return (peer && peer->isSelf()) ? peer : nullptr;
+			},
+			[=] { return controller->wrap() == Wrap::Layer; },
+			{
+				.scrollTop = [=] { return scrollTopSave(); },
+				.topSkip = [=] { return innerTopReserve(); },
+				.contentHeight = [=] { return _inner->fullProfileCoverHeight(); },
+			});
+	const auto applyMetrics = [=, weak = renderer] {
+		if (const auto strong = weak.get()) {
+			strong->setPaintMetrics(
+				scrollTopSave(),
+				innerTopReserve(),
+				_inner->fullProfileCoverHeight());
+		}
+	};
+	scrollTopValue(
+	) | rpl::on_next([=](int) {
+		applyMetrics();
+	}, lifetime());
+	_inner->fullProfileCoverHeightValue(
+	) | rpl::on_next([=](int) {
+		applyMetrics();
+	}, lifetime());
+	if (_pinnedToTop) {
+		_pinnedToTop->heightValue(
+		) | rpl::on_next([=](int) {
+			applyMetrics();
+		}, _pinnedToTop->lifetime());
+	}
+	applyMetrics();
+	if (const auto top = dynamic_cast<Profile::TopBar*>(_pinnedToTop.get())) {
+		top->setFullProfileBackground(
+			renderer,
+			[=] { return _inner->fullProfileCoverHeight(); });
+	}
 }
 
 void Widget::setInnerFocus() {

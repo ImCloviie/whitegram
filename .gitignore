@@ -82,3 +82,34 @@ backend/deploy/keys/
 # Bundled tg-ws-proxy binary (fetched at CMake configure time)
 Telegram/Resources/whitegram/WhitegramTgWsProxy.exe
 Telegram/Resources/whitegram/*.download
+
+# Whitegram: exclude everything that is not desktop sources
+# (keeps repo structure like AyuGramDesktop: Telegram/, cmake/, docs/, etc.)
+/backend/
+/build/
+/out/
+__pycache__/
+*.pyc
+
+# Local one-off helper scripts and dumps (not part of sources)
+patch.py
+patch2.py
+patch3.py
+patch4.py
+fix_settings.py
+merged_settings_main.cpp
+api_response.json
+found_line.json
+matches.txt
+build-update.log
+changelog.txt
+release.bat
+
+# AI work folders and notes (session-specific, not for version control)
+.agents/
+.claude/
+.grok/
+AGENTS.md
+CLAUDE.md
+GROK.md
+REVIEW.md

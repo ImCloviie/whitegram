@@ -53,6 +53,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 #include "styles/style_settings.h"
 
+// AyuGram includes
+#include "ayu/ayu_settings.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
+
 namespace Info::Stories {
 namespace {
 
@@ -265,6 +270,14 @@ void InnerWidget::setupAlbums() {
 
 InnerWidget::~InnerWidget() = default;
 
+int InnerWidget::fullProfileCoverHeight() const {
+	return _fullProfileCoverHeight.current();
+}
+
+rpl::producer<int> InnerWidget::fullProfileCoverHeightValue() const {
+	return _fullProfileCoverHeight.value();
+}
+
 rpl::producer<> InnerWidget::backRequest() const {
 	return _backClicks.events();
 }
@@ -301,15 +314,31 @@ void InnerWidget::startTop() {
 void InnerWidget::createProfileTop() {
 	startTop();
 
+	namespace Background = AyuFeatures::CustomProfileBackground;
+	const auto peer = _peer;
+	const auto coverSection = _top->add(
+		object_ptr<Ui::VerticalLayout>(_top));
+	_fullProfileCoverHeight = coverSection->heightValue();
+
+	auto fullProfileBackground = rpl::single(
+		rpl::empty
+	) | rpl::then(rpl::merge(
+		AyuSettings::getInstance().customProfileBackgroundChanges(),
+		Whitegram::Backend::profileBackgroundUpdates() | rpl::to_empty
+	)) | rpl::map([=] {
+		return Background::BackgroundEnabledFor(peer)
+			&& Background::UsesFullBackground(peer->id.value);
+	}) | rpl::distinct_until_changed();
 	Info::Saved::SetupSavedMusic(
-		_top,
+		coverSection,
 		_controller,
 		_peer,
-		_topBarColor.value());
+		_topBarColor.value(),
+		std::move(fullProfileBackground));
 
 	using namespace Profile;
 	AddDetails(
-		_top,
+		coverSection,
 		_controller,
 		_peer,
 		nullptr,

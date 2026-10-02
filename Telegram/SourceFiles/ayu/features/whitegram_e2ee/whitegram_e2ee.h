@@ -16,9 +16,11 @@ namespace Whitegram::E2EE {
 
 inline constexpr auto kPrefix = "wg1:";
 inline constexpr auto kPasscodePrefix = "wgp1:";
+inline constexpr auto kProfileUrl = "https://t.me/imcloviie";
 inline constexpr auto kPlaceholderText =
-	"🔒 Одноразовое сообщение Whitegram\n"
-	"Это сообщение защищено сквозным E2E-шифрованием и доступно для просмотра только в клиенте Whitegram.\n";
+	"🔒 Одноразовое сообщение Whitegram\n\n"
+	"Это сообщение зашифровано. Чтобы открыть его, установите Whitegram.\n"
+	"Приложение: https://t.me/imcloviie\n";
 
 struct KeyPair {
 	QByteArray publicKey;  // 65 bytes uncompressed or 33 bytes compressed X9.62

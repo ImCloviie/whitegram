@@ -5,6 +5,7 @@
 
 #include <QtCore/QCache>
 #include <QtCore/QEventLoop>
+#include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QRegularExpression>

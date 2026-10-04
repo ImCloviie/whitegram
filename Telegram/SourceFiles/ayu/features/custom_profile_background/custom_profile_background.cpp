@@ -47,6 +47,13 @@ constexpr auto kMaxVideoSide = 1280;
 constexpr auto kHeaderOverlayAlpha = 70;
 constexpr auto kContentOverlayAlpha = 150;
 
+// Global dimmer (0-100, 100 = as designed) applied to every overlay alpha
+// so text stays readable on bright backgrounds.
+[[nodiscard]] int DimmedAlpha(int base) {
+	const auto dim = AyuSettings::getInstance().profileBackgroundDim();
+	return std::clamp(base * std::clamp(dim, 0, 100) / 100, 0, 255);
+}
+
 [[nodiscard]] bool IsRussian() {
 	const auto id = Lang::GetInstance().id();
 	const auto baseId = Lang::GetInstance().baseId();
@@ -256,9 +263,9 @@ void PaintFullOverlay(
 		return;
 	}
 	auto header = tint;
-	header.setAlpha(kHeaderOverlayAlpha);
+	header.setAlpha(DimmedAlpha(kHeaderOverlayAlpha));
 	auto content = tint;
-	content.setAlpha(kContentOverlayAlpha);
+	content.setAlpha(DimmedAlpha(kContentOverlayAlpha));
 	const auto zero = target.y() - panelTop;
 	auto gradient = QLinearGradient(
 		0,
@@ -538,8 +545,9 @@ bool Renderer::paint(
 		auto hq = PainterHighQualityEnabler(p);
 		p.drawImage(QRectF(destination), prepared, source);
 	}
-	if (overlayAlpha > 0) {
-		p.fillRect(destination, QColor(0, 0, 0, overlayAlpha));
+	const auto dimmedOverlay = DimmedAlpha(overlayAlpha);
+	if (dimmedOverlay > 0) {
+		p.fillRect(destination, QColor(0, 0, 0, dimmedOverlay));
 	}
 	return true;
 }
@@ -587,6 +595,10 @@ FullBackgroundLayer::FullBackgroundLayer(
 	AyuSettings::getInstance().customProfileBackgroundChanges(
 	) | rpl::on_next([=] {
 		reload();
+	}, lifetime());
+	AyuSettings::getInstance().profileBackgroundDimChanges(
+	) | rpl::on_next([=] {
+		update();
 	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::on_next([=](uint64 userId) {
@@ -689,6 +701,10 @@ InfoBackgroundLayer::InfoBackgroundLayer(
 	) | rpl::on_next([=] {
 		reload();
 	}, lifetime());
+	AyuSettings::getInstance().profileBackgroundDimChanges(
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::on_next([=](uint64 userId) {
 		const auto peer = _peer ? _peer() : nullptr;
@@ -724,7 +740,7 @@ void InfoBackgroundLayer::paintEvent(QPaintEvent *e) {
 	const auto slice = QRect(0, clip.y(), width(), clip.height());
 	if (_renderer.paint(p, slice, height(), slice.y(), 0)) {
 		auto tint = st::windowBg->c;
-		tint.setAlpha(kContentOverlayAlpha);
+		tint.setAlpha(DimmedAlpha(kContentOverlayAlpha));
 		p.fillRect(slice, tint);
 	}
 }

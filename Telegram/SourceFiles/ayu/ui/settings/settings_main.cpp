@@ -1923,9 +1923,158 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 	.title = QString::fromUtf8("Фон профиля"),
 	.icon = &st::menuIconPhoto,
 }, [](SectionBuilder &builder) {
-	// Kept only so the section id stays registered; the actual UI lives on the
-	// "My Profile" page (settings_information.cpp).
-	Q_UNUSED(builder);
+	namespace Background = AyuFeatures::CustomProfileBackground;
+	using Zone = Background::Zone;
+	auto ayu = AyuSectionBuilder(builder);
+	const auto settings = &AyuSettings::getInstance();
+	const auto peerId = builder.session()->userPeerId().value;
+	const auto controller = builder.controller();
+
+	builder.addSkip();
+	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		return {
+			.widget = object_ptr<Ui::FlatLabel>(
+				ctx.container,
+				trWhitegram(
+					QString::fromUtf8(
+						"Свой фон для твоего профиля: шапка, весь профиль "
+						"или блок «Информация». Поддерживаются фото и видео."),
+					QString(
+						"Custom background for your profile: header, full "
+						"profile or the info block. Photos and videos "
+						"are supported.")),
+				st::boxDividerLabel),
+		};
+	});
+	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
+
+	auto zoneShown = [&](Zone zone) -> rpl::producer<bool> {
+		return rpl::single(rpl::empty)
+			| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
+			| rpl::map([=]() -> bool {
+				return Background::HasBackground(peerId, zone);
+			});
+	};
+	auto zoneLabel = [=](Zone zone) -> rpl::producer<QString> {
+		return rpl::single(rpl::empty)
+			| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
+			| rpl::map([=]() -> QString {
+				const auto id = Lang::GetInstance().id();
+				const auto baseId = Lang::GetInstance().baseId();
+				const auto isRu = id.startsWith(u"ru"_q)
+					|| baseId.startsWith(u"ru"_q);
+				const auto name = Background::BackgroundFileName(peerId, zone);
+				return name.isEmpty()
+					? (isRu
+						? QString::fromUtf8("Не задан")
+						: QString("Not set"))
+					: name;
+			});
+	};
+	auto addZone = [&](
+			Zone zone,
+			const QString &titleRu,
+			const QString &titleEn,
+			const QString &hintRu,
+			const QString &hintEn) {
+		builder.addSubsectionTitle(trWhitegram(titleRu, titleEn));
+		builder.addDividerText(trWhitegram(hintRu, hintEn));
+		builder.addButton({
+			.id = u"whitegram/profileBackground/"_q
+				+ QString::number(int(zone)),
+			.title = trWhitegram(titleRu, titleEn),
+			.icon = { &st::menuIconPhoto },
+			.label = zoneLabel(zone),
+			.onClick = [=] {
+				Background::PickBackground(controller, peerId, zone);
+			},
+			.keywords = {
+				u"background"_q,
+				QString::fromUtf8("фон"),
+				QString::fromUtf8("профиль"),
+			},
+		});
+		builder.addButton({
+			.id = u"whitegram/profileBackground/remove/"_q
+				+ QString::number(int(zone)),
+			.title = trWhitegram(
+				QString::fromUtf8("Убрать фон"),
+				QString("Remove background")),
+			.st = &st::settingsAttentionButtonWithIcon,
+			.icon = { &st::menuIconDeleteAttention },
+			.onClick = [=] {
+				Background::RemoveBackground(peerId, zone);
+			},
+			.shown = zoneShown(zone),
+		});
+		builder.addSkip();
+	};
+
+	addZone(
+		Zone::Top,
+		QString::fromUtf8("Фон шапки"),
+		QString("Header background"),
+		QString::fromUtf8(
+			"Показывает только верхнюю часть профиля: аватар, имя и статус."),
+		QString(
+			"Covers only the top of the profile: avatar, name and status."));
+	addZone(
+		Zone::Full,
+		QString::fromUtf8("Фон всего профиля"),
+		QString("Full profile background"),
+		QString::fromUtf8(
+			"Покрывает весь профиль — от шапки до конца прокрутки. "
+			"Страница «Истории» остаётся без изменений."),
+		QString(
+			"Covers the whole profile, from the header down to the end of "
+			"the scroll. The stories page is not affected."));
+	addZone(
+		Zone::Bottom,
+		QString::fromUtf8("Фон блока «Информация»"),
+		QString("Info section background"),
+		QString::fromUtf8(
+			"Покрывает только поля с телефоном, username и ID. "
+			"Не применяется, если задан фон всего профиля."),
+		QString(
+			"Covers only the phone, username and ID fields. Not used when "
+			"the full profile background is set."));
+
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Оформление"),
+		QString("Look")));
+
+	ayu.addSlider({
+		.id = u"whitegram/profileBackgroundDim"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Затемнение фона"),
+			QString("Background dimming")),
+		.steps = 101,
+		.current = settings->profileBackgroundDim(),
+		.indexToValue = [](int index) { return index; },
+		.onFinalChanged = [](int value) {
+			AyuSettings::getInstance().setProfileBackgroundDim(value);
+		},
+		.formatLabel = [](int value) {
+			return QString::number(value) + u'%';
+		},
+		.keywords = { u"dim"_q, QString::fromUtf8("затемнение") },
+	});
+
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Затемнение помогает сохранить читаемость текста на светлых "
+			"фонах. 100% — как задумано, 0% — без затемнения. Другие "
+			"пользователи Whitegram тоже увидят эти фоны. Лучше всего "
+			"подходят вертикальные изображения вроде 1080×2400."),
+		QString(
+			"Dimming keeps text readable on bright backgrounds. 100% is "
+			"the designed look, 0% is no dimming. Other Whitegram users "
+			"will see these backgrounds too. Vertical images like "
+			"1080×2400 work best.")));
+	builder.addSkip();
 });
 
 [[nodiscard]] std::vector<QString> MusicIslandExpandModeOptions() {

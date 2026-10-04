@@ -1573,6 +1573,13 @@ void AyuSettings::setMusicLyricsFontScale(int val) {
 	save();
 }
 
+void AyuSettings::setProfileBackgroundDim(int val) {
+	val = std::clamp(val, 0, 100);
+	if (_profileBackgroundDim.current() == val) return;
+	_profileBackgroundDim = val;
+	save();
+}
+
 void AyuSettings::setConnectionBypassMode(ConnectionBypassMode val) {
 	if (_connectionBypassMode.current() == val) {
 		return;
@@ -1799,6 +1806,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"musicLyricsArtScatter", s._musicLyricsArtScatter.current()},
 		{"musicLyricsBlur", s._musicLyricsBlur.current()},
 		{"musicLyricsFontScale", s._musicLyricsFontScale.current()},
+		{"profileBackgroundDim", s._profileBackgroundDim.current()},
 		{"connectionBypassMode", s._connectionBypassMode.current()},
 		{"connectionBypassSecret", s._connectionBypassSecret.current()},
 		{"messageShotSettings", s._messageShotSettings},
@@ -2068,6 +2076,11 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 			"musicLyricsFontScale",
 			defaults._musicLyricsFontScale.current()),
 		70, 160);
+	s._profileBackgroundDim = std::clamp(
+		j.value(
+			"profileBackgroundDim",
+			defaults._profileBackgroundDim.current()),
+		0, 100);
 	s._connectionBypassMode = j.value(
 		"connectionBypassMode",
 		defaults._connectionBypassMode.current());

@@ -472,6 +472,10 @@ TopBar::TopBar(
 		reloadCustomBackground();
 		update();
 	}, lifetime());
+	AyuSettings::getInstance().profileBackgroundDimChanges(
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::filter([=](uint64 userId) {
 		return AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)

@@ -972,6 +972,7 @@ public:
 	[[nodiscard]] bool musicLyricsArtScatter() const { return _musicLyricsArtScatter.current(); }
 	[[nodiscard]] bool musicLyricsBlur() const { return _musicLyricsBlur.current(); }
 	[[nodiscard]] int musicLyricsFontScale() const { return _musicLyricsFontScale.current(); }
+	[[nodiscard]] int profileBackgroundDim() const { return _profileBackgroundDim.current(); }
 
 	[[nodiscard]] ConnectionBypassMode connectionBypassMode() const {
 		return _connectionBypassMode.current();
@@ -1092,6 +1093,7 @@ public:
 	void setMusicLyricsArtScatter(bool val);
 	void setMusicLyricsBlur(bool val);
 	void setMusicLyricsFontScale(int val);
+	void setProfileBackgroundDim(int val);
   void setConnectionBypassMode(ConnectionBypassMode val);
   void setConnectionBypassSecret(const QString &val);
 
@@ -1315,6 +1317,7 @@ public:
 	[[nodiscard]] rpl::producer<int> musicLyricsAnimationChanges() const { return _musicLyricsAnimation.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsArtScatterChanges() const { return _musicLyricsArtScatter.changes(); }
 	[[nodiscard]] rpl::producer<int> musicLyricsFontScaleChanges() const { return _musicLyricsFontScale.changes(); }
+	[[nodiscard]] rpl::producer<int> profileBackgroundDimChanges() const { return _profileBackgroundDim.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsKaraokeButtonChanges() const { return _musicLyricsKaraokeButton.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsBlurChanges() const { return _musicLyricsBlur.changes(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsValue() const { return _improveLinkPreviews.value(); }
@@ -1679,6 +1682,7 @@ private:
   rpl::variable<int> _musicLyricsAnimation = 0;
   rpl::variable<bool> _musicLyricsArtScatter = true;
   rpl::variable<bool> _musicLyricsBlur = true;
+  rpl::variable<int> _profileBackgroundDim = 100;
   rpl::variable<int> _musicLyricsFontScale = 100;
   rpl::variable<ConnectionBypassMode> _connectionBypassMode =
 	  ConnectionBypassMode::Auto;

@@ -89,6 +89,8 @@ public:
 	[[nodiscard]] rpl::producer<Data::StoryAlbumUpdate> changes() const;
 	[[nodiscard]] int fullProfileCoverHeight() const;
 	[[nodiscard]] rpl::producer<int> fullProfileCoverHeightValue() const;
+	// Whether the full profile background layer paints anything.
+	void setFullBackgroundPainted(rpl::producer<bool> painted);
 
 	bool hasFlexibleTopBar() const;
 	base::weak_qptr<Ui::RpWidget> createPinnedToTop(
@@ -170,6 +172,7 @@ private:
 	rpl::event_stream<> _showFinished;
 	rpl::variable<std::optional<QColor>> _topBarColor;
 	rpl::variable<int> _fullProfileCoverHeight;
+	rpl::variable<bool> _fullBackgroundPainted = false;
 
 	Ui::VisibleRange _visibleRange;
 

@@ -62,7 +62,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
 
 
 namespace Info {
@@ -111,6 +110,9 @@ void AddUnofficialSecurityRiskWarning(
 			layout,
 			object_ptr<Ui::VerticalLayout>(layout)));
 	const auto content = wrap->entity();
+	const auto bar = &AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		content,
+		st::defaultDividerLabel.bar);
 	user->session().changes().peerFlagsValue(
 		user,
 		Data::PeerUpdate::Flag::FullInfo
@@ -161,7 +163,7 @@ void AddUnofficialSecurityRiskWarning(
 				content,
 				std::move(label),
 				st::defaultBoxDividerLabelPadding,
-				st::defaultDividerLabel.bar,
+				*bar,
 				RectParts()));
 		}
 		content->resizeToWidth(content->width());
@@ -195,13 +197,13 @@ InnerWidget::InnerWidget(
 	}, lifetime());
 }
 
-bool InnerWidget::fullProfileBackgroundActive() const {
-	namespace Background = AyuFeatures::CustomProfileBackground;
-	return !_savedMessages
-		&& !_topic
-		&& !_sublist
-		&& Background::BackgroundEnabledFor(_peer)
-		&& Background::UsesFullBackground(_peer->id.value);
+rpl::producer<bool> InnerWidget::fullProfileBackgroundValue() const {
+	// Follows what the layer paints, see Widget::setupFullProfileBackground.
+	return _fullBackgroundPainted.value();
+}
+
+void InnerWidget::setFullBackgroundPainted(rpl::producer<bool> painted) {
+	_fullBackgroundPainted = std::move(painted);
 }
 
 int InnerWidget::fullProfileCoverHeight() const {
@@ -234,6 +236,12 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		}, lifetime());
 	}
 
+	// Everything built below looks for this mark to drop its opaque fills
+	// while the full profile background is painted under the profile.
+	AyuFeatures::CustomProfileBackground::MarkBackgroundHost(
+		parent,
+		fullProfileBackgroundValue());
+
 	auto result = object_ptr<Ui::VerticalLayout>(parent);
 
 	if (!_savedMessages && !(_topic && _topic->creating())) {
@@ -242,20 +250,12 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		const auto musicPeer = _sublist
 			? _sublist->sublistPeer().get()
 			: _peer.get();
-		auto fullProfileBackground = rpl::single(
-			rpl::empty
-		) | rpl::then(rpl::merge(
-			AyuSettings::getInstance().customProfileBackgroundChanges(),
-			Whitegram::Backend::profileBackgroundUpdates() | rpl::to_empty
-		)) | rpl::map([=] {
-			return fullProfileBackgroundActive();
-		}) | rpl::distinct_until_changed();
 		AddSavedMusic(
 			coverLayout,
 			_controller,
 			musicPeer,
 			_topBarColor.value(),
-			std::move(fullProfileBackground));
+			fullProfileBackgroundValue());
 		if (const auto user = _peer->asUser()) {
 			AddUnofficialSecurityRiskWarning(coverLayout, user);
 		}

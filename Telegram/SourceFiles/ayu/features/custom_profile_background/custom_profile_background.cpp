@@ -10,11 +10,17 @@
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "base/weak_ptr.h"
 #include "core/application.h"
+#include "core/core_settings.h"
 #include "core/file_utilities.h"
 #include "crl/crl.h"
 #include "data/data_peer.h"
 #include "lang/lang_instance.h"
-#include "media/clip/media_clip_reader.h"
+#include "lang/lang_keys.h"
+#include "media/streaming/media_streaming_document.h"
+#include "media/streaming/media_streaming_instance.h"
+#include "media/streaming/media_streaming_loader_local.h"
+#include "media/streaming/media_streaming_player.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
 #include "ui/qt_object_factory.h"
@@ -23,6 +29,7 @@
 #include "window/window_session_controller.h"
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
+#include "styles/style_widgets.h"
 
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
@@ -44,15 +51,14 @@ using Zone = ::CustomProfileBackground::Zone;
 constexpr auto kMaxImageSide = 4096;
 constexpr auto kMaxCoverSide = 4096;
 constexpr auto kMaxVideoSide = 1280;
+// Above Whitegram::Backend::kMaxProfileBackgroundSize, older versions
+// allowed bigger local backgrounds.
+constexpr auto kMaxVideoInMemory = 64 * 1024 * 1024;
 constexpr auto kHeaderOverlayAlpha = 70;
 constexpr auto kContentOverlayAlpha = 150;
-
-// Global dimmer (0-100, 100 = as designed) applied to every overlay alpha
-// so text stays readable on bright backgrounds.
-[[nodiscard]] int DimmedAlpha(int base) {
-	const auto dim = AyuSettings::getInstance().profileBackgroundDim();
-	return std::clamp(base * std::clamp(dim, 0, 100) / 100, 0, 255);
-}
+constexpr auto kSeeThroughOverOpacity = 0.6;
+constexpr auto kSeeThroughDividerOpacity = 0.5;
+constexpr auto kHostObjectName = "whitegramProfileBackgroundHost";
 
 [[nodiscard]] bool IsRussian() {
 	const auto id = Lang::GetInstance().id();
@@ -95,6 +101,11 @@ struct BackgroundSource {
 	bool isVideo = false;
 };
 
+[[nodiscard]] QColor WithOpacity(QColor color, float64 opacity) {
+	color.setAlphaF(color.alphaF() * opacity);
+	return color;
+}
+
 [[nodiscard]] std::optional<BackgroundSource> ResolveBackground(
 		uint64 peerId,
 		Zone zone) {
@@ -133,6 +144,11 @@ QString BackgroundFileName(uint64 peerId, Zone zone) {
 	return QString();
 }
 
+bool BackgroundIsVideo(uint64 peerId, Zone zone) {
+	const auto source = ResolveBackground(peerId, zone);
+	return source && source->isVideo;
+}
+
 std::optional<Zone> TopRendererZone(uint64 peerId) {
 	if (HasBackground(peerId, Zone::Top)) {
 		return Zone::Top;
@@ -159,6 +175,13 @@ bool UsesInfoBackground(uint64 peerId) {
 
 bool BackgroundEnabledFor(not_null<PeerData*> peer) {
 	return peer->isUser();
+}
+
+rpl::producer<> BackgroundChanges(uint64 peerId) {
+	return rpl::merge(
+		AyuSettings::getInstance().customProfileBackgroundChanges(),
+		Whitegram::Backend::profileBackgroundUpdates(
+		) | rpl::filter(rpl::mappers::_1 == peerId) | rpl::to_empty);
 }
 
 QString StoreBackgroundFile(
@@ -221,6 +244,12 @@ void PickBackground(
 					? u"Выберите фото или видео."_q
 					: u"Choose a photo or video."_q);
 				return;
+			} else if (QFileInfo(source).size()
+				> Whitegram::Backend::kMaxProfileBackgroundUploadSize) {
+				controller->showToast(IsRussian()
+					? u"Файл должен быть меньше 32 МБ."_q
+					: u"The file must be smaller than 32 MB."_q);
+				return;
 			}
 			const auto stored = StoreBackgroundFile(peerId, zone, source);
 			if (stored.isEmpty()) {
@@ -240,12 +269,42 @@ void PickBackground(
 				zone,
 				stored,
 				isVideo);
+			controller->showToast(IsRussian()
+				? u"Фон профиля обновлён."_q
+				: u"Profile background updated."_q);
 		}));
 }
 
 void RemoveBackground(uint64 peerId, Zone zone) {
-	AyuSettings::getInstance().clearCustomProfileBackground(peerId, zone);
+	// The server copy goes first. Clearing the local one first would make
+	// everything showing the background load the cached server copy again
+	// for a moment, and a video reader holding that file open could stop it
+	// from being deleted.
 	Whitegram::Backend::RemoveProfileBackground(peerId, zone);
+	AyuSettings::getInstance().clearCustomProfileBackground(peerId, zone);
+}
+
+void ConfirmRemoveBackground(
+		not_null<Window::SessionController*> controller,
+		uint64 peerId,
+		Zone zone) {
+	const auto weak = base::make_weak(controller);
+	controller->show(Ui::MakeConfirmBox({
+		.text = (IsRussian()
+			? u"Удалить этот фон? Его перестанут видеть все."_q
+			: u"Remove this background? Nobody will see it anymore."_q),
+		.confirmed = [=](Fn<void()> close) {
+			RemoveBackground(peerId, zone);
+			close();
+			if (const auto strong = weak.get()) {
+				strong->showToast(IsRussian()
+					? u"Фон профиля удалён."_q
+					: u"Profile background removed."_q);
+			}
+		},
+		.confirmText = tr::lng_box_delete(),
+		.confirmStyle = &st::attentionBoxButton,
+	}));
 }
 
 void EnsureRemoteBackgrounds(uint64 peerId) {
@@ -263,9 +322,9 @@ void PaintFullOverlay(
 		return;
 	}
 	auto header = tint;
-	header.setAlpha(DimmedAlpha(kHeaderOverlayAlpha));
+	header.setAlpha(kHeaderOverlayAlpha);
 	auto content = tint;
-	content.setAlpha(DimmedAlpha(kContentOverlayAlpha));
+	content.setAlpha(kContentOverlayAlpha);
 	const auto zero = target.y() - panelTop;
 	auto gradient = QLinearGradient(
 		0,
@@ -277,6 +336,12 @@ void PaintFullOverlay(
 	p.fillRect(target, QBrush(gradient));
 }
 
+void PaintInfoOverlay(QPainter &p, const QRect &target, const QColor &tint) {
+	auto color = tint;
+	color.setAlpha(kContentOverlayAlpha);
+	p.fillRect(target, color);
+}
+
 Renderer::Renderer(Fn<void()> repaint)
 : _repaint(std::move(repaint)) {
 }
@@ -285,18 +350,27 @@ void Renderer::setPaintMetrics(
 		int scrollTop,
 		int topSkip,
 		int contentHeight,
-		int paneHeight) {
+		int paneHeight,
+		int headerHeight) {
 	if (_scrollTop == scrollTop
 		&& _topSkip == topSkip
 		&& _contentHeight == contentHeight
-		&& _paneHeight == paneHeight) {
+		&& _paneHeight == paneHeight
+		&& _headerHeight == headerHeight) {
 		return;
 	}
+	// A background pinned to the pane stays in place while the profile
+	// scrolls over it, so only the pane and the header change its look.
+	const auto pinned = (paneHeight > 0) && (_paneHeight == paneHeight);
+	const auto repaint = !pinned || (_headerHeight != headerHeight);
 	_scrollTop = scrollTop;
 	_topSkip = topSkip;
 	_contentHeight = contentHeight;
 	_paneHeight = paneHeight;
-	_repaint();
+	_headerHeight = headerHeight;
+	if (repaint) {
+		_repaint();
+	}
 }
 
 int Renderer::paintCoverHeight() const {
@@ -321,43 +395,71 @@ int Renderer::paintVisibleBottom() const {
 		: -1;
 }
 
+int Renderer::paintHeaderHeight() const {
+	return (_headerHeight > 0)
+		? _headerHeight
+		: st::infoProfileTopBarHeightMax;
+}
+
 void Renderer::setPeer(uint64 peerId, Zone zone) {
 	const auto background = ResolveBackground(peerId, zone);
 	if (!background) {
 		clear();
 		return;
 	}
+	// A fetched background is written to the same path every time, so the
+	// modification time and the size tell a new file apart from the one
+	// already shown. A file that could not be shown is not tried again until
+	// it changes, every reload would decode it again otherwise.
+	const auto info = QFileInfo(background->path);
+	const auto modified = info.lastModified();
+	const auto size = info.size();
 	if (_peerId == peerId
 		&& _zone == zone
 		&& _path == background->path
-		&& (!_image.isNull() || _video)) {
+		&& _modified == modified
+		&& _size == size) {
 		return;
 	}
-	clear();
+	reset();
 	_peerId = peerId;
 	_zone = zone;
 	_path = background->path;
+	_modified = modified;
+	_size = size;
 	if (background->isVideo) {
 		loadVideo(background->path);
 	} else {
 		loadImage(background->path);
 	}
+	// Set once, a picture replacing a picture keeps it true all the time.
+	_hasFrame = hasFrame();
 }
 
+Renderer::~Renderer() = default;
+
 void Renderer::clear() {
+	reset();
+	_hasFrame = false;
+}
+
+void Renderer::reset() {
 	_peerId = 0;
 	_path = QString();
+	_modified = QDateTime();
+	_size = -1;
 	_image = QImage();
-	_video = Media::Clip::ReaderPointer();
+	++_videoGeneration;
+	_video = nullptr;
 	_videoPath = QString();
 	_lastVideoFrame = QImage();
-	_frameAvailable = false;
 	invalidateCover();
 }
 
 void Renderer::invalidateCover() {
 	_coverCache = QImage();
 	_coverTarget = QSize();
+	_coverRatio = 0;
 }
 
 void Renderer::loadImage(const QString &path) {
@@ -394,72 +496,121 @@ void Renderer::loadImage(const QString &path) {
 
 void Renderer::loadVideo(const QString &path) {
 	_videoPath = path;
-	_frameAvailable = false;
-	const auto weak = base::make_weak(this);
-	_video = Media::Clip::MakeReader(path, [=](
-			Media::Clip::Notification notification) {
-		crl::on_main([=] {
-			if (const auto strong = weak.get()) {
-				strong->handleClipNotification(notification);
+	const auto generation = ++_videoGeneration;
+	// The file is read into memory away from the main thread. Nothing keeps
+	// it open while it plays then, so a newer version can replace it and a
+	// removed one can be deleted, Windows refuses both for an open file.
+	// Only a local file above kMaxVideoInMemory, set by an older version,
+	// is played from the disk and kept open, new ones can't be that big.
+	crl::async([=, weak = base::make_weak(this)] {
+		auto bytes = QByteArray();
+		auto file = QFile(path);
+		const auto inMemory = (file.size() <= kMaxVideoInMemory);
+		const auto read = inMemory
+			&& file.open(QIODevice::ReadOnly)
+			&& !(bytes = file.readAll()).isEmpty();
+		const auto unreadable = inMemory && !read;
+		crl::on_main(weak, [=, bytes = std::move(bytes)] {
+			if (_videoGeneration != generation || _videoPath != path) {
+				return;
+			} else if (unreadable) {
+				// Could be a moment when the file is being replaced, so it
+				// is tried again on the next reload instead of given up.
+				LOG(("Whitegram Background: could not read the video."));
+				_modified = QDateTime();
+				return;
 			}
+			startVideo(path, bytes);
 		});
 	});
 }
 
-void Renderer::restartVideo() {
-	if (_videoPath.isEmpty()) {
+void Renderer::startVideo(const QString &path, const QByteArray &bytes) {
+	using namespace Media::Streaming;
+
+	// Played with streaming, as video avatars are: the clip reader used for
+	// GIFs refuses anything above 1280x720, which most phone videos are.
+	// Empty bytes mean the file is too big to keep in memory.
+	auto loader = bytes.isEmpty()
+		? MakeFileLoader(path)
+		: MakeBytesLoader(bytes);
+	_video = std::make_unique<Instance>(
+		std::make_shared<Document>(std::move(loader)),
+		nullptr);
+	if (!_video->valid()) {
+		videoFailed();
 		return;
 	}
-	const auto path = _videoPath;
-	loadVideo(path);
-}
-
-void Renderer::handleClipNotification(Media::Clip::Notification notification) {
-	using namespace Media::Clip;
-	switch (notification) {
-	case Notification::Reinit:
-		if (_video && _video->state() == State::Error) {
-			LOG(("Whitegram Background: video decode error, dropping."));
-			_video = Media::Clip::ReaderPointer();
-			_videoPath = QString();
-			_lastVideoFrame = QImage();
-			_frameAvailable = false;
-			invalidateCover();
-		}
-		_repaint();
-		break;
-	case Notification::Repaint:
-		if (_video && !_video->currentDisplayed()) {
-			_frameAvailable = true;
+	_video->lockPlayer();
+	_video->player().updates(
+	) | rpl::on_next_error([=](Update &&update) {
+		v::match(update.data, [&](Information &) {
 			_repaint();
-		}
-		break;
-	}
+		}, [&](UpdateVideo &) {
+			_repaint();
+		}, [](const auto &) {
+		});
+	}, [=](Error &&) {
+		videoFailed();
+	}, _video->lifetime());
+
+	// Every frame waits until the previous one is painted, so nothing is
+	// decoded while the background is not on the screen.
+	auto options = PlaybackOptions();
+	options.mode = Mode::Video;
+	options.loop = true;
+	options.waitForMarkAsShown = true;
+	options.hwAllowed = Core::App().settings().hardwareAcceleratedVideo();
+	_video->play(options);
 }
 
-Media::Clip::FrameRequest Renderer::videoRequest() const {
-	const auto ratio = style::DevicePixelRatio();
-	auto size = QSize(
-		std::max(_video->width(), 1),
-		std::max(_video->height(), 1));
+void Renderer::videoFailed() {
+	LOG(("Whitegram Background: could not play the video."));
+	// The path stays, so the same file is not tried again on every reload.
+	_video = nullptr;
+	_lastVideoFrame = QImage();
+	_hasFrame = false;
+	_repaint();
+}
+
+bool Renderer::videoReady() const {
+	return _video
+		&& _video->player().ready()
+		&& !_video->player().videoSize().isEmpty();
+}
+
+void Renderer::advanceVideo() {
+	if (!videoReady()) {
+		return;
+	}
+	auto size = _video->player().videoSize();
 	if (size.width() > kMaxVideoSide || size.height() > kMaxVideoSide) {
 		size = size.scaled(kMaxVideoSide, kMaxVideoSide, Qt::KeepAspectRatio);
 	}
-	return {
-		.frame = QSize(
-			std::max(size.width() / ratio, 1),
-			std::max(size.height() / ratio, 1)),
-		.factor = ratio,
-	};
+	auto request = Media::Streaming::FrameRequest();
+	request.resize = request.outer = size;
+	auto frame = _video->frame(request);
+	if (!frame.isNull()) {
+		_lastVideoFrame = std::move(frame);
+		if (!_hasFrame.current()) {
+			// This runs while painting, the pages following the value
+			// restyle their rows, so they learn about it right after.
+			crl::on_main(base::make_weak(this), [=] {
+				_hasFrame = hasFrame();
+			});
+		}
+	}
+	_video->markFrameShown();
 }
 
 QImage Renderer::coverForTarget(QSize target) {
-	const auto &source = _video ? _lastVideoFrame : _image;
-	if (source.isNull() || target.isEmpty()) {
+	if (_image.isNull() || target.isEmpty()) {
 		return QImage();
 	}
-	if (target != _coverTarget || _coverCache.isNull()) {
-		const auto ratio = style::DevicePixelRatio();
+	const auto ratio = style::DevicePixelRatio();
+	if (target != _coverTarget
+		|| ratio != _coverRatio
+		|| _coverCache.isNull()) {
 		auto pixels = QSize(target.width() * ratio, target.height() * ratio);
 		if (pixels.width() > kMaxCoverSide || pixels.height() > kMaxCoverSide) {
 			pixels = pixels.scaled(
@@ -467,15 +618,55 @@ QImage Renderer::coverForTarget(QSize target) {
 				kMaxCoverSide,
 				Qt::KeepAspectRatio);
 		}
-		_coverCache = PrepareCoverImage(source, pixels);
+		_coverCache = PrepareCoverImage(_image, pixels);
 		_coverTarget = target;
+		_coverRatio = ratio;
 	}
 	return _coverCache;
 }
 
+bool Renderer::paintVideoFrame(
+		QPainter &p,
+		const QRect &destination,
+		QSize target,
+		int sliceTop) {
+	const auto &frame = _lastVideoFrame;
+	if (frame.isNull()) {
+		return false;
+	}
+	// Video frames change all the time, so instead of scaling every frame
+	// to the whole pane the visible part is cropped and drawn directly.
+	const auto frameWidth = float64(frame.width());
+	const auto frameHeight = float64(frame.height());
+	const auto scale = std::min(
+		frameWidth / target.width(),
+		frameHeight / target.height());
+	const auto left = (frameWidth - target.width() * scale) / 2.;
+	const auto top = (frameHeight - target.height() * scale) / 2.;
+	const auto source = QRectF(
+		left,
+		top + sliceTop * scale,
+		destination.width() * scale,
+		destination.height() * scale);
+	auto hq = PainterHighQualityEnabler(p);
+	p.drawImage(QRectF(destination), frame, source);
+	return true;
+}
+
 bool Renderer::active() const {
-	return !_image.isNull()
-		|| (_video && (_video->ready() || !_lastVideoFrame.isNull()));
+	return _videoPath.isEmpty()
+		? !_image.isNull()
+		: (!_lastVideoFrame.isNull() || videoReady());
+}
+
+bool Renderer::hasFrame() const {
+	return _videoPath.isEmpty()
+		? !_image.isNull()
+		: !_lastVideoFrame.isNull();
+}
+
+rpl::producer<bool> Renderer::hasFrameValue() const {
+	return _hasFrame.value();
 }
 
 bool Renderer::paint(
@@ -488,66 +679,41 @@ bool Renderer::paint(
 		return false;
 	}
 	const auto target = QSize(rect.width(), coverHeight);
-	if (_video) {
-		using namespace Media::Clip;
-		const auto state = _video->state();
-		if (state == State::Error) {
-			_video = Media::Clip::ReaderPointer();
-			_lastVideoFrame = QImage();
-			invalidateCover();
-			return false;
-		} else if (state == State::Finished) {
-			const auto path = _videoPath;
-			_video = Media::Clip::ReaderPointer();
-			if (!path.isEmpty()) {
-				crl::on_main([weak = base::make_weak(this), path] {
-					if (const auto strong = weak.get()) {
-						strong->loadVideo(path);
-					}
-				});
-			}
-		} else if (_video->ready() && !_video->started()) {
-			const auto request = videoRequest();
-			if (!request.frame.isEmpty()) {
-				_video->start(request);
-			}
-		} else if (_frameAvailable && _video->started()) {
-			_frameAvailable = false;
-			auto frame = _video->current(videoRequest(), crl::now());
-			if (!frame.isNull()) {
-				_lastVideoFrame = std::move(frame);
-				invalidateCover();
-			}
-		}
-	}
-	const auto prepared = coverForTarget(target);
-	if (prepared.isNull()) {
+	if (sourceY >= target.height()) {
 		return false;
 	}
-	const auto sliceTop = std::clamp(sourceY, 0, target.height() - 1);
+	const auto sliceTop = std::max(sourceY, 0);
 	const auto sliceHeight = std::min(rect.height(), target.height() - sliceTop);
 	if (sliceHeight <= 0) {
 		return false;
 	}
-	const auto scaleX = prepared.width() / float64(target.width());
-	const auto scaleY = prepared.height() / float64(target.height());
 	const auto destination = QRect(
 		rect.x(),
 		rect.y(),
 		rect.width(),
 		sliceHeight);
-	const auto source = QRectF(
-		0.,
-		sliceTop * scaleY,
-		rect.width() * scaleX,
-		sliceHeight * scaleY);
-	{
+	if (!_videoPath.isEmpty()) {
+		advanceVideo();
+		if (!paintVideoFrame(p, destination, target, sliceTop)) {
+			return false;
+		}
+	} else {
+		const auto prepared = coverForTarget(target);
+		if (prepared.isNull()) {
+			return false;
+		}
+		const auto scaleX = prepared.width() / float64(target.width());
+		const auto scaleY = prepared.height() / float64(target.height());
+		const auto source = QRectF(
+			0.,
+			sliceTop * scaleY,
+			rect.width() * scaleX,
+			sliceHeight * scaleY);
 		auto hq = PainterHighQualityEnabler(p);
 		p.drawImage(QRectF(destination), prepared, source);
 	}
-	const auto dimmedOverlay = DimmedAlpha(overlayAlpha);
-	if (dimmedOverlay > 0) {
-		p.fillRect(destination, QColor(0, 0, 0, dimmedOverlay));
+	if (overlayAlpha > 0) {
+		p.fillRect(destination, QColor(0, 0, 0, overlayAlpha));
 	}
 	return true;
 }
@@ -559,8 +725,7 @@ public:
 	FullBackgroundLayer(
 		not_null<Ui::RpWidget*> host,
 		Fn<PeerData*()> peer,
-		Fn<bool()> roundTopCorners,
-		FullProfileBackgroundBounds bounds);
+		Fn<bool()> roundTopCorners);
 
 	[[nodiscard]] base::weak_ptr<Renderer> renderer();
 
@@ -572,7 +737,6 @@ private:
 
 	const Fn<PeerData*()> _peer;
 	const Fn<bool()> _roundTopCorners;
-	const FullProfileBackgroundBounds _bounds;
 	Renderer _renderer;
 
 };
@@ -580,12 +744,10 @@ private:
 FullBackgroundLayer::FullBackgroundLayer(
 		not_null<Ui::RpWidget*> host,
 		Fn<PeerData*()> peer,
-		Fn<bool()> roundTopCorners,
-		FullProfileBackgroundBounds bounds)
+		Fn<bool()> roundTopCorners)
 : RpWidget(host)
 , _peer(std::move(peer))
 , _roundTopCorners(std::move(roundTopCorners))
-, _bounds(std::move(bounds))
 , _renderer([=] { update(); }) {
 	setAttribute(Qt::WA_TransparentForMouseEvents);
 	host->sizeValue(
@@ -595,10 +757,6 @@ FullBackgroundLayer::FullBackgroundLayer(
 	AyuSettings::getInstance().customProfileBackgroundChanges(
 	) | rpl::on_next([=] {
 		reload();
-	}, lifetime());
-	AyuSettings::getInstance().profileBackgroundDimChanges(
-	) | rpl::on_next([=] {
-		update();
 	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::on_next([=](uint64 userId) {
@@ -664,7 +822,7 @@ void FullBackgroundLayer::paintEvent(QPaintEvent *e) {
 			slice,
 			slice.y(),
 			extent,
-			st::infoProfileTopBarHeightMax,
+			_renderer.paintHeaderHeight(),
 			st::windowBg->c);
 	}
 }
@@ -674,6 +832,8 @@ public:
 	InfoBackgroundLayer(
 		not_null<Ui::RpWidget*> host,
 		Fn<PeerData*()> peer);
+
+	[[nodiscard]] rpl::producer<bool> paintedValue() const;
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -701,10 +861,6 @@ InfoBackgroundLayer::InfoBackgroundLayer(
 	) | rpl::on_next([=] {
 		reload();
 	}, lifetime());
-	AyuSettings::getInstance().profileBackgroundDimChanges(
-	) | rpl::on_next([=] {
-		update();
-	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::on_next([=](uint64 userId) {
 		const auto peer = _peer ? _peer() : nullptr;
@@ -715,6 +871,10 @@ InfoBackgroundLayer::InfoBackgroundLayer(
 	lower();
 	show();
 	reload();
+}
+
+rpl::producer<bool> InfoBackgroundLayer::paintedValue() const {
+	return _renderer.hasFrameValue();
 }
 
 void InfoBackgroundLayer::reload() {
@@ -739,10 +899,91 @@ void InfoBackgroundLayer::paintEvent(QPaintEvent *e) {
 	const auto clip = e->rect();
 	const auto slice = QRect(0, clip.y(), width(), clip.height());
 	if (_renderer.paint(p, slice, height(), slice.y(), 0)) {
-		auto tint = st::windowBg->c;
-		tint.setAlpha(DimmedAlpha(kContentOverlayAlpha));
-		p.fillRect(slice, tint);
+		PaintInfoOverlay(p, slice, st::windowBg->c);
 	}
+}
+
+// A child object of the marked widget. Being a child it goes away with the
+// widget by itself, and nothing has to point at it from the outside.
+class BackgroundHost final : public QObject {
+public:
+	BackgroundHost(not_null<QWidget*> parent, rpl::producer<bool> shown)
+	: QObject(parent.get())
+	, _shown(std::move(shown)) {
+		setObjectName(QString::fromLatin1(kHostObjectName));
+	}
+
+	[[nodiscard]] rpl::producer<bool> value() const {
+		return _shown.value();
+	}
+
+private:
+	rpl::variable<bool> _shown;
+
+};
+
+[[nodiscard]] BackgroundHost *FindOwnHost(not_null<QWidget*> widget) {
+	// Only BackgroundHost objects get this name, see its constructor.
+	return static_cast<BackgroundHost*>(widget->findChild<QObject*>(
+		QString::fromLatin1(kHostObjectName),
+		Qt::FindDirectChildrenOnly));
+}
+
+[[nodiscard]] BackgroundHost *FindHost(not_null<QWidget*> widget) {
+	for (auto w = widget.get(); w; w = w->parentWidget()) {
+		if (const auto host = FindOwnHost(w)) {
+			return host;
+		}
+	}
+	return nullptr;
+}
+
+[[nodiscard]] QColor SeeThroughOverColor() {
+	return WithOpacity(st::windowBgOver->c, kSeeThroughOverOpacity);
+}
+
+[[nodiscard]] QColor SeeThroughDividerColor() {
+	return WithOpacity(st::boxDividerBg->c, kSeeThroughDividerOpacity);
+}
+
+void ApplySeeThrough(
+		style::SettingsButton &button,
+		const style::SettingsButton &base,
+		bool shown,
+		const style::color &over) {
+	button.textBg = shown ? st::transparent : base.textBg;
+	button.textBgOver = shown ? over : base.textBgOver;
+}
+
+// Keeps a copy of the style in the owner's lifetime and switches its fills
+// with the background of the nearest host.
+template <typename Style, typename Apply>
+[[nodiscard]] const Style &MakeAdaptive(
+		not_null<Ui::RpWidget*> owner,
+		const Style &st,
+		Fn<QColor()> seeThrough,
+		Apply apply) {
+	const auto host = FindHost(owner);
+	if (!host) {
+		return st;
+	}
+	struct State {
+		State(const Style &base, Fn<QColor()> seeThrough)
+		: style(base)
+		, color(std::move(seeThrough)) {
+		}
+
+		Style style;
+		style::complex_color color;
+	};
+	const auto state = owner->lifetime().make_state<State>(
+		st,
+		std::move(seeThrough));
+	host->value() | rpl::on_next([=, base = &st](bool shown) {
+		apply(state->style, *base, shown, state->color.color());
+		owner->update();
+	}, owner->lifetime());
+	return state->style;
 }
 
 } // namespace
@@ -750,20 +991,113 @@ void InfoBackgroundLayer::paintEvent(QPaintEvent *e) {
 base::weak_ptr<Renderer> SetupFullBackgroundLayer(
 		not_null<Ui::RpWidget*> host,
 		Fn<PeerData*()> peer,
-		Fn<bool()> roundTopCorners,
-		FullProfileBackgroundBounds bounds) {
+		Fn<bool()> roundTopCorners) {
 	const auto layer = Ui::CreateChild<FullBackgroundLayer>(
 		host.get(),
 		std::move(peer),
-		std::move(roundTopCorners),
-		std::move(bounds));
+		std::move(roundTopCorners));
 	return layer->renderer();
 }
 
-void AttachInfoBackgroundLayer(
+rpl::producer<bool> AttachInfoBackgroundLayer(
 		not_null<Ui::RpWidget*> host,
 		Fn<PeerData*()> peer) {
-	Ui::CreateChild<InfoBackgroundLayer>(host.get(), std::move(peer));
+	const auto layer = Ui::CreateChild<InfoBackgroundLayer>(
+		host.get(),
+		std::move(peer));
+	return layer->paintedValue();
+}
+
+void MarkBackgroundHost(
+		not_null<Ui::RpWidget*> host,
+		rpl::producer<bool> shown) {
+	// Marking a widget again replaces the earlier mark.
+	delete FindOwnHost(host);
+	new BackgroundHost(host, std::move(shown));
+}
+
+rpl::producer<bool> BackgroundShownValue(not_null<QWidget*> widget) {
+	if (const auto host = FindHost(widget)) {
+		return host->value();
+	}
+	return rpl::single(false);
+}
+
+const style::SettingsButton &AdaptiveStyle(
+		not_null<Ui::RpWidget*> owner,
+		const style::SettingsButton &st) {
+	return MakeAdaptive(owner, st, SeeThroughOverColor, [](
+			style::SettingsButton &button,
+			const style::SettingsButton &base,
+			bool shown,
+			const style::color &over) {
+		ApplySeeThrough(button, base, shown, over);
+	});
+}
+
+const style::SettingsCountButton &AdaptiveStyle(
+		not_null<Ui::RpWidget*> owner,
+		const style::SettingsCountButton &st) {
+	return MakeAdaptive(owner, st, SeeThroughOverColor, [](
+			style::SettingsCountButton &button,
+			const style::SettingsCountButton &base,
+			bool shown,
+			const style::color &over) {
+		ApplySeeThrough(button.button, base.button, shown, over);
+	});
+}
+
+const style::DividerBar &AdaptiveStyle(
+		not_null<Ui::RpWidget*> owner,
+		const style::DividerBar &st) {
+	return MakeAdaptive(owner, st, SeeThroughDividerColor, [](
+			style::DividerBar &bar,
+			const style::DividerBar &base,
+			bool shown,
+			const style::color &bg) {
+		bar.bg = shown ? bg : base.bg;
+	});
+}
+
+const style::DividerLabel &AdaptiveStyle(
+		not_null<Ui::RpWidget*> owner,
+		const style::DividerLabel &st) {
+	return MakeAdaptive(owner, st, SeeThroughDividerColor, [](
+			style::DividerLabel &divider,
+			const style::DividerLabel &base,
+			bool shown,
+			const style::color &bg) {
+		divider.bar.bg = shown ? bg : base.bar.bg;
+	});
+}
+
+const style::PeerList &AdaptiveStyle(
+		not_null<Ui::RpWidget*> owner,
+		const style::PeerList &st) {
+	return MakeAdaptive(owner, st, SeeThroughOverColor, [](
+			style::PeerList &list,
+			const style::PeerList &base,
+			bool shown,
+			const style::color &over) {
+		list.bg = shown ? st::transparent : base.bg;
+		auto &button = list.item.button;
+		button.textBg = shown ? st::transparent : base.item.button.textBg;
+		button.textBgOver = shown ? over : base.item.button.textBgOver;
+	});
+}
+
+const style::SubTabs &AdaptiveStyle(
+		not_null<Ui::RpWidget*> owner,
+		const style::SubTabs &st) {
+	return MakeAdaptive(owner, st, SeeThroughDividerColor, [](
+			style::SubTabs &tabs,
+			const style::SubTabs &base,
+			bool shown,
+			const style::color &) {
+		// The fades at the edges of a scrolled strip are filled with this
+		// color, they would show as solid bars over the background.
+		tabs.bg = shown ? st::transparent : base.bg;
+	});
 }
 
 } // namespace AyuFeatures::CustomProfileBackground

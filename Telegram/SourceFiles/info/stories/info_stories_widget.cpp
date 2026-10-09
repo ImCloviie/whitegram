@@ -157,23 +157,32 @@ Widget::Widget(
 			this,
 			[=]() -> PeerData* {
 				const auto peer = controller->key().storiesPeer();
-				return (peer && peer->isSelf()) ? peer : nullptr;
+				return (peer
+					&& peer->isSelf()
+					&& !controller->key().storiesAddToAlbumId())
+					? peer
+					: nullptr;
 			},
-			[=] { return controller->wrap() == Wrap::Layer; },
-			{
-				.scrollTop = [=] { return scrollTopSave(); },
-				.topSkip = [=] { return innerTopReserve(); },
-				.contentHeight = [=] { return _inner->fullProfileCoverHeight(); },
-			});
+			[=] { return controller->wrap() == Wrap::Layer; });
 	const auto applyMetrics = [=, weak = renderer] {
 		if (const auto strong = weak.get()) {
+			// The background covers the whole pane, as on the other profile
+			// pages. Ending it with the details block cut it off too early,
+			// because the cover is shifted by the scroll top skip, which
+			// left the ID row and everything below without it.
 			strong->setPaintMetrics(
 				scrollTopSave(),
 				innerTopReserve(),
-				_inner->fullProfileCoverHeight());
+				_inner->fullProfileCoverHeight(),
+				height(),
+				_pinnedToTop ? _pinnedToTop->maximumHeight() : 0);
 		}
 	};
 	scrollTopValue(
+	) | rpl::on_next([=](int) {
+		applyMetrics();
+	}, lifetime());
+	heightValue(
 	) | rpl::on_next([=](int) {
 		applyMetrics();
 	}, lifetime());
@@ -188,10 +197,12 @@ Widget::Widget(
 		}, _pinnedToTop->lifetime());
 	}
 	applyMetrics();
+	if (const auto strong = renderer.get()) {
+		// The rows below see through to the layer only while it paints.
+		_inner->setFullBackgroundPainted(strong->hasFrameValue());
+	}
 	if (const auto top = dynamic_cast<Profile::TopBar*>(_pinnedToTop.get())) {
-		top->setFullProfileBackground(
-			renderer,
-			[=] { return _inner->fullProfileCoverHeight(); });
+		top->setFullProfileBackground(renderer);
 	}
 }
 

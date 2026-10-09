@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_values.h"
 
 #include "api/api_chat_participants.h"
+#include "ayu/ayu_settings.h"
 #include "apiwrap.h"
 #include "info/profile/info_profile_phone_menu.h"
 #include "info/profile/info_profile_badge.h"
@@ -165,9 +166,13 @@ rpl::producer<TextWithEntities> PhoneWithSpoilerValue(
 	}
 	return rpl::combine(
 		std::move(phone),
-		user->session().settings().phoneNumberHiddenValue()
-	) | rpl::map([](const TextWithEntities &phone, bool hidden) {
-		return hidden
+		user->session().settings().phoneNumberHiddenValue(),
+		AyuSettings::getInstance().hidePhoneNumberValue()
+	) | rpl::map([](
+			const TextWithEntities &phone,
+			bool hidden,
+			bool ayuHidden) {
+		return (hidden && !ayuHidden)
 			? Ui::Text::Wrapped(phone, EntityType::Spoiler)
 			: phone;
 	});

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/media/info_media_buttons.h"
 
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "base/call_delayed.h"
 #include "base/platform/base_platform_info.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -145,7 +146,9 @@ not_null<Ui::SlideWrap<Ui::SettingsButton>*> AddCountedButton(
 		object_ptr<Ui::SettingsButton>(
 			parent,
 			std::move(text),
-			st::infoSharedMediaButton))
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				parent,
+				st::infoSharedMediaButton)))
 	)->setDuration(
 		st::infoSlideDuration
 	)->toggleOn(

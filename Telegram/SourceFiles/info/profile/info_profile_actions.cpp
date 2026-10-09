@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ui/ghost_profile_box.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/components/phone_blur.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
 
 #include "api/api_blocked_peers.h"
@@ -1792,6 +1793,11 @@ Section DetailsFiller::makeInfo() {
 				tr::lng_profile_copy_phone(tr::now),
 				st::infoProfileLabeledPadding,
 				st::popupMenuWithIcons).text;
+			if (user->isSelf()) {
+				Ui::CreateChild<Ayu::UI::PhoneBlur>(
+					phoneLabel->parentWidget(),
+					phoneLabel);
+			}
 			const auto hook = [=](Ui::FlatLabel::ContextMenuRequest request) {
 				if (request.selection.empty()) {
 					const auto callback = [=] {

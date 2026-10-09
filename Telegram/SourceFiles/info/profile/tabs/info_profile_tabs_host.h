@@ -143,6 +143,7 @@ private:
 	bool _scrolledToTop = true;
 	bool _searching = false;
 	bool _searchContentFits = false;
+	bool _backgroundShown = false;
 	int _keepMinHeight = 0;
 	rpl::variable<MediaTabContent*> _activeTab = nullptr;
 

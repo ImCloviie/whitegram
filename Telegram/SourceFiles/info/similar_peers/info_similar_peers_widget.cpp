@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/similar_peers/info_similar_peers_widget.h"
 
 #include "api/api_chat_participants.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "apiwrap.h"
 #include "boxes/peer_list_box.h"
 #include "data/data_channel.h"
@@ -29,6 +30,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Info::SimilarPeers {
 namespace {
+
+constexpr auto kUnlockOverBackgroundOpacity = 0.85;
 
 class ListController final : public PeerListController {
 public:
@@ -223,18 +226,35 @@ void ListController::setupUnlock() {
 
 	_unlockHeight = _unlock->heightValue();
 
+	// Over a profile background the rows below still fade out, but the
+	// background keeps showing through a little.
+	const auto backgroundShown = _unlock->lifetime().make_state<
+		rpl::variable<bool>>(
+			AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+				_unlock));
+	backgroundShown->changes(
+	) | rpl::on_next([=] {
+		_unlock->update();
+	}, _unlock->lifetime());
+
 	_unlock->paintRequest(
 	) | rpl::on_next([=] {
 		auto p = QPainter(_unlock);
 		const auto width = _unlock->width();
 		const auto fade = st::similarChannelsLockFade;
+		auto fill = st::windowBg->c;
+		if (backgroundShown->current()) {
+			fill.setAlphaF(fill.alphaF() * kUnlockOverBackgroundOpacity);
+		}
+		auto transparent = fill;
+		transparent.setAlpha(0);
 		auto gradient = QLinearGradient(0, 0, 0, fade);
 		gradient.setStops({
-			{ 0., QColor(255, 255, 255, 0) },
-			{ 1., st::windowBg->c },
+			{ 0., transparent },
+			{ 1., fill },
 		});
 		p.fillRect(0, 0, width, fade, gradient);
-		p.fillRect(0, fade, width, _unlock->height() - fade, st::windowBg);
+		p.fillRect(0, fade, width, _unlock->height() - fade, fill);
 	}, _unlock->lifetime());
 }
 
@@ -364,7 +384,11 @@ int InnerWidget::desiredHeight() const {
 object_ptr<InnerWidget::ListWidget> InnerWidget::setupList(
 		RpWidget *parent,
 		not_null<ListController*> controller) {
-	controller->setStyleOverrides(&st::infoMembersList);
+	// See-through while the list is shown on a profile with a background.
+	controller->setStyleOverrides(
+		&AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			parent,
+			st::infoMembersList));
 	auto result = object_ptr<ListWidget>(
 		parent,
 		controller);

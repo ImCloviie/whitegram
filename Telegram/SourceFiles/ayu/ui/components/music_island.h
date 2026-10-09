@@ -119,6 +119,7 @@ private:
 	[[nodiscard]] Layout computeLayout(float64 expand) const;
 	[[nodiscard]] Part partAt(QPoint point) const;
 	[[nodiscard]] QPoint freeTopLeft(QSize outer) const;
+	void saveFreePosition();
 	[[nodiscard]] float64 displayedProgress() const;
 	[[nodiscard]] float64 seekProgressFor(QPoint point) const;
 	[[nodiscard]] bool fitsInParent() const;
@@ -195,6 +196,7 @@ private:
 	Part _hoveredPart = Part::None;
 	Part _pressedPart = Part::None;
 	bool _down = false;
+	bool _mouseGrabbed = false;
 	QPoint _downPoint;
 	QPoint _downGlobalPoint;
 	QPoint _lastMousePos;
@@ -207,6 +209,7 @@ private:
 	bool _lyricsLoading = false;
 	int _lyricsGeneration = 0;
 	int _lyricsActive = -1;
+	int _lyricsDirection = 1; // +1 forward, -1 after a seek backwards
 	float64 _lyricsProgress = -1.;
 	int64 _lyricsPositionMs = 0;
 	crl::time _lyricsLineChangedAt = 0;

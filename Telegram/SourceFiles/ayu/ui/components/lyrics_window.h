@@ -46,6 +46,7 @@ private:
 		double fade,
 		int lineSeed) const;
 	void ensureVisible(int active);
+	[[nodiscard]] double maxScroll() const;
 	void updateAutoScroll();
 
 	Ayu::Ui::Lyrics::Data _data;
@@ -53,6 +54,7 @@ private:
 	QString _title;
 	long long _positionMs = 0;
 	int _active = -1;
+	int _lastActive = -1;
 	double _progress = -1.;
 	double _scroll = 0.; // px from top
 	double _scrollTarget = 0.;

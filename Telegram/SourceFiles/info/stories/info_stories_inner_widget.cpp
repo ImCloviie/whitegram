@@ -206,11 +206,13 @@ InnerWidget::InnerWidget(
 	QWidget *parent,
 	not_null<Controller*> controller,
 	rpl::producer<int> albumId,
-	int addingToAlbumId)
+	int addingToAlbumId,
+	bool myProfile)
 : RpWidget(parent)
 , _controller(controller)
 , _peer(controller->key().storiesPeer())
 , _addingToAlbumId(addingToAlbumId)
+, _myProfile(myProfile)
 , _albumId(std::move(albumId))
 , _albumChanges(Data::StoryAlbumUpdate{
 	.peer = _peer,
@@ -302,7 +304,7 @@ void InnerWidget::setupTop() {
 		return;
 	} else if (albumId == Data::kStoriesAlbumIdArchive) {
 		createAboutArchive();
-	} else if (_isStackBottom) {
+	} else if (_isStackBottom || _myProfile) {
 		if (_peer->isSelf()) {
 			createProfileTop();
 		} else if (_peer->owner().stories().hasArchive(_peer)) {

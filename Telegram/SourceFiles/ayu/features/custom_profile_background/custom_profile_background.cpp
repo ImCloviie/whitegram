@@ -144,6 +144,13 @@ QString BackgroundFileName(uint64 peerId, Zone zone) {
 	return QString();
 }
 
+QString BackgroundFilePath(uint64 peerId, Zone zone) {
+	if (const auto source = ResolveBackground(peerId, zone)) {
+		return source->path;
+	}
+	return QString();
+}
+
 bool BackgroundIsVideo(uint64 peerId, Zone zone) {
 	const auto source = ResolveBackground(peerId, zone);
 	return source && source->isVideo;

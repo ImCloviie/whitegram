@@ -53,6 +53,7 @@ using Zone = ::CustomProfileBackground::Zone;
 
 [[nodiscard]] bool HasBackground(uint64 peerId, Zone zone);
 [[nodiscard]] QString BackgroundFileName(uint64 peerId, Zone zone);
+[[nodiscard]] QString BackgroundFilePath(uint64 peerId, Zone zone);
 [[nodiscard]] bool BackgroundIsVideo(uint64 peerId, Zone zone);
 [[nodiscard]] std::optional<Zone> TopRendererZone(uint64 peerId);
 [[nodiscard]] std::optional<Zone> BottomRendererZone(uint64 peerId);

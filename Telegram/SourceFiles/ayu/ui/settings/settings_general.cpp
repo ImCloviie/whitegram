@@ -206,8 +206,8 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 				AyuSettings::getInstance().setPhoneRevealMode(
 					static_cast<PhoneRevealMode>(i));
 			},
-			.shown = AyuSettings::getInstance().hidePhoneNumberValue(),
 			.icon = { &st::menuIconPhone },
+			.shown = AyuSettings::getInstance().hidePhoneNumberValue(),
 		});
 	}
 

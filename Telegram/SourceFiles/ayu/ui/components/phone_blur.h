@@ -23,11 +23,11 @@ namespace Ayu::UI {
 // a blurred snapshot of the number and fades out when revealed.
 // Reveal triggers (hover or click) are observed via an event filter
 // on the label, so the label keeps its normal mouse behaviour.
-class PhoneBlur final : public Ui::RpWidget {
+class PhoneBlur final : public ::Ui::RpWidget {
 public:
 	PhoneBlur(
 		QWidget *parent,
-		not_null<Ui::FlatLabel*> phoneLabel);
+		not_null<::Ui::FlatLabel*> phoneLabel);
 
 private:
 	void paintEvent(QPaintEvent *e) override;
@@ -39,8 +39,8 @@ private:
 	[[nodiscard]] bool BlurEnabled() const;
 	[[nodiscard]] QImage GrabLabelImage();
 
-	const not_null<Ui::FlatLabel*> _phoneLabel;
-	Ui::Animations::Simple _revealing;
+	const not_null<::Ui::FlatLabel*> _phoneLabel;
+	::Ui::Animations::Simple _revealing;
 	QImage _blurred;
 	bool _revealed = false;
 	bool _hoverMode = false;

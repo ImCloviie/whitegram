@@ -56,6 +56,12 @@ constexpr auto kMaxVideoSide = 1280;
 constexpr auto kMaxVideoInMemory = 64 * 1024 * 1024;
 constexpr auto kHeaderOverlayAlpha = 70;
 constexpr auto kContentOverlayAlpha = 150;
+
+// The dimming from the settings slider, 0% - 100%.
+[[nodiscard]] int DimmedOverlayAlpha(int base) {
+	const auto dim = AyuSettings::getInstance().profileBackgroundDim();
+	return (base * dim + 50) / 100;
+}
 constexpr auto kSeeThroughOverOpacity = 0.6;
 constexpr auto kSeeThroughDividerOpacity = 0.5;
 constexpr auto kHostObjectName = "whitegramProfileBackgroundHost";
@@ -329,9 +335,9 @@ void PaintFullOverlay(
 		return;
 	}
 	auto header = tint;
-	header.setAlpha(kHeaderOverlayAlpha);
+	header.setAlpha(DimmedOverlayAlpha(kHeaderOverlayAlpha));
 	auto content = tint;
-	content.setAlpha(kContentOverlayAlpha);
+	content.setAlpha(DimmedOverlayAlpha(kContentOverlayAlpha));
 	const auto zero = target.y() - panelTop;
 	auto gradient = QLinearGradient(
 		0,
@@ -345,7 +351,7 @@ void PaintFullOverlay(
 
 void PaintInfoOverlay(QPainter &p, const QRect &target, const QColor &tint) {
 	auto color = tint;
-	color.setAlpha(kContentOverlayAlpha);
+	color.setAlpha(DimmedOverlayAlpha(kContentOverlayAlpha));
 	p.fillRect(target, color);
 }
 
@@ -720,7 +726,7 @@ bool Renderer::paint(
 		p.drawImage(QRectF(destination), prepared, source);
 	}
 	if (overlayAlpha > 0) {
-		p.fillRect(destination, QColor(0, 0, 0, overlayAlpha));
+		p.fillRect(destination, QColor(0, 0, 0, DimmedOverlayAlpha(overlayAlpha)));
 	}
 	return true;
 }
@@ -764,6 +770,10 @@ FullBackgroundLayer::FullBackgroundLayer(
 	AyuSettings::getInstance().customProfileBackgroundChanges(
 	) | rpl::on_next([=] {
 		reload();
+	}, lifetime());
+	AyuSettings::getInstance().profileBackgroundDimChanges(
+	) | rpl::on_next([=](int) {
+		update();
 	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::on_next([=](uint64 userId) {
@@ -867,6 +877,10 @@ InfoBackgroundLayer::InfoBackgroundLayer(
 	AyuSettings::getInstance().customProfileBackgroundChanges(
 	) | rpl::on_next([=] {
 		reload();
+	}, lifetime());
+	AyuSettings::getInstance().profileBackgroundDimChanges(
+	) | rpl::on_next([=](int) {
+		update();
 	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::on_next([=](uint64 userId) {

@@ -1486,6 +1486,51 @@ void InitClientInfo() {
 	CheckUpdateAvailability();
 }
 
+void SyncTimeSpent(uint64 userId, int64 localMinutes) {
+	if (!userId || localMinutes < 0) {
+		return;
+	}
+	const auto url = QUrl(BaseUrl()
+		+ u"/api/v1/time-spent/"_q
+		+ QString::number(userId));
+	const auto get = Service::Instance().accessManager().get(
+		AuthorizedRequest(url));
+	QObject::connect(get, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { get->deleteLater(); });
+		if (get->error() != QNetworkReply::NoError) {
+			return;
+		}
+		int64 remote = 0;
+		try {
+			const auto data = nlohmann::json::parse(get->readAll().constData());
+			remote = data.value("totalMinutes", int64(0));
+		} catch (...) {
+			return;
+		}
+		const auto merged = std::max(localMinutes, remote);
+		const auto body = QByteArray("{\"totalMinutes\":")
+			+ QByteArray::number(merged)
+			+ QByteArray("}");
+		auto put = AuthorizedRequest(url);
+		put.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+		const auto reply = Service::Instance().accessManager().put(put, body);
+		QObject::connect(reply, &QNetworkReply::finished, [=] {
+			const auto guard = gsl::finally([&] { reply->deleteLater(); });
+			if (reply->error() != QNetworkReply::NoError) {
+				return;
+			}
+			try {
+				const auto data = nlohmann::json::parse(reply->readAll().constData());
+				const auto server = data.value("totalMinutes", merged);
+				if (server > AyuSettings::getInstance().getTotalTimeSpent()) {
+					AyuSettings::getInstance().setTotalTimeSpent(server);
+				}
+			} catch (...) {
+			}
+		});
+	});
+}
+
 void FetchClientInfo() {
 	const auto url = QUrl(BaseUrl() + u"/api/v1/client-info"_q);
 	auto request = QNetworkRequest(url);
@@ -1517,6 +1562,19 @@ QString LocalPreBetaVersion() {
 	const auto version = AppVersion;
 	if (version >= 7000008 && version < 7010000) {
 		return u"1.0."_q + QString::number(version - 7000008);
+	}
+	if (version >= 7010000 && version < 7020000) {
+		const auto offset = version - 7010000;
+		const auto major = offset / 10000;
+		const auto remainder = offset % 10000;
+		const auto minor = remainder / 100;
+		const auto patch = remainder % 100;
+		return u"1."_q
+			+ QString::number(1 + major)
+			+ u'.'
+			+ QString::number(minor)
+			+ u'.'
+			+ QString::number(patch);
 	}
 	const auto offset = version - 7000000;
 	const auto major = offset / 10000;

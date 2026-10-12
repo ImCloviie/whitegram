@@ -14,6 +14,9 @@
 #include "ui/widgets/labels.h"
 #include "styles/style_ayu_styles.h"
 
+#include <QPaintEvent>
+#include <QtGui/QMouseEvent>
+
 namespace Ayu::UI {
 namespace {
 
@@ -23,8 +26,8 @@ constexpr auto kRevealDuration = crl::time(180);
 
 PhoneBlur::PhoneBlur(
 	QWidget *parent,
-	not_null<Ui::FlatLabel*> phoneLabel)
-: RpWidget(parent)
+	not_null<::Ui::FlatLabel*> phoneLabel)
+: ::Ui::RpWidget(parent)
 , _phoneLabel(phoneLabel) {
 	setAttribute(Qt::WA_TransparentForMouseEvents);
 	refreshMode();
@@ -97,9 +100,9 @@ void PhoneBlur::syncWithSettings(anim::type animated) {
 }
 
 void PhoneBlur::updateGeometryToLabel() {
-	const auto mapped = Ui::MapFrom(
+	const auto mapped = ::Ui::MapFrom(
 		parentWidget(),
-		_phoneLabel.data(),
+		_phoneLabel,
 		QPoint(0, 0));
 	setGeometryToLeft(
 		mapped.x(),

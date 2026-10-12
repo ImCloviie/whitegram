@@ -151,11 +151,11 @@ Preview::Preview(QWidget *parent, not_null<UserData*> self)
 		QString::fromUtf8(
 			"Подходят фото и видео меньше 32 МБ. Фон видят все, кто "
 			"пользуется Whitegram. Лучше всего смотрятся вертикальные "
-			"изображения, например 1080×2400."),
+			"изображения, например 1080×2800."),
 		QString(
 			"Photos and videos under 32 MB work. Everyone who uses "
 			"Whitegram sees your background. Vertical images, like "
-			"1080×2400, look best.")),
+			"1080×2800, look best.")),
 	st::defaultDividerLabel.label))
 , _full([=] { updateCard(); })
 , _top([=] { updateCard(); })

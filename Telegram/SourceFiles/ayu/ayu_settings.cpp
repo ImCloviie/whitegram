@@ -12,6 +12,7 @@
 #include "ayu/ayu_worker.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/ui/ayu_logo.h"
 #include "core/application.h"
 #include "media/audio/media_audio_track.h"
@@ -738,10 +739,24 @@ void AyuSettings::initTimeSpentTracker() {
 		settings._timeSpentTimer = std::make_unique<base::Timer>([] {
 			auto &s = getInstance();
 			s.setTotalTimeSpent(s.getTotalTimeSpent() + 1);
+			if (const auto window = Core::App().activeWindow()) {
+				if (const auto session = window->maybeSession()) {
+					Whitegram::Backend::SyncTimeSpent(
+						session->userId().bare,
+						s.getTotalTimeSpent());
+				}
+			}
 		});
 	}
 	if (!settings._timeSpentTimer->isActive()) {
 		settings._timeSpentTimer->callEach(60 * crl::time(1000));
+	}
+	if (const auto window = Core::App().activeWindow()) {
+		if (const auto session = window->maybeSession()) {
+			Whitegram::Backend::SyncTimeSpent(
+				session->userId().bare,
+				settings.getTotalTimeSpent());
+		}
 	}
 }
 

@@ -211,7 +211,7 @@ void FillDonateInfoBox(
 		const auto tonSymbol = emojiHelper.paletteDependent({
 			.factory = [=]
 			{
-				return Ui::Earn::IconCurrencyColored(
+				return Ui::Earn::IconCurrencyTwoTone(
 					st::boxDividerLabel.style.font,
 					st::boxDividerLabel.textFg->c);
 			},

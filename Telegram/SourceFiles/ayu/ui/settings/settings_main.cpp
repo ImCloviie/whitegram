@@ -720,11 +720,33 @@ protected:
 		p.drawRoundedRect(badge, st::profileBackgroundBadgeRadius, st::profileBackgroundBadgeRadius);
 		p.setPen(st::windowBg);
 		p.drawText(badge, badgeText, Qt::AlignVCenter | Qt::AlignHCenter);
+
+		// Remove button on the right of the badge, only when set.
+		if (has) {
+			const auto removeText = Lang::Id().startsWith(u"ru"_q)
+				? QString::fromUtf8("Удалить")
+				: QString("Remove");
+			const auto removeWidth = st::defaultTextStyle.font->width(removeText)
+				+ st::profileBackgroundBadgePadding.left()
+				+ st::profileBackgroundBadgePadding.right();
+			const auto remove = QRect(
+				inner.x() + inner.width() - removeWidth,
+				badge.y(),
+				removeWidth,
+				badgeHeight);
+			_removeRect = remove;
+			p.setBrush(Qt::NoBrush);
+			p.setPen(st::boxTextFgError->c);
+			p.setFont(st::defaultTextStyle.font);
+			p.drawText(remove, removeText, Qt::AlignVCenter | Qt::AlignHCenter);
+		} else {
+			_removeRect = QRect();
+		}
 	}
 
 	void mousePressEvent(QMouseEvent *e) override {
 		if (e->button() == Qt::LeftButton) {
-			if (_remove && e->pos().y() > height() - 50) {
+			if (_remove && _removeRect.contains(e->pos())) {
 				_remove();
 			} else {
 				_pick();
@@ -733,11 +755,6 @@ protected:
 	}
 
 	int resizeGetHeight(int newWidth) override {
-		const auto inner = newWidth
-			- st::profileBackgroundCardMargin.left()
-			- st::profileBackgroundCardMargin.right()
-			- st::profileBackgroundCardPadding.left()
-			- st::profileBackgroundCardPadding.right();
 		return st::profileBackgroundCardMargin.top()
 			+ st::profileBackgroundCardPadding.top()
 			+ st::profileBackgroundPreviewHeight
@@ -771,6 +788,7 @@ private:
 	::CustomProfileBackground::Zone _zone = ::CustomProfileBackground::Zone::Full;
 	Fn<void()> _pick;
 	Fn<void()> _remove;
+	QRect _removeRect;
 	QString _path;
 	QImage _preview;
 
@@ -2179,6 +2197,9 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 		.onFinalChanged = [](int value) {
 			AyuSettings::getInstance().setProfileBackgroundDim(value);
 		},
+		.onChanged = [](int value) {
+			AyuSettings::getInstance().setProfileBackgroundDim(value);
+		},
 		.formatLabel = [](int value) {
 			return QString::number(value) + u'%';
 		},
@@ -2191,12 +2212,12 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 			"Затемнение помогает сохранить читаемость текста на светлых "
 			"фонах. 100% — как задумано, 0% — без затемнения. Другие "
 			"пользователи Whitegram тоже увидят эти фоны. Лучше всего "
-			"подходят вертикальные изображения вроде 1080×2400."),
+			"подходят вертикальные изображения вроде 1080×2800."),
 		QString(
 			"Dimming keeps text readable on bright backgrounds. 100% is "
 			"the designed look, 0% is no dimming. Other Whitegram users "
 			"will see these backgrounds too. Vertical images like "
-			"1080×2400 work best.")));
+			"1080×2800 work best.")));
 	builder.addSkip();
 });
 [[nodiscard]] std::vector<QString> MusicIslandExpandModeOptions() {

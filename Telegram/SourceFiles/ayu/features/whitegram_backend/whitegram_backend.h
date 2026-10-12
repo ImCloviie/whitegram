@@ -44,6 +44,7 @@ void FetchClientInfo();
 [[nodiscard]] QString LocalPreBetaVersion();
 
 void CheckUpdateAvailability();
+void SyncTimeSpent(uint64 userId, int64 localMinutes);
 [[nodiscard]] bool IsUpdateAvailable();
 [[nodiscard]] rpl::producer<bool> updateAvailableValue();
 void TriggerUpdateDownload();

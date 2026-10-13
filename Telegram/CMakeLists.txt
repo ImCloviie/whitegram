@@ -60,7 +60,7 @@ if (WIN32)
 endif()
 
 include(cmake/generate_update_keys.cmake)
-generate_update_keys(Telegram ${res_loc}/update)
+generate_update_keys(Telegram ${res_loc}/update_whitegram)
 
 if (DESKTOP_APP_TEST_APPS OR TDESKTOP_BUILD_UPDATE_TESTS)
     include(cmake/test_update_verify.cmake)
@@ -73,6 +73,15 @@ if (DESKTOP_APP_TEST_APPS OR TDESKTOP_BUILD_UPDATE_TESTS)
 endif()
 
 set_target_properties(Telegram PROPERTIES AUTOMOC ON)
+
+if (WIN32)
+    # Whitegram: fold identical functions/data at link time (the ICF part
+    # of "strip by linker"), noticeably slimming the Release binary.
+    target_link_options(Telegram
+    PRIVATE
+        $<$<NOT:$<CONFIG:Debug>>:/OPT:ICF>
+    )
+endif()
 
 target_link_libraries(Telegram
 PRIVATE

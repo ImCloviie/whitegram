@@ -7,20 +7,37 @@
 #include "ayu/ui/components/phone_blur.h"
 
 #include "ayu/ayu_settings.h"
+#include "base/algorithm.h"
 #include "base/event_filter.h"
-#include "ui/image/image_prepare.h"
-#include "ui/painter.h"
+#include "styles/style_ayu_styles.h"
+#include "styles/palette.h"
 #include "ui/ui_utility.h"
 #include "ui/widgets/labels.h"
-#include "styles/style_ayu_styles.h"
 
-#include <QPaintEvent>
+#include <crl/crl_time.h>
 #include <QtGui/QMouseEvent>
+#include <QtGui/QPainter>
+#include <QtGui/QPainterPath>
+#include <QtGui/QPaintEvent>
+
+#include <cmath>
+#include <random>
 
 namespace Ayu::UI {
 namespace {
 
 constexpr auto kRevealDuration = crl::time(180);
+constexpr auto kParticleCount = 48;
+
+[[nodiscard]] QColor StarTint(std::mt19937 &rng) {
+	const auto roll = std::uniform_real_distribution<float64>(0., 1.)(rng);
+	if (roll < 0.7) {
+		return QColor(235, 240, 255); // star white
+	} else if (roll < 0.9) {
+		return QColor(150, 190, 255); // cool blue
+	}
+	return QColor(255, 215, 170); // warm giant
+}
 
 } // namespace
 
@@ -32,6 +49,11 @@ PhoneBlur::PhoneBlur(
 	setAttribute(Qt::WA_TransparentForMouseEvents);
 	refreshMode();
 	hide();
+
+	_twinkle.init([=](crl::time) {
+		update();
+		return true;
+	});
 
 	setupLabelEvents();
 
@@ -97,6 +119,7 @@ void PhoneBlur::syncWithSettings(anim::type animated) {
 	} else {
 		setRevealed(true, animated);
 	}
+	updateAnimationState();
 }
 
 void PhoneBlur::updateGeometryToLabel() {
@@ -104,10 +127,15 @@ void PhoneBlur::updateGeometryToLabel() {
 		parentWidget(),
 		_phoneLabel,
 		QPoint(0, 0));
+	// Hug the number itself, not the whole (usually full-width) label:
+	// covering empty space next to the text looked like a stray stripe.
+	const auto textWidth = std::max(
+		0,
+		std::min(_phoneLabel->width(), _phoneLabel->textMaxWidth()));
 	setGeometryToLeft(
 		mapped.x(),
 		mapped.y(),
-		_phoneLabel->width(),
+		textWidth,
 		_phoneLabel->height());
 	update();
 }
@@ -117,6 +145,7 @@ void PhoneBlur::setRevealed(bool revealed, anim::type animated) {
 		_revealing.stop();
 		_revealed = revealed;
 		update();
+		updateAnimationState();
 		return;
 	}
 	const auto target = revealed ? 0. : 1.;
@@ -124,8 +153,49 @@ void PhoneBlur::setRevealed(bool revealed, anim::type animated) {
 	_revealed = revealed;
 	_revealing.start([=](float64) {
 		update();
+		updateAnimationState();
 	}, current, target, kRevealDuration, anim::easeOutCubic);
 	update();
+	updateAnimationState();
+}
+
+void PhoneBlur::ensureParticles() {
+	if (!_particles.empty()) {
+		return;
+	}
+	auto rng = std::mt19937(0x57A2F1EDu); // fixed seed: one calm sky
+	auto unit = std::uniform_real_distribution<float64>(0., 1.);
+	_particles.reserve(kParticleCount);
+	for (auto i = 0; i < kParticleCount; ++i) {
+		_particles.push_back({
+			.x = unit(rng),
+			.y = unit(rng),
+			.drift = 0.003 + unit(rng) * 0.009, // cross in ~80..300 s
+			.phase = unit(rng) * 6.2831853,
+			.frequency = 1.0 + unit(rng) * 1.6,
+			.size = 0.5 + unit(rng) * 0.8,
+			.tint = StarTint(rng),
+		});
+	}
+}
+
+void PhoneBlur::updateAnimationState() {
+	const auto covered = BlurEnabled() && !_revealed && isVisible();
+	if (covered || _revealing.animating()) {
+		_twinkle.start();
+	} else {
+		_twinkle.stop();
+	}
+}
+
+void PhoneBlur::showEvent(QShowEvent *e) {
+	RpWidget::showEvent(e);
+	updateAnimationState();
+}
+
+void PhoneBlur::hideEvent(QHideEvent *e) {
+	RpWidget::hideEvent(e);
+	updateAnimationState();
 }
 
 void PhoneBlur::paintEvent(QPaintEvent *e) {
@@ -136,35 +206,49 @@ void PhoneBlur::paintEvent(QPaintEvent *e) {
 	if (progress <= 0.) {
 		return;
 	}
+	ensureParticles();
 
-	if (_blurred.isNull()
-		|| _blurred.size() / style::DevicePixelRatio() != size()) {
-		auto grabbed = GrabLabelImage();
-		_blurred = grabbed.isNull()
-			? QImage()
-			: Images::BlurLargeImage(
-				std::move(grabbed),
-				style::ConvertScale(st::phoneBlurRadius));
-	}
+	const auto r = rect();
+	const auto radius = style::ConvertScale(st::phoneBlurRadius);
 
 	auto p = QPainter(this);
-	if (!_blurred.isNull()) {
-		p.setOpacity(progress);
-		p.drawImage(rect(), _blurred);
-	}
-}
+	p.setRenderHint(QPainter::Antialiasing);
+	p.setOpacity(progress);
 
-QImage PhoneBlur::GrabLabelImage() {
-	if (_phoneLabel->size().isEmpty()) {
-		return {};
+	auto path = QPainterPath();
+	path.addRoundedRect(QRectF(r), radius, radius);
+	p.setClipPath(path);
+
+	// Deep-space backdrop derived from the window background.
+	const auto base = st::windowBg->c;
+	p.fillRect(r, QColor(
+		6 + base.red() / 8,
+		9 + base.green() / 8,
+		20 + base.blue() / 6));
+
+	// Drifting, twinkling stars.
+	const auto t = crl::now() / 1000.;
+	const auto w = float64(r.width());
+	const auto h = float64(r.height());
+	p.setPen(Qt::NoPen);
+	for (const auto &particle : _particles) {
+		const auto x = std::fmod(particle.x + t * particle.drift, 1.) * w;
+		const auto y = particle.y * h;
+		const auto twinkle = 0.35
+			+ 0.65 * (0.5 + 0.5 * std::sin(
+				t * particle.frequency + particle.phase));
+		const auto alpha = int(base::SafeRound(255 * twinkle));
+
+		auto halo = particle.tint;
+		halo.setAlpha(alpha / 5);
+		p.setBrush(halo);
+		p.drawEllipse(QPointF(x, y), particle.size * 2.2, particle.size * 2.2);
+
+		auto core = particle.tint;
+		core.setAlpha(alpha);
+		p.setBrush(core);
+		p.drawEllipse(QPointF(x, y), particle.size, particle.size);
 	}
-	auto result = QImage(
-		_phoneLabel->size(),
-		QImage::Format_ARGB32_Premultiplied);
-	result.fill(Qt::transparent);
-	auto p = QPainter(&result);
-	_phoneLabel->render(&p, QPoint(0, 0));
-	return result;
 }
 
 } // namespace Ayu::UI

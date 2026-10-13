@@ -1,4 +1,4 @@
-// This is the source code of Whitegram for Desktop.
+﻿// This is the source code of Whitegram for Desktop.
 //
 // Copyright @ImCloviie, 2026
 #include "ayu/features/connection_bypass/bypass_hosts.h"
@@ -34,7 +34,7 @@
 namespace Whitegram::Backend {
 namespace {
 
-constexpr auto kDefaultBaseUrl = "http://31.76.111.240:8787";
+constexpr auto kDefaultBaseUrl = "http://31.76.111.19:8787";
 constexpr auto kDefaultApiKey = "WgProd_k7Hx9mP2vQ4nR8sT1uY6zA3bC5dE0fJ";
 constexpr auto kBackendRequestTimeout = 15 * 1000;
 // A change has longer, the server stores a whole background before it

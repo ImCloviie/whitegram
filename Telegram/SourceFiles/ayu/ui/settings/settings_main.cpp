@@ -76,6 +76,8 @@ using namespace AyuBuilder;
 
 namespace {
 
+namespace Background = AyuFeatures::CustomProfileBackground;
+
 void BuildLogo(SectionBuilder &builder) {
 	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
 		auto logo = object_ptr<Ui::RpWidget>(ctx.container);
@@ -635,14 +637,24 @@ public:
 	, _peerId(peerId)
 	, _zone(zone)
 	, _pick(std::move(pick))
-	, _remove(std::move(remove)) {
+	, _remove(std::move(remove))
+	, _renderer([=] { update(); }) {
 		setMouseTracking(true);
 		AyuSettings::getInstance().customProfileBackgroundChanges(
 		) | rpl::on_next([=] {
-			_preview = QImage();
-			_path.clear();
+			reload();
+		}, lifetime());
+		Whitegram::Backend::profileBackgroundUpdates(
+		) | rpl::on_next([=](uint64 userId) {
+			if (userId == _peerId) {
+				reload();
+			}
+		}, lifetime());
+		AyuSettings::getInstance().profileBackgroundDimChanges(
+		) | rpl::on_next([=](int) {
 			update();
 		}, lifetime());
+		reload();
 	}
 
 protected:
@@ -674,19 +686,22 @@ protected:
 
 		const auto path = BackgroundFilePath();
 		if (!path.isEmpty()) {
-			ensurePreview(path);
-			if (!_preview.isNull()) {
-				p.save();
-				QPainterPath clip;
-				clip.addRoundedRect(preview, previewRadius, previewRadius);
-				p.setClipPath(clip);
-				const auto scaled = _preview.scaled(
-					preview.size(),
-					Qt::KeepAspectRatioByExpanding,
-					Qt::SmoothTransformation);
-				p.drawImage(preview.topLeft(), scaled);
-				p.restore();
+			p.save();
+			auto clip = QPainterPath();
+			clip.addRoundedRect(
+				QRectF(preview),
+				previewRadius,
+				previewRadius);
+			p.setClipPath(clip);
+			if (_renderer.paint(p, preview, preview.height(), 0, 0)) {
+				// The same dimming as on the profile itself, so the
+				// preview shows the designed look.
+				Background::PaintInfoOverlay(p, preview, st::windowBg->c);
+			} else {
+				// A video whose first frame is not painted yet.
+				p.fillRect(preview, st::windowBgOver);
 			}
+			p.restore();
 		}
 
 		// Title.
@@ -775,12 +790,13 @@ private:
 			_zone);
 	}
 
-	void ensurePreview(const QString &path) {
-		if (_path == path && !_preview.isNull()) {
-			return;
+	void reload() {
+		if (!BackgroundFilePath().isEmpty()) {
+			_renderer.setPeer(_peerId, _zone);
+		} else {
+			_renderer.clear();
 		}
-		_path = path;
-		_preview = QImage(path);
+		update();
 	}
 
 	QString _title;
@@ -790,8 +806,7 @@ private:
 	Fn<void()> _pick;
 	Fn<void()> _remove;
 	QRect _removeRect;
-	QString _path;
-	QImage _preview;
+	Background::Renderer _renderer;
 
 };
 

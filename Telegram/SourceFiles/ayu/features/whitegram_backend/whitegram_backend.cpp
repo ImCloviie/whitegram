@@ -1569,8 +1569,7 @@ QString LocalPreBetaVersion() {
 		const auto remainder = offset % 10000;
 		const auto minor = remainder / 100;
 		const auto patch = remainder % 100;
-		return u"1."_q
-			+ QString::number(1 + major)
+		return QString::number(1 + major)
 			+ u'.'
 			+ QString::number(minor)
 			+ u'.'

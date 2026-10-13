@@ -54,6 +54,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/fade_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
+#include "ui/new_badges.h"
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "ui/vertical_list.h"
@@ -62,7 +63,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
 
 
 namespace Info {
@@ -111,6 +111,9 @@ void AddUnofficialSecurityRiskWarning(
 			layout,
 			object_ptr<Ui::VerticalLayout>(layout)));
 	const auto content = wrap->entity();
+	const auto bar = &AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		content,
+		st::defaultDividerLabel.bar);
 	user->session().changes().peerFlagsValue(
 		user,
 		Data::PeerUpdate::Flag::FullInfo
@@ -120,32 +123,7 @@ void AddUnofficialSecurityRiskWarning(
 		}
 		if (user->unofficialSecurityRisk()) {
 			auto helper = Ui::Text::CustomEmojiHelper();
-			auto icon = helper.paletteDependent({
-				.factory = [] {
-					const auto s = st::infoSecurityRiskIconSize;
-					const auto ratio = style::DevicePixelRatio();
-					const auto rect = QRect(0, 0, s, s);
-					auto result = QImage(
-						rect.size() * ratio,
-						QImage::Format_ARGB32_Premultiplied);
-					result.setDevicePixelRatio(ratio);
-					result.fill(Qt::transparent);
-
-					auto p = QPainter(&result);
-					auto hq = PainterHighQualityEnabler(p);
-					p.setPen(Qt::NoPen);
-					p.setBrush(st::attentionButtonFg);
-					p.drawEllipse(rect);
-
-					p.setPen(st::windowFgActive);
-					p.setFont(st::semiboldFont);
-					p.drawText(rect, u"!"_q, style::al_center);
-
-					p.end();
-					return result;
-				},
-				.margin = st::infoSecurityRiskIconMargin,
-			});
+			auto icon = helper.paletteDependent(Ui::AttentionMarkEmoji());
 			auto label = object_ptr<Ui::FlatLabel>(
 				content,
 				tr::lng_profile_unofficial_warning(
@@ -161,7 +139,7 @@ void AddUnofficialSecurityRiskWarning(
 				content,
 				std::move(label),
 				st::defaultBoxDividerLabelPadding,
-				st::defaultDividerLabel.bar,
+				*bar,
 				RectParts()));
 		}
 		content->resizeToWidth(content->width());
@@ -195,13 +173,13 @@ InnerWidget::InnerWidget(
 	}, lifetime());
 }
 
-bool InnerWidget::fullProfileBackgroundActive() const {
-	namespace Background = AyuFeatures::CustomProfileBackground;
-	return !_savedMessages
-		&& !_topic
-		&& !_sublist
-		&& Background::BackgroundEnabledFor(_peer)
-		&& Background::UsesFullBackground(_peer->id.value);
+rpl::producer<bool> InnerWidget::fullProfileBackgroundValue() const {
+	// Follows what the layer paints, see Widget::setupFullProfileBackground.
+	return _fullBackgroundPainted.value();
+}
+
+void InnerWidget::setFullBackgroundPainted(rpl::producer<bool> painted) {
+	_fullBackgroundPainted = std::move(painted);
 }
 
 int InnerWidget::fullProfileCoverHeight() const {
@@ -234,6 +212,12 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		}, lifetime());
 	}
 
+	// Everything built below looks for this mark to drop its opaque fills
+	// while the full profile background is painted under the profile.
+	AyuFeatures::CustomProfileBackground::MarkBackgroundHost(
+		parent,
+		fullProfileBackgroundValue());
+
 	auto result = object_ptr<Ui::VerticalLayout>(parent);
 
 	if (!_savedMessages && !(_topic && _topic->creating())) {
@@ -242,20 +226,12 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		const auto musicPeer = _sublist
 			? _sublist->sublistPeer().get()
 			: _peer.get();
-		auto fullProfileBackground = rpl::single(
-			rpl::empty
-		) | rpl::then(rpl::merge(
-			AyuSettings::getInstance().customProfileBackgroundChanges(),
-			Whitegram::Backend::profileBackgroundUpdates() | rpl::to_empty
-		)) | rpl::map([=] {
-			return fullProfileBackgroundActive();
-		}) | rpl::distinct_until_changed();
 		AddSavedMusic(
 			coverLayout,
 			_controller,
 			musicPeer,
 			_topBarColor.value(),
-			std::move(fullProfileBackground));
+			fullProfileBackgroundValue());
 		if (const auto user = _peer->asUser()) {
 			AddUnofficialSecurityRiskWarning(coverLayout, user);
 		}
@@ -308,7 +284,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		auto tabs = std::vector<MediaTabDescriptor>();
 		const auto countValue = [&](Storage::SharedMediaType type) {
 			return SharedMediaCountValue(
-				tabsPeer,
+				_peer,
 				topicRootId,
 				monoforumPeerId,
 				_migrated,
@@ -367,12 +343,8 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		addTab(Storage::SharedMediaType::File);
 		addTab(Storage::SharedMediaType::Link);
 		addTab(Storage::SharedMediaType::MusicFile);
-		tabs.push_back(MakePollsTabDescriptor(SharedMediaCountValue(
-			tabsPeer,
-			topicRootId,
-			monoforumPeerId,
-			_migrated,
-			Storage::SharedMediaType::Poll) | rpl::map(_1 > 0)));
+		tabs.push_back(MakePollsTabDescriptor(
+			countValue(Storage::SharedMediaType::Poll) | rpl::map(_1 > 0)));
 		addTab(Storage::SharedMediaType::RoundVoiceFile);
 		addTab(Storage::SharedMediaType::GIF);
 		if (!_topic && !_sublist && !_savedMessages) {

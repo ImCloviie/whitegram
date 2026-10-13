@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_hash.h"
 #include "api/api_premium.h"
 #include "apiwrap.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "boxes/share_box.h"
 #include "boxes/star_gift_box.h"
 #include "core/ui_integration.h"
@@ -292,6 +293,7 @@ private:
 	QSize _singleMin;
 	QSize _single;
 	int _perRow = 0;
+	bool _backgroundShown = false;
 	int _visibleFrom = 0;
 	int _visibleTill = 0;
 
@@ -358,6 +360,14 @@ InnerWidget::InnerWidget(
 , _api(&_peer->session().mtp())
 , _scrollAnimation([=] { updateScrollCallback(); }) {
 	_singleMin = _delegate.buttonSize();
+
+	// On a profile with a background the gifts lie right on it.
+	AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+		this
+	) | rpl::on_next([=](bool shown) {
+		_backgroundShown = shown;
+		update();
+	}, lifetime());
 
 	if (peer->canManageGifts()) {
 		subscribeToUpdates();
@@ -618,6 +628,9 @@ void InnerWidget::visibleTopBottomUpdated(
 }
 
 void InnerWidget::paintEvent(QPaintEvent *e) {
+	if (_backgroundShown) {
+		return;
+	}
 	auto p = QPainter(this);
 
 	const auto aboutSize = _about
@@ -1538,7 +1551,9 @@ void InnerWidget::refreshCollectionsTabs() {
 		const auto tabsCount = tabs.size();
 		_collectionsTabs = std::make_unique<Ui::SubTabs>(
 			this,
-			st::collectionSubTabs,
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				this,
+				st::collectionSubTabs),
 			Ui::SubTabs::Options{ .selected = selected, .centered = true },
 			std::move(tabs),
 			context);

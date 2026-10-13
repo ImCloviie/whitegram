@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/tabs/adapters/info_profile_tab_polls.h"
 
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "data/data_forum_topic.h"
 #include "data/data_peer.h"
 #include "data/data_saved_sublist.h"
@@ -36,9 +37,7 @@ public:
 		SharedMediaType::Poll,
 		context.migrated,
 		true)
-	, _countPeer(context.sublist
-		? context.sublist->sublistPeer()
-		: context.peer)
+	, _countPeer(context.peer)
 	, _topicRootId(context.topic ? context.topic->rootId() : MsgId())
 	, _monoforumPeerId(context.sublist
 		? context.sublist->sublistPeer()->id
@@ -46,6 +45,13 @@ public:
 	, _migrated(context.migrated)
 	, _host(context.parent) {
 		const auto host = _host.data();
+		// On a profile with a background the chat wallpaper is not shown.
+		AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+			host
+		) | rpl::on_next([this](bool shown) {
+			_backgroundShown = shown;
+			_host->update();
+		}, host->lifetime());
 		_polls = Polls::ListWidget::MakeInline(
 			host,
 			&_subController,
@@ -59,7 +65,7 @@ public:
 
 		host->paintRequest(
 		) | rpl::on_next([this](QRect clip) {
-			if (!skeletonShown()) {
+			if (paintsWallpaper()) {
 				auto p = QPainter(_host.data());
 				_polls.paintBackground(p, clip);
 			}
@@ -136,7 +142,7 @@ public:
 	}
 
 	void paintOverflow(QPainter &p) override {
-		if (!skeletonShown()) {
+		if (paintsWallpaper()) {
 			_polls.paintBackground(p, QRect());
 		}
 	}
@@ -152,6 +158,9 @@ public:
 	}
 
 private:
+	[[nodiscard]] bool paintsWallpaper() const {
+		return !skeletonShown() && !_backgroundShown;
+	}
 	[[nodiscard]] bool skeletonShown() const {
 		return !_listLoaded && (_polls.list->height() <= 0);
 	}
@@ -186,6 +195,7 @@ private:
 	int _width = 0;
 	int _viewportHeight = 0;
 	bool _listLoaded = false;
+	bool _backgroundShown = false;
 
 };
 

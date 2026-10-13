@@ -9,6 +9,14 @@ namespace Whitegram::Backend {
 
 using Zone = CustomProfileBackground::Zone;
 
+// The largest photo or video a profile background can be. A video is
+// played from memory, so no file of it is kept open.
+inline constexpr auto kMaxProfileBackgroundSize = qint64(32 * 1024 * 1024);
+// The largest file the server stores, it refuses one of exactly the size
+// above.
+inline constexpr auto kMaxProfileBackgroundUploadSize
+	= kMaxProfileBackgroundSize - 1;
+
 [[nodiscard]] QString BaseUrl();
 [[nodiscard]] QString ApiKey();
 
@@ -36,6 +44,7 @@ void FetchClientInfo();
 [[nodiscard]] QString LocalPreBetaVersion();
 
 void CheckUpdateAvailability();
+void SyncTimeSpent(uint64 userId, int64 localMinutes);
 [[nodiscard]] bool IsUpdateAvailable();
 [[nodiscard]] rpl::producer<bool> updateAvailableValue();
 void TriggerUpdateDownload();

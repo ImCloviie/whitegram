@@ -26,7 +26,6 @@ class SavedStarGiftId;
 } // namespace Data
 
 namespace Info::Profile {
-class BadgeTooltip;
 class TopicIconView;
 } // namespace Info::Profile
 
@@ -59,6 +58,7 @@ struct FlatLabel;
 namespace Ui {
 class AnimatedString;
 class FlatLabel;
+class GlareTooltip;
 class IconButton;
 class InputField;
 class LabelWithNumbers;
@@ -149,8 +149,7 @@ public:
 
 	rpl::producer<std::optional<QColor>> edgeColor() const;
 	void setFullProfileBackground(
-		base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> renderer,
-		Fn<int()> coverContentHeight = nullptr);
+		base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> renderer);
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -224,7 +223,8 @@ private:
 	void paintTabSubtitle(QPainter &p);
 	void reloadCustomBackground();
 	[[nodiscard]] bool fullProfileBackgroundAllowed() const;
-	bool paintFullProfileBackground(QPainter &p);
+	[[nodiscard]] bool fullProfileBackgroundShown() const;
+	bool paintTopBackground(QPainter &p, int coverHeight);
 	void updateRightButtonsPosition();
 	void updateTabGroupActive();
 	[[nodiscard]] bool tabSwapActive() const;
@@ -274,8 +274,8 @@ private:
 	const bool _hasActions;
 	const int _minForProgress;
 
-	std::unique_ptr<BadgeTooltip> _badgeTooltip;
-	std::vector<std::unique_ptr<BadgeTooltip>> _badgeOldTooltips;
+	std::unique_ptr<Ui::GlareTooltip> _badgeTooltip;
+	std::vector<std::unique_ptr<Ui::GlareTooltip>> _badgeOldTooltips;
 	uint64 _badgeCollectibleId = 0;
 
 	object_ptr<Ui::MarqueeLabel> _title;
@@ -399,7 +399,6 @@ private:
 
 	AyuFeatures::CustomProfileBackground::Renderer _customBackground;
 	base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> _fullBackground;
-	Fn<int()> _fullBackgroundCoverHeight;
 
 };
 

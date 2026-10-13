@@ -79,6 +79,8 @@ public:
 	}
 	[[nodiscard]] int fullProfileCoverHeight() const;
 	[[nodiscard]] rpl::producer<int> fullProfileCoverHeightValue() const;
+	// Whether the full profile background layer paints anything.
+	void setFullBackgroundPainted(rpl::producer<bool> painted);
 
 protected:
 	int resizeGetHeight(int newWidth) override;
@@ -90,7 +92,7 @@ private:
 	object_ptr<RpWidget> setupContent(
 		not_null<RpWidget*> parent,
 		Origin origin);
-	[[nodiscard]] bool fullProfileBackgroundActive() const;
+	[[nodiscard]] rpl::producer<bool> fullProfileBackgroundValue() const;
 	[[nodiscard]] Section makeMembersSection(
 		not_null<QWidget*> parent,
 		rpl::producer<bool> shown);
@@ -132,6 +134,7 @@ private:
 	rpl::variable<bool> _tabsDocked = false;
 	bool _clampingTabsScroll = false;
 	rpl::variable<int> _fullProfileCoverHeight;
+	rpl::variable<bool> _fullBackgroundPainted = false;
 
 	object_ptr<RpWidget> _content;
 

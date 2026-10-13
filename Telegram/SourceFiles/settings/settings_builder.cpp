@@ -313,6 +313,7 @@ Ui::SettingsButton *SectionBuilder::addSectionButton(SectionArgs &&args) {
 		.altIds = std::move(args.altIds),
 		.title = std::move(args.title),
 		.icon = std::move(args.icon),
+		.label = std::move(args.label),
 		.onClick = [=] { showOther(target); },
 		.keywords = std::move(args.keywords),
 	});

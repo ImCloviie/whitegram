@@ -9,12 +9,13 @@
 #include "settings/sections/settings_main.h"
 #include "lang_auto.h"
 #include "lang/lang_instance.h"
+#include "lang/lang_keys.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
 #include "ayu/features/self_destruct/self_destruct.h"
 #include "ayu/features/self_destruct/self_destruct_box.h"
 #include "ayu/features/custom_archives/custom_archives.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/ui/ayu_logo.h"
 #include "ayu/ui/components/icon_picker.h"
 #include "ayu/ui/settings/custom_archives_box.h"
@@ -74,6 +75,8 @@ using namespace Builder;
 using namespace AyuBuilder;
 
 namespace {
+
+namespace Background = AyuFeatures::CustomProfileBackground;
 
 void BuildLogo(SectionBuilder &builder) {
 	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
@@ -615,6 +618,195 @@ protected:
 
 private:
 	const not_null<Ui::VerticalLayout*> _content;
+
+};
+
+class ProfileBackgroundCard final : public Ui::RpWidget {
+public:
+	ProfileBackgroundCard(
+		QWidget *parent,
+		QString title,
+		QString hint,
+		uint64 peerId,
+		::CustomProfileBackground::Zone zone,
+		Fn<void()> pick,
+		Fn<void()> remove)
+	: Ui::RpWidget(parent)
+	, _title(std::move(title))
+	, _hint(std::move(hint))
+	, _peerId(peerId)
+	, _zone(zone)
+	, _pick(std::move(pick))
+	, _remove(std::move(remove))
+	, _renderer([=] { update(); }) {
+		setMouseTracking(true);
+		AyuSettings::getInstance().customProfileBackgroundChanges(
+		) | rpl::on_next([=] {
+			reload();
+		}, lifetime());
+		Whitegram::Backend::profileBackgroundUpdates(
+		) | rpl::on_next([=](uint64 userId) {
+			if (userId == _peerId) {
+				reload();
+			}
+		}, lifetime());
+		AyuSettings::getInstance().profileBackgroundDimChanges(
+		) | rpl::on_next([=](int) {
+			update();
+		}, lifetime());
+		reload();
+	}
+
+protected:
+	void paintEvent(QPaintEvent *e) override {
+		auto p = QPainter(this);
+		auto hq = PainterHighQualityEnabler(p);
+
+		const auto radius = st::profileBackgroundCardRadius;
+		const auto rect = this->rect().marginsRemoved(
+			st::profileBackgroundCardMargin);
+		if (rect.isEmpty()) {
+			return;
+		}
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowBgOver);
+		p.drawRoundedRect(rect, radius, radius);
+
+		const auto inner = rect.marginsRemoved(st::profileBackgroundCardPadding);
+
+		// Preview plate.
+		const auto preview = QRect(
+			inner.x(),
+			inner.y(),
+			inner.width(),
+			st::profileBackgroundPreviewHeight);
+		const auto previewRadius = st::profileBackgroundPreviewRadius;
+		p.setBrush(st::windowBg);
+		p.drawRoundedRect(preview, previewRadius, previewRadius);
+
+		const auto path = BackgroundFilePath();
+		if (!path.isEmpty()) {
+			p.save();
+			auto clip = QPainterPath();
+			clip.addRoundedRect(
+				QRectF(preview),
+				previewRadius,
+				previewRadius);
+			p.setClipPath(clip);
+			if (_renderer.paint(p, preview, preview.height(), 0, 0)) {
+				// The same dimming as on the profile itself, so the
+				// preview shows the designed look.
+				Background::PaintInfoOverlay(p, preview, st::windowBg->c);
+			} else {
+				// A video whose first frame is not painted yet.
+				p.fillRect(preview, st::windowBgOver);
+			}
+			p.restore();
+		}
+
+		// Title.
+		p.setPen(st::windowActiveTextFg);
+		p.setFont(st::semiboldFont);
+		const auto textTop = preview.bottom()
+			+ 1 + st::profileBackgroundZoneSkip;
+		p.drawText(
+			QRect(inner.x(), textTop, inner.width(), st::semiboldFont->height),
+			_title,
+			Qt::AlignVCenter | Qt::AlignLeft);
+
+		// Status badge under the title.
+		const auto has = !path.isEmpty();
+		const auto badgeText = has
+			? QString::fromUtf8("Настроен")
+			: QString::fromUtf8("Не задан");
+		p.setFont(st::defaultTextStyle.font);
+		const auto badgeWidth = st::defaultTextStyle.font->width(badgeText)
+			+ st::profileBackgroundBadgePadding.left()
+			+ st::profileBackgroundBadgePadding.right();
+		const auto badgeHeight = st::defaultTextStyle.font->height
+			+ st::profileBackgroundBadgePadding.top()
+			+ st::profileBackgroundBadgePadding.bottom();
+		const auto badge = QRect(
+			inner.x(),
+			textTop + st::semiboldFont->height + 4,
+			badgeWidth,
+			badgeHeight);
+		p.setBrush(has ? st::groupCallLive1 : st::windowSubTextFg);
+		p.setPen(Qt::NoPen);
+		p.drawRoundedRect(badge, st::profileBackgroundBadgeRadius, st::profileBackgroundBadgeRadius);
+		p.setPen(st::windowBg);
+		p.drawText(badge, badgeText, Qt::AlignVCenter | Qt::AlignHCenter);
+
+		// Remove button on the right of the badge, only when set.
+		if (has) {
+			const auto removeText = Lang::GetInstance().id().startsWith(u"ru"_q)
+				? QString::fromUtf8("Удалить")
+				: QString("Remove");
+			const auto removeWidth = st::defaultTextStyle.font->width(removeText)
+				+ st::profileBackgroundBadgePadding.left()
+				+ st::profileBackgroundBadgePadding.right();
+			const auto remove = QRect(
+				inner.x() + inner.width() - removeWidth,
+				badge.y(),
+				removeWidth,
+				badgeHeight);
+			_removeRect = remove;
+			p.setBrush(Qt::NoBrush);
+			p.setPen(st::boxTextFgError->c);
+			p.setFont(st::defaultTextStyle.font);
+			p.drawText(remove, removeText, Qt::AlignVCenter | Qt::AlignHCenter);
+		} else {
+			_removeRect = QRect();
+		}
+	}
+
+	void mousePressEvent(QMouseEvent *e) override {
+		if (e->button() == Qt::LeftButton) {
+			if (_remove && _removeRect.contains(e->pos())) {
+				_remove();
+			} else {
+				_pick();
+			}
+		}
+	}
+
+	int resizeGetHeight(int newWidth) override {
+		return st::profileBackgroundCardMargin.top()
+			+ st::profileBackgroundCardPadding.top()
+			+ st::profileBackgroundPreviewHeight
+			+ st::profileBackgroundZoneSkip
+			+ st::semiboldFont->height
+			+ 4
+			+ st::defaultTextStyle.font->height
+			+ 2 * st::profileBackgroundBadgePadding.top()
+			+ st::profileBackgroundCardPadding.bottom()
+			+ st::profileBackgroundCardMargin.bottom();
+	}
+
+private:
+	[[nodiscard]] QString BackgroundFilePath() const {
+		return AyuFeatures::CustomProfileBackground::BackgroundFilePath(
+			_peerId,
+			_zone);
+	}
+
+	void reload() {
+		if (!BackgroundFilePath().isEmpty()) {
+			_renderer.setPeer(_peerId, _zone);
+		} else {
+			_renderer.clear();
+		}
+		update();
+	}
+
+	QString _title;
+	QString _hint;
+	uint64 _peerId = 0;
+	::CustomProfileBackground::Zone _zone = ::CustomProfileBackground::Zone::Full;
+	Fn<void()> _pick;
+	Fn<void()> _remove;
+	QRect _removeRect;
+	Background::Renderer _renderer;
 
 };
 
@@ -1923,11 +2115,127 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 	.title = QString::fromUtf8("Фон профиля"),
 	.icon = &st::menuIconPhoto,
 }, [](SectionBuilder &builder) {
-	// Kept only so the section id stays registered; the actual UI lives on the
-	// "My Profile" page (settings_information.cpp).
-	Q_UNUSED(builder);
-});
+	namespace Background = AyuFeatures::CustomProfileBackground;
+	using Zone = Background::Zone;
+	auto ayu = AyuSectionBuilder(builder);
+	const auto peerId = builder.session()->userPeerId().value;
+	const auto controller = builder.controller();
 
+	builder.addSkip();
+	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		return {
+			.widget = object_ptr<Ui::FlatLabel>(
+				ctx.container,
+				trWhitegram(
+					QString::fromUtf8(
+						"Свой фон для твоего профиля: шапка, весь профиль "
+						"или блок «Информация». Поддерживаются фото и видео."),
+					QString(
+						"Custom background for your profile: header, full "
+						"profile or the info block. Photos and videos "
+						"are supported.")),
+				st::boxDividerLabel),
+		};
+	});
+	builder.addSkip();
+
+	auto addZone = [&](
+			Zone zone,
+			const QString &titleRu,
+			const QString &titleEn,
+			const QString &hintRu,
+			const QString &hintEn) {
+		const auto isRu = Lang::GetInstance().id().startsWith(u"ru"_q)
+			|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+		builder.add([&](const WidgetContext &ctx)
+				-> SectionBuilder::WidgetToAdd {
+			return {
+				.widget = object_ptr<ProfileBackgroundCard>(
+					ctx.container,
+					isRu ? titleRu : titleEn,
+					isRu ? hintRu : hintEn,
+					peerId,
+					zone,
+					[=] { Background::PickBackground(controller, peerId, zone); },
+					[=] { Background::RemoveBackground(peerId, zone); }),
+			};
+		});
+		builder.add(nullptr, [titleEn] {
+			return SearchEntry{
+				.id = u"whitegram/profileBackground/"_q,
+				.title = titleEn,
+				.keywords = { u"background"_q, u"profile"_q },
+			};
+		});
+	};
+
+	addZone(
+		Zone::Top,
+		QString::fromUtf8("Фон шапки"),
+		QString("Header background"),
+		QString::fromUtf8(
+			"Показывает только верхнюю часть профиля: аватар, имя и статус."),
+		QString(
+			"Covers only the top of the profile: avatar, name and status."));
+	addZone(
+		Zone::Full,
+		QString::fromUtf8("Фон всего профиля"),
+		QString("Full profile background"),
+		QString::fromUtf8(
+			"Покрывает весь профиль — от шапки до конца прокрутки. "
+			"Страница «Истории» остаётся без изменений."),
+		QString(
+			"Covers the whole profile, from the header down to the end of "
+			"the scroll. The stories page is not affected."));
+	addZone(
+		Zone::Bottom,
+		QString::fromUtf8("Фон блока «Информация»"),
+		QString("Info section background"),
+		QString::fromUtf8(
+			"Покрывает только поля с телефоном, username и ID. "
+			"Не применяется, если задан фон всего профиля."),
+		QString(
+			"Covers only the phone, username and ID fields. Not used when "
+			"the full profile background is set."));
+
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Оформление"),
+		QString("Look")));
+
+	ayu.addSlider({
+		.id = u"whitegram/profileBackgroundDim"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Затемнение фона"),
+			QString("Background dimming")),
+		.steps = 101,
+		.current = AyuSettings::getInstance().profileBackgroundDim(),
+		.indexToValue = [](int index) { return index; },
+		.onChanged = [](int value) {
+			AyuSettings::getInstance().setProfileBackgroundDim(value);
+		},
+		.onFinalChanged = [](int value) {
+			AyuSettings::getInstance().setProfileBackgroundDim(value);
+		},
+		.formatLabel = [](int value) {
+			return QString::number(value) + u'%';
+		},
+		.keywords = { u"dim"_q, QString::fromUtf8("затемнение") },
+	});
+
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Затемнение помогает сохранить читаемость текста на светлых "
+			"фонах. 100% — как задумано, 0% — без затемнения. Другие "
+			"пользователи Whitegram тоже увидят эти фоны. Лучше всего "
+			"подходят вертикальные изображения вроде 1080×2800."),
+		QString(
+			"Dimming keeps text readable on bright backgrounds. 100% is "
+			"the designed look, 0% is no dimming. Other Whitegram users "
+			"will see these backgrounds too. Vertical images like "
+			"1080×2800 work best.")));
+	builder.addSkip();
+});
 [[nodiscard]] std::vector<QString> MusicIslandExpandModeOptions() {
 	const auto id = Lang::GetInstance().id();
 	const auto baseId = Lang::GetInstance().baseId();

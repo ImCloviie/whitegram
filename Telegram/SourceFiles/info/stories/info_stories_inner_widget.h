@@ -54,10 +54,14 @@ public:
 		QWidget *parent,
 		not_null<Controller*> controller,
 		rpl::producer<int> albumId,
-		int addingToAlbumId = 0);
+		int addingToAlbumId = 0,
+		bool myProfile = false);
 	~InnerWidget();
 
 	[[nodiscard]] rpl::producer<> backRequest() const;
+	[[nodiscard]] bool myProfile() const {
+		return _myProfile;
+	}
 
 	bool showInternal(not_null<Memento*> memento);
 	void setIsStackBottom(bool isStackBottom) {
@@ -89,6 +93,8 @@ public:
 	[[nodiscard]] rpl::producer<Data::StoryAlbumUpdate> changes() const;
 	[[nodiscard]] int fullProfileCoverHeight() const;
 	[[nodiscard]] rpl::producer<int> fullProfileCoverHeightValue() const;
+	// Whether the full profile background layer paints anything.
+	void setFullBackgroundPainted(rpl::producer<bool> painted);
 
 	bool hasFlexibleTopBar() const;
 	base::weak_qptr<Ui::RpWidget> createPinnedToTop(
@@ -137,6 +143,7 @@ private:
 	const not_null<Controller*> _controller;
 	const not_null<PeerData*> _peer;
 	const int _addingToAlbumId = 0;
+	const bool _myProfile = false;
 
 	std::vector<Data::StoryAlbum> _albums;
 	rpl::variable<int> _albumId;
@@ -170,6 +177,7 @@ private:
 	rpl::event_stream<> _showFinished;
 	rpl::variable<std::optional<QColor>> _topBarColor;
 	rpl::variable<int> _fullProfileCoverHeight;
+	rpl::variable<bool> _fullBackgroundPainted = false;
 
 	Ui::VisibleRange _visibleRange;
 

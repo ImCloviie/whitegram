@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/tabs/adapters/info_profile_tab_saved.h"
 
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "data/data_peer.h"
 #include "data/data_saved_messages.h"
 #include "data/data_saved_sublist.h"
@@ -66,6 +67,13 @@ public:
 	, _subController(context.controller, _sublist)
 	, _host(context.parent) {
 		const auto host = _host.data();
+		// On a profile with a background the chat wallpaper is not shown.
+		AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+			host
+		) | rpl::on_next([this](bool shown) {
+			_backgroundShown = shown;
+			_host->update();
+		}, host->lifetime());
 		_saved = Saved::MakeInlineSublist(
 			host,
 			&_subController,
@@ -80,7 +88,7 @@ public:
 
 		host->paintRequest(
 		) | rpl::on_next([this](QRect clip) {
-			if (!skeletonShown()) {
+			if (paintsWallpaper()) {
 				auto p = QPainter(_host.data());
 				_saved.paintBackground(p, clip);
 			}
@@ -142,7 +150,7 @@ public:
 	}
 
 	void paintOverflow(QPainter &p) override {
-		if (!skeletonShown()) {
+		if (paintsWallpaper()) {
 			_saved.paintBackground(p, QRect());
 		}
 	}
@@ -158,6 +166,9 @@ public:
 	}
 
 private:
+	[[nodiscard]] bool paintsWallpaper() const {
+		return !skeletonShown() && !_backgroundShown;
+	}
 	[[nodiscard]] bool skeletonShown() const {
 		return !_listLoaded;
 	}
@@ -190,6 +201,7 @@ private:
 	int _width = 0;
 	int _viewportHeight = 0;
 	bool _listLoaded = false;
+	bool _backgroundShown = false;
 
 };
 

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_shared_media_classic.h"
 
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "core/ui_integration.h"
 #include "data/components/recent_shared_media_gifts.h"
 #include "data/data_channel.h"
@@ -197,7 +198,9 @@ namespace {
 						.append(QChar(' '))
 						.append(std::move(customs));
 				}),
-				st::infoSharedMediaButton,
+				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+					parent,
+					st::infoSharedMediaButton),
 				Core::TextContext({
 					.session = &navigation->session(),
 					.details = { .session = &navigation->session() },
@@ -264,9 +267,9 @@ object_ptr<Ui::SlideWrap<Ui::RpWidget>> SetupSharedMediaClassic(
 		auto result = Media::AddButton(
 			content,
 			controller,
-			peer,
+			profilePeer,
 			topic ? topic->rootId() : MsgId(),
-			sublist ? sublist->sublistPeer()->id : PeerId(),
+			sublist,
 			migrated,
 			type,
 			tracker);

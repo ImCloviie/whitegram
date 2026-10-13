@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/common_groups/info_common_groups_inner_widget.h"
 
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "base/weak_ptr.h"
 #include "info/common_groups/info_common_groups_widget.h"
 #include "info/info_controller.h"
@@ -240,7 +241,11 @@ int InnerWidget::desiredHeight() const {
 object_ptr<InnerWidget::ListWidget> InnerWidget::setupList(
 		RpWidget *parent,
 		not_null<PeerListController*> controller) const {
-	controller->setStyleOverrides(&st::infoCommonGroupsList);
+	// See-through while the list is shown on a profile with a background.
+	controller->setStyleOverrides(
+		&AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			parent,
+			st::infoCommonGroupsList));
 	auto result = object_ptr<ListWidget>(
 		parent,
 		controller);

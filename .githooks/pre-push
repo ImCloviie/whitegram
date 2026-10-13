@@ -1,0 +1,14 @@
+#!/bin/sh
+# Local gitflow guard: forbid direct pushes to main/dev.
+# Releases and features go through Pull Requests on GitHub.
+# Enable with: git config core.hooksPath .githooks
+protected="refs/heads/main refs/heads/dev"
+while read local_ref local_sha remote_ref remote_sha; do
+  for p in $protected; do
+    if [ "$remote_ref" = "$p" ]; then
+      echo "Direct push to $p is forbidden. Open a Pull Request instead." >&2
+      exit 1
+    fi
+  done
+done
+exit 0

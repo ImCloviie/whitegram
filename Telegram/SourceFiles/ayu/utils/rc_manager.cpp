@@ -34,7 +34,7 @@ std::unordered_set<ID> default_supporters = {
 };
 
 std::unordered_set<ID> default_whitegram_sponsors = {
-	1135044445
+	1135044445, 8619141206
 };
 
 void RCManager::start() {

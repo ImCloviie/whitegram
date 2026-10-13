@@ -175,6 +175,11 @@ enum class ChannelBottomButton {
   DiscussWithFallback = 2,
 };
 
+enum class PhoneRevealMode {
+  OnClick = 0,
+  OnHover = 1,
+};
+
 enum class ContextMenuVisibility {
   Hidden = 0,
   Visible = 1,
@@ -205,6 +210,12 @@ NLOHMANN_JSON_SERIALIZE_ENUM(ChannelBottomButton,
                                  {ChannelBottomButton::Hidden, 0},
                                  {ChannelBottomButton::MuteUnmute, 1},
                                  {ChannelBottomButton::DiscussWithFallback, 2},
+                             })
+
+NLOHMANN_JSON_SERIALIZE_ENUM(PhoneRevealMode,
+                             {
+                                 {PhoneRevealMode::OnClick, 0},
+                                 {PhoneRevealMode::OnHover, 1},
                              })
 
 NLOHMANN_JSON_SERIALIZE_ENUM(ContextMenuVisibility,
@@ -947,6 +958,8 @@ public:
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
 	[[nodiscard]] bool hideTelegramOnViewOnce() const { return _hideTelegramOnViewOnce.current(); }
+	[[nodiscard]] bool hidePhoneNumber() const { return _hidePhoneNumber.current(); }
+	[[nodiscard]] PhoneRevealMode phoneRevealMode() const { return _phoneRevealMode.current(); }
 	[[nodiscard]] bool musicIslandEnabled() const { return _musicIslandEnabled.current(); }
 	[[nodiscard]] int musicIslandPosition() const { return _musicIslandPosition.current(); }
 	[[nodiscard]] bool musicIslandHideTopBar() const { return _musicIslandHideTopBar.current(); }
@@ -972,6 +985,7 @@ public:
 	[[nodiscard]] bool musicLyricsArtScatter() const { return _musicLyricsArtScatter.current(); }
 	[[nodiscard]] bool musicLyricsBlur() const { return _musicLyricsBlur.current(); }
 	[[nodiscard]] int musicLyricsFontScale() const { return _musicLyricsFontScale.current(); }
+	[[nodiscard]] int profileBackgroundDim() const { return _profileBackgroundDim.current(); }
 
 	[[nodiscard]] ConnectionBypassMode connectionBypassMode() const {
 		return _connectionBypassMode.current();
@@ -1067,6 +1081,8 @@ public:
 	void setSingleCornerRadius(bool val);
 	void setStreamerMode(bool val);
 	void setHideTelegramOnViewOnce(bool val);
+	void setHidePhoneNumber(bool val);
+	void setPhoneRevealMode(PhoneRevealMode val);
 	void setMusicIslandEnabled(bool val);
 	void setMusicIslandPosition(int val);
 	void setMusicIslandHideTopBar(bool val);
@@ -1092,6 +1108,7 @@ public:
 	void setMusicLyricsArtScatter(bool val);
 	void setMusicLyricsBlur(bool val);
 	void setMusicLyricsFontScale(int val);
+	void setProfileBackgroundDim(int val);
   void setConnectionBypassMode(ConnectionBypassMode val);
   void setConnectionBypassSecret(const QString &val);
 
@@ -1315,6 +1332,7 @@ public:
 	[[nodiscard]] rpl::producer<int> musicLyricsAnimationChanges() const { return _musicLyricsAnimation.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsArtScatterChanges() const { return _musicLyricsArtScatter.changes(); }
 	[[nodiscard]] rpl::producer<int> musicLyricsFontScaleChanges() const { return _musicLyricsFontScale.changes(); }
+	[[nodiscard]] rpl::producer<int> profileBackgroundDimChanges() const { return _profileBackgroundDim.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsKaraokeButtonChanges() const { return _musicLyricsKaraokeButton.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsBlurChanges() const { return _musicLyricsBlur.changes(); }
 	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsValue() const { return _improveLinkPreviews.value(); }
@@ -1329,6 +1347,10 @@ public:
 	[[nodiscard]] rpl::producer<bool> streamerModeChanges() const { return _streamerMode.changes(); }
 	[[nodiscard]] rpl::producer<bool> hideTelegramOnViewOnceValue() const { return _hideTelegramOnViewOnce.value(); }
 	[[nodiscard]] rpl::producer<bool> hideTelegramOnViewOnceChanges() const { return _hideTelegramOnViewOnce.changes(); }
+	[[nodiscard]] rpl::producer<bool> hidePhoneNumberValue() const { return _hidePhoneNumber.value(); }
+	[[nodiscard]] rpl::producer<bool> hidePhoneNumberChanges() const { return _hidePhoneNumber.changes(); }
+	[[nodiscard]] rpl::producer<PhoneRevealMode> phoneRevealModeValue() const { return _phoneRevealMode.value(); }
+	[[nodiscard]] rpl::producer<PhoneRevealMode> phoneRevealModeChanges() const { return _phoneRevealMode.changes(); }
 
 
   [[nodiscard]] AccountProfilesVisualVariant accountProfilesVisualVariant() const {
@@ -1655,6 +1677,8 @@ private:
   rpl::variable<bool> _singleCornerRadius = false;
   rpl::variable<bool> _streamerMode = false;
   rpl::variable<bool> _hideTelegramOnViewOnce = true;
+  rpl::variable<bool> _hidePhoneNumber = false;
+  rpl::variable<PhoneRevealMode> _phoneRevealMode = PhoneRevealMode::OnClick;
   rpl::variable<bool> _musicIslandEnabled = true;
   rpl::variable<int> _musicIslandPosition = 3;
   rpl::variable<bool> _musicIslandHideTopBar = true;
@@ -1679,6 +1703,7 @@ private:
   rpl::variable<int> _musicLyricsAnimation = 0;
   rpl::variable<bool> _musicLyricsArtScatter = true;
   rpl::variable<bool> _musicLyricsBlur = true;
+  rpl::variable<int> _profileBackgroundDim = 100;
   rpl::variable<int> _musicLyricsFontScale = 100;
   rpl::variable<ConnectionBypassMode> _connectionBypassMode =
 	  ConnectionBypassMode::Auto;

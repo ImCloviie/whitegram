@@ -228,11 +228,6 @@ Widget::Widget(
 
 void Widget::setupFullProfileBackground() {
 	namespace Background = AyuFeatures::CustomProfileBackground;
-	const auto bounds = Background::FullProfileBackgroundBounds{
-		.scrollTop = [=] { return scrollTopSave(); },
-		.topSkip = [=] { return innerTopReserve(); },
-		.contentHeight = [=] { return _inner->fullProfileCoverHeight(); },
-	};
 	const auto renderer = Background::SetupFullBackgroundLayer(
 		this,
 		[=]() -> PeerData* {
@@ -241,8 +236,7 @@ void Widget::setupFullProfileBackground() {
 				? nullptr
 				: key.peer();
 		},
-		[=] { return controller()->wrap() == Wrap::Layer; },
-		bounds);
+		[=] { return controller()->wrap() == Wrap::Layer; });
 	const auto applyMetrics = [=, weak = renderer] {
 		if (const auto strong = weak.get()) {
 			// The pane height makes the background cover the whole pane, so
@@ -252,7 +246,8 @@ void Widget::setupFullProfileBackground() {
 				scrollTopSave(),
 				innerTopReserve(),
 				_inner->fullProfileCoverHeight(),
-				height());
+				height(),
+				_pinnedToTop ? _pinnedToTop->maximumHeight() : 0);
 		}
 	};
 	scrollTopValue(
@@ -274,10 +269,12 @@ void Widget::setupFullProfileBackground() {
 		}, _pinnedToTop->lifetime());
 	}
 	applyMetrics();
+	if (const auto strong = renderer.get()) {
+		// The rows below see through to the layer only while it paints.
+		_inner->setFullBackgroundPainted(strong->hasFrameValue());
+	}
 	if (const auto top = dynamic_cast<TopBar*>(_pinnedToTop.get())) {
-		top->setFullProfileBackground(
-			renderer,
-			[=] { return _inner->fullProfileCoverHeight(); });
+		top->setFullProfileBackground(renderer);
 	}
 }
 

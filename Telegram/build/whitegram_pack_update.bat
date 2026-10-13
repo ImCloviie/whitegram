@@ -16,8 +16,21 @@ if not exist "%ReleasePath%\Updater.exe" (
 )
 if not exist "%ReleasePath%\Packer.exe" (
   echo Missing %ReleasePath%\Packer.exe
-  echo Run: python backend\deploy\setup_update_signing.py
-  echo Then reconfigure CMake and rebuild Telegram target.
+  echo Build the Packer target in Release configuration.
+  exit /b 1
+)
+
+set "KeysLoc=%HomePath%\Resources\update_whitegram"
+set "LocalKey=%HomePath%\..\backend\deploy\keys\v2\release-local-private.pem"
+set "LocalKeyId=wg-rl-2026a"
+if not exist "%KeysLoc%\root-public.pem" (
+  echo Missing %KeysLoc%\root-public.pem
+  echo Run: python backend\deploy\setup_update_signing_v2.py
+  exit /b 1
+)
+if not exist "%LocalKey%" (
+  echo Missing %LocalKey%
+  echo Run: python backend\deploy\setup_update_signing_v2.py
   exit /b 1
 )
 
@@ -30,17 +43,19 @@ if "%AppVersion%"=="" (
   exit /b 1
 )
 
-set "UpdateFile=tx64upd%AppVersion%"
+rem v2 envelope: td-update-win-x64-<AppVersion>, signed in one pass with
+rem the local Ed25519 channel key (see backend/deploy/setup_update_signing_v2.py).
+set "UpdateFile=td-update-win-x64-%AppVersion%"
 set "D3D=modules\x64\d3d\d3dcompiler_47.dll"
 
 cd /d "%ReleasePath%"
 if exist "%UpdateFile%" del /q "%UpdateFile%"
 
 if exist "%D3D%" (
-  Packer.exe -version %AppVersion% -path Whitegram.exe -path Updater.exe -path "%D3D%" -target win64
+  Packer.exe -version %AppVersion% -path Whitegram.exe -path Updater.exe -path "%D3D%" -target win64 -channel stable -keys-loc "%KeysLoc%" -local-key "%LocalKey%" -local-key-id %LocalKeyId%
 ) else (
   echo Warning: %D3D% not found, packing without it.
-  Packer.exe -version %AppVersion% -path Whitegram.exe -path Updater.exe -target win64
+  Packer.exe -version %AppVersion% -path Whitegram.exe -path Updater.exe -target win64 -channel stable -keys-loc "%KeysLoc%" -local-key "%LocalKey%" -local-key-id %LocalKeyId%
 )
 if errorlevel 1 exit /b 1
 

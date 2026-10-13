@@ -1521,6 +1521,56 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 		},
 	});
 
+	ayu.addSettingToggle({
+		.id = u"whitegram/hidePhoneNumber"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Скрывать номер телефона в моём профиле"),
+			QString("Hide phone number in my profile")),
+		.getter = &AyuSettings::hidePhoneNumber,
+		.setter = &AyuSettings::setHidePhoneNumber,
+		.icon = { &st::menuIconPhone },
+		.keywords = {
+			u"phone"_q,
+			u"blur"_q,
+			QString::fromUtf8("номер"),
+			QString::fromUtf8("телефон"),
+			QString::fromUtf8("блюр"),
+			QString::fromUtf8("скрыть"),
+		},
+	});
+
+	{
+		const auto id = Lang::GetInstance().id();
+		const auto baseId = Lang::GetInstance().baseId();
+		const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+		const auto revealOptions = std::vector{
+			QString(isRu
+				? QString::fromUtf8("При клике")
+				: QString("On click")),
+			QString(isRu
+				? QString::fromUtf8("При наведении")
+				: QString("On hover")),
+		};
+		ayu.addChooseButton({
+			.id = u"whitegram/phoneRevealMode"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Режим раскрытия номера"),
+				QString("Phone reveal mode")),
+			.boxTitle = trWhitegram(
+				QString::fromUtf8("Режим раскрытия номера"),
+				QString("Phone reveal mode")),
+			.initialSelection = static_cast<int>(
+				AyuSettings::getInstance().phoneRevealMode()),
+			.options = revealOptions,
+			.setter = [](int i) {
+				AyuSettings::getInstance().setPhoneRevealMode(
+					static_cast<PhoneRevealMode>(i));
+			},
+			.icon = { &st::menuIconPhone },
+			.shown = AyuSettings::getInstance().hidePhoneNumberValue(),
+		});
+	}
+
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
 			"Автоматически скрывает Telegram от программ захвата экрана (OBS, Discord и др.) "

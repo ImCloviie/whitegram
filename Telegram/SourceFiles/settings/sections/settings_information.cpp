@@ -566,31 +566,7 @@ void SetupChatAutomation(
 		controller->showSettings(Settings::ChatbotsId());
 	});
 
-	{
-		const auto badge = Ui::NewBadge::CreateNewBadge(
-			button,
-			tr::lng_premium_summary_new_badge()).get();
-		rpl::combine(
-			std::move(title),
-			button->widthValue()
-		) | rpl::on_next([=, &st](
-				const QString &text,
-				int width) {
-			const auto space = st.style.font->spacew;
-			const auto left = st.padding.left()
-				+ st.style.font->width(text)
-				+ space;
-			const auto available = width - left - st.padding.right();
-			badge->setVisible(available >= badge->width());
-			if (!badge->isHidden()) {
-				const auto top = st.padding.top()
-					+ st.style.font->ascent
-					- st::settingsPremiumNewBadge.style.font->ascent
-					- st::settingsPremiumNewBadgePadding.top();
-				badge->moveToLeft(left, top, width);
-			}
-		}, badge->lifetime());
-	}
+	Ui::NewBadge::AddAfterButtonText(button, std::move(title), st);
 
 	if (targets) {
 		targets->chatAutomation = button;
@@ -1032,7 +1008,8 @@ void SetupAccountsWrap(
 				};
 				window->show(
 					Ui::MakeConfirmBox({
-						.text = tr::lng_sure_logout(),
+						.text = Window::LogoutConfirmationText(
+							&session->account()),
 						.confirmed = crl::guard(session, callback),
 						.confirmText = tr::lng_settings_logout(),
 						.confirmStyle = &st::attentionBoxButton,
@@ -1660,118 +1637,46 @@ void AccountsList::rebuild() {
 	_reorder->start();
 }
 
-// The profile background is set on the "My Profile" page itself, next to the
-// photo and the bio, instead of hiding it behind the Whitegram section.
+// The profile background customization lives in its own dedicated section
+// ("Whitegram -> Profile background"), reachable from here with one button.
 void AddProfileBackground(SectionBuilder &builder) {
 	namespace Background = AyuFeatures::CustomProfileBackground;
-	using Zone = Background::Zone;
 
 	const auto peerId = builder.session()->userPeerId().value;
-	const auto controller = builder.controller();
 
-	auto zoneShown = [&](Zone zone) -> rpl::producer<bool> {
-		return rpl::single(rpl::empty)
-			| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
-			| rpl::map([=]() -> bool {
-				return Background::HasBackground(peerId, zone);
-			});
-	};
-
-	// The label shows the file that is currently in use, so that it is obvious
-	// which background is set without opening the picker.
-	auto zoneLabel = [=](Zone zone) -> rpl::producer<QString> {
-		return rpl::single(rpl::empty)
-			| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
-			| rpl::map([=]() -> QString {
-				const auto id = Lang::GetInstance().id();
-				const auto baseId = Lang::GetInstance().baseId();
-				const auto isRu = id.startsWith(u"ru"_q)
-					|| baseId.startsWith(u"ru"_q);
-				const auto name = Background::BackgroundFileName(peerId, zone);
-				return name.isEmpty()
-					? (isRu
-						? QString::fromUtf8("Не задан")
-						: QString("Not set"))
-					: name;
-			});
-	};
-
-	auto addZone = [&](
-			Zone zone,
-			const QString &titleRu,
-			const QString &titleEn,
-			const QString &hintRu,
-			const QString &hintEn) {
-		builder.addSubsectionTitle(trWhitegram(titleRu, titleEn));
-		builder.addDividerText(trWhitegram(hintRu, hintEn));
-		builder.addButton({
-			.id = u"edit/profile-background/"_q
-				+ QString::number(int(zone)),
-			.title = trWhitegram(titleRu, titleEn),
-			.icon = { &st::menuIconPhoto },
-			.label = zoneLabel(zone),
-			.onClick = [=] {
-				Background::PickBackground(controller, peerId, zone);
-			},
+	auto status = rpl::single(rpl::empty)
+		| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
+		| rpl::map([=]() -> QString {
+			const auto id = Lang::GetInstance().id();
+			const auto baseId = Lang::GetInstance().baseId();
+			const auto isRu = id.startsWith(u"ru"_q)
+				|| baseId.startsWith(u"ru"_q);
+			const auto set = Background::HasBackground(peerId, Background::Zone::Top)
+				|| Background::HasBackground(peerId, Background::Zone::Full)
+				|| Background::HasBackground(peerId, Background::Zone::Bottom);
+			return set
+				? (isRu
+					? QString::fromUtf8("Настроен")
+					: QString("Configured"))
+				: (isRu
+					? QString::fromUtf8("Не настроен")
+					: QString("Not configured"));
 		});
-		// Nothing to remove means no button: it only appears once a
-		// background of this zone is actually set.
-		builder.addButton({
-			.id = u"edit/profile-background/remove/"_q
-				+ QString::number(int(zone)),
-			.title = trWhitegram(
-				QString::fromUtf8("Убрать фон"),
-				QString("Remove background")),
-			.st = &st::settingsAttentionButtonWithIcon,
-			.icon = { &st::menuIconDeleteAttention },
-			.onClick = [=] {
-				Background::RemoveBackground(peerId, zone);
-			},
-			.shown = zoneShown(zone),
-		});
-		builder.addSkip();
-	};
 
-	addZone(
-		Zone::Top,
-		QString::fromUtf8("Фон шапки"),
-		QString("Header background"),
-		QString::fromUtf8(
-			"Покرывает только верхнюю часть профиля: аватар, имя и статус."),
-		QString(
-			"Covers only the top of the profile: avatar, name and status."));
-	addZone(
-		Zone::Full,
-		QString::fromUtf8("Фон всего профиля"),
-		QString("Full profile background"),
-		QString::fromUtf8(
-			"Покрывает весь профиль — от шапки до конца прокрутки. "
-			"Страница «Истории» остаётся без изменений."),
-		QString(
-			"Covers the whole profile, from the header down to the end of "
-			"the scroll. The stories page is not affected."));
-	addZone(
-		Zone::Bottom,
-		QString::fromUtf8("Фон блока «Информация»"),
-		QString("Info section background"),
-		QString::fromUtf8(
-			"Покрывает только поля с телефоном, username и ID. "
-			"Не применяется, если задан фон всего профиля."),
-		QString(
-			"Covers only the phone, username and ID fields. Not used when "
-			"the full profile background is set."));
-	builder.addDividerText(trWhitegram(
-		QString::fromUtf8(
-			"Поддерживаются фото и видео. Другие пользователи Whitegram "
-			"тоже увидят эти фоны. Лучше всего подходят вертикальные "
-			"изображения вроде 1080×2400."),
-		QString(
-			"Photos and videos are supported. Other Whitegram users will "
-			"see these backgrounds too. Vertical images like 1080×2400 "
-			"work best.")));
-	builder.addSkip();
+	builder.addSectionButton({
+		.title = trWhitegram(
+			QString::fromUtf8("Фон профиля"),
+			QString("Profile background")),
+		.targetSection = WhitegramProfileBackgroundId(),
+		.icon = { &st::menuIconPhoto },
+		.label = std::move(status),
+		.keywords = {
+			u"background"_q,
+			QString::fromUtf8("фон"),
+			QString::fromUtf8("профиль"),
+		},
+	});
 }
-
 void BuildInformationSection(SectionBuilder &builder) {
 	builder.add(nullptr, [] {
 		return SearchEntry{

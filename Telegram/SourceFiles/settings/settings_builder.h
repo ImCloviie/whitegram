@@ -211,6 +211,7 @@ public:
 		rpl::producer<QString> title;
 		Type targetSection;
 		IconDescriptor icon;
+		rpl::producer<QString> label;
 		QStringList keywords;
 	};
 	Ui::SettingsButton *addSectionButton(SectionArgs &&args);

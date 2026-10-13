@@ -559,6 +559,13 @@ void MusicIsland::toggleShown(bool shown) {
 		_drag = false;
 		_seeking = false;
 		_volumeDragging = false;
+		// The track can end (or be closed) in the middle of a drag or a
+		// seek: the pointer grab would then outlive the island and swallow
+		// all mouse input in the whole window.
+		if (_mouseGrabbed) {
+			_mouseGrabbed = false;
+			releaseMouse();
+		}
 		_hoverPoll.stop();
 	}
 	_shownAnimation.start([=] {
@@ -702,9 +709,35 @@ QPoint MusicIsland::freeTopLeft(QSize outer) const {
 	const auto &settings = AyuSettings::getInstance();
 	const auto normX = std::clamp(settings.musicIslandFreeX(), 0, 1000) / 1000.;
 	const auto normY = std::clamp(settings.musicIslandFreeY(), 0, 1000) / 1000.;
+	// The stored point is the island's center (see saveFreePosition), so
+	// offset by half the current size: the island then stays visually in
+	// place when it grows or shrinks by expanding or collapsing.
 	return QPoint(
-		margin + int(base::SafeRound(normX * placementWidth)),
-		margin + int(base::SafeRound(normY * placementHeight)));
+		margin + int(base::SafeRound(normX * placementWidth))
+			- outer.width() / 2,
+		margin + int(base::SafeRound(normY * placementHeight))
+			- outer.height() / 2);
+}
+
+void MusicIsland::saveFreePosition() {
+	const auto parent = parentWidget();
+	if (!parent) {
+		return;
+	}
+	const auto margin = std::max(0, int(st::musicIslandShadow / 2));
+	const auto placementWidth = std::max(1, parent->width() - 2 * margin - width());
+	const auto placementHeight = std::max(1, parent->height() - 2 * margin - height());
+	auto &islandSettings = AyuSettings::getInstance();
+	islandSettings.setMusicIslandPosition(4);
+	// Store the island's center, not its top-left: the widget grows from the
+	// top-left when it expands, so a corner-anchored position visibly jumps
+	// while animating. The center is what the user actually placed.
+	islandSettings.setMusicIslandFreeX(PercentNominal(
+		pos().x() - margin + width() / 2,
+		placementWidth));
+	islandSettings.setMusicIslandFreeY(PercentNominal(
+		pos().y() - margin + height() / 2,
+		placementHeight));
 }
 
 MusicIsland::Layout MusicIsland::computeLayout(float64 expand) const {
@@ -1506,8 +1539,10 @@ void MusicIsland::paintTexts(
 	if (showFloating) {
 		// Collapsed pill shows the current lyric line instead of the
 		// performer: readable, non-intrusive, fades on line change.
-		const auto fade = std::clamp(
-			float64(crl::now() - _lyricsLineChangedAt) / 280., 0., 1.);
+		const auto fade = anim::easeOutCubic(1., std::clamp(
+			float64(crl::now() - _lyricsLineChangedAt) / 340.,
+			0.,
+			1.));
 		p.save();
 		p.setOpacity(p.opacity() * (0.35 + 0.65 * fade));
 		p.setPen(titleFg());
@@ -1814,15 +1849,19 @@ void MusicIsland::mouseMoveEvent(QMouseEvent *e) {
 			updateHovered(e->pos());
 			return;
 		}
+		// Grab the pointer for the whole drag: without it the island loses
+		// the mouse as soon as the cursor outruns it (the widget itself
+		// moves), the drag then dead-ends until a fresh click.
+		grabMouse();
+		_mouseGrabbed = true;
 		_drag = true;
 	}
 
 	if (_drag) {
-		const auto currentMousePos = e->globalPos();
-		const auto delta = currentMousePos - _lastMousePos;
-		_lastMousePos = currentMousePos;
-
-		auto target = pos() + delta;
+		// Drag the island by its grabbed point, not by its top-left: the
+		// widget can resize (expand) mid-drag, and the anchor keeps the pill
+		// under the finger instead of leaping under the mouse.
+		auto target = _dragStartPosition + (e->globalPos() - _downGlobalPoint);
 		if (const auto parent = parentWidget()) {
 			const auto margin = std::max(0, int(st::musicIslandShadow / 2));
 			target.setX(std::clamp(
@@ -1885,24 +1924,12 @@ void MusicIsland::mouseReleaseEvent(QMouseEvent *e) {
 		return;
 	} else if (_drag) {
 		_drag = false;
-		if (const auto parent = parentWidget()) {
-			const auto margin = std::max(0, int(st::musicIslandShadow / 2));
-			const auto placementWidth = std::max(
-				1,
-				parent->width() - 2 * margin);
-			const auto placementHeight = std::max(
-				1,
-				parent->height() - 2 * margin);
-			auto &islandSettings = AyuSettings::getInstance();
-			islandSettings.setMusicIslandPosition(4);
-			islandSettings.setMusicIslandFreeX(PercentNominal(
-				pos().x() - margin,
-				placementWidth));
-			islandSettings.setMusicIslandFreeY(PercentNominal(
-				pos().y() - margin,
-				placementHeight));
-			updatePosition();
+		if (_mouseGrabbed) {
+			_mouseGrabbed = false;
+			releaseMouse();
 		}
+		saveFreePosition();
+		updatePosition();
 		updateHovered(mapFromGlobal(QCursor::pos()));
 		return;
 	}
@@ -2025,9 +2052,14 @@ void MusicIsland::updateLyricsPosition() {
 		}
 	}
 	if (active != _lyricsActive) {
+		if (active > _lyricsActive) {
+			_lyricsDirection = 1;
+		} else if (active < _lyricsActive) {
+			_lyricsDirection = -1;
+		}
 		_lyricsActive = active;
 		_lyricsLineChangedAt = crl::now();
-		_lyricsFade.start([=] { update(); }, 0., 1., 280, anim::easeOutCubic);
+		_lyricsFade.start([=] { update(); }, 0., 1., 340, anim::easeOutCubic);
 	}
 	_lyricsProgress = progress;
 }
@@ -2092,16 +2124,16 @@ void PaintReadableText(
 		const QRectF &rect,
 		const QString &text,
 		const QFont &font,
-		const QColor &color,
+		const QBrush &color,
 		Qt::Alignment align = Qt::AlignCenter) {
 	p.save();
 	p.setFont(font);
 	// Soft shadow first for readability on any cover.
-	p.setPen(QColor(0, 0, 0, int(color.alpha() * 0.6)));
+	p.setPen(QColor(0, 0, 0, int(color.color().alpha() * 0.6)));
 	for (const auto &off : { QPointF(0, 1), QPointF(1, 0) }) {
 		p.drawText(rect.translated(off), align | Qt::TextWordWrap, text);
 	}
-	p.setPen(color);
+	p.setPen(QPen(color, 1.));
 	p.drawText(rect, align | Qt::TextWordWrap, text);
 	p.restore();
 }
@@ -2132,8 +2164,15 @@ void MusicIsland::paintLyrics(
 	p.drawRoundedRect(box, radius, radius);
 
 	const auto now = crl::now();
-	const auto fade = std::clamp(float64(now - _lyricsLineChangedAt) / 280., 0., 1.);
-	const auto slide = (1. - fade) * 10.;
+	// Eased fade-in for the newly active line: a plain linear ramp reads as
+	// a blink, cubic-out melts the line in.
+	const auto fade = anim::easeOutCubic(1., std::clamp(
+		float64(now - _lyricsLineChangedAt) / 340.,
+		0.,
+		1.));
+	// The line slides in from the direction the lyrics are moving in, so
+	// backward seeks slide up instead of down.
+	const auto slide = (1. - fade) * 10. * _lyricsDirection;
 	const auto n = int(_lyrics.lines.size());
 	const auto active = _lyricsActive;
 
@@ -2186,23 +2225,50 @@ void MusicIsland::paintLyrics(
 	if (!scatter) {
 		// Clean centered modes without per-word rotation.
 		if (mode == 0 && _lyricsProgress >= 0. && active >= 0) {
+			// Karaoke fill with a soft gradient edge instead of a hard clip:
+			// the fill "melts" over the line instead of a razor step.
 			PaintReadableText(p, activeRect, activeText, act, QColor(190, 190, 198, int(255 * fade)));
 			const auto fm = QFontMetrics(act);
 			const auto w = fm.horizontalAdvance(
 				fm.elidedText(activeText, Qt::ElideRight, int(activeRect.width())));
-			auto clip = QRectF(activeRect.left() + (activeRect.width() - w) / 2., activeRect.top(), w * std::clamp(_lyricsProgress, 0., 1.), activeRect.height());
+			const auto left = activeRect.left() + (activeRect.width() - w) / 2.;
+			const auto filled = w * std::clamp(_lyricsProgress, 0., 1.);
+			const auto feather = std::min(24., w / 4.);
+			auto fill = QLinearGradient(
+				QPointF(left, 0.),
+				QPointF(left + filled, 0.));
+			fill.setColorAt(0., QColor(255, 255, 255, int(255 * fade)));
+			if (filled > feather) {
+				fill.setColorAt((filled - feather) / filled, QColor(255, 255, 255, int(255 * fade)));
+			}
+			fill.setColorAt(1., QColor(255, 255, 255, 0));
 			p.save();
-			p.setClipRect(clip, Qt::IntersectClip);
-			PaintReadableText(p, activeRect, activeText, act, QColor(255, 255, 255, int(255 * fade)));
+			p.setClipRect(QRectF(left, activeRect.top(), filled + feather, activeRect.height()), Qt::IntersectClip);
+			PaintReadableText(p, activeRect, activeText, act, fill);
 			p.restore();
 		} else if (mode == 1) {
+			// Soft bloom that breathes with the fade rather than static
+			// offset copies: the glow swells in as the line appears.
+			const auto glow = 0.5 + 0.5 * std::sin(now / 900. + 1.2);
+			const auto glowAlpha = int((18. + 14. * glow) * fade);
 			for (auto i = 0; i < 3; ++i) {
-				PaintReadableText(p, activeRect.translated((i - 1) * 1., (i % 2) * 1.), activeText, act, QColor(120, 180, 255, int(30 * fade)));
+				PaintReadableText(
+					p,
+					activeRect.translated((i - 1) * 1.4, (i % 2) * 1.4),
+					activeText,
+					act,
+					QColor(120, 180, 255, glowAlpha));
 			}
 			PaintReadableText(p, activeRect, activeText, act, QColor(255, 255, 255, int(255 * fade)));
 		} else if (mode == 2) {
+			// Beat pulse: eased scale driven by the line fade, so the line
+			// springs in on change and keeps a gentle breathing.
 			const auto t = now / 1000.;
-			const auto sc = 1. + 0.03 * std::sin(t * 3.4);
+			const auto intro = 0.02 * (1. - fade);
+			const auto sc = 1.
+				+ intro
+				+ 0.022 * std::sin(t * 3.4)
+				+ 0.008 * std::sin(t * 8.1);
 			p.save();
 			p.translate(cx, activeRect.center().y());
 			p.scale(sc, sc);
@@ -2237,7 +2303,7 @@ void MusicIsland::paintLyrics(
 	const auto cy = activeRect.center().y();
 	const auto seedBase = (active >= 0 ? active : 0) * 131 + 7;
 
-	auto drawScatter = [&](const QColor &color, const QRectF *clip) {
+	auto drawScatter = [&](const QBrush &color, const QRectF *clip) {
 		p.save();
 		if (clip) p.setClipRect(*clip, Qt::IntersectClip);
 		p.setFont(act);
@@ -2248,9 +2314,9 @@ void MusicIsland::paintLyrics(
 			p.save();
 			p.translate(xx + widths[i] / 2., cy + dy);
 			if (a != 0.) p.rotate(a);
-			p.setPen(QColor(0, 0, 0, int(color.alpha() * 0.6)));
+			p.setPen(QColor(0, 0, 0, int(color.color().alpha() * 0.6)));
 			p.drawText(QRectF(-widths[i] / 2. + 1, -12, widths[i], 26), Qt::AlignCenter, words[i]);
-			p.setPen(color);
+			p.setPen(QPen(color, 1.));
 			p.drawText(QRectF(-widths[i] / 2., -12, widths[i], 26), Qt::AlignCenter, words[i]);
 			p.restore();
 			xx += widths[i] + spaceW;
@@ -2260,19 +2326,33 @@ void MusicIsland::paintLyrics(
 
 	if (mode == 0 && _lyricsProgress >= 0. && active >= 0) {
 		drawScatter(QColor(185, 185, 193, int(255 * fade)), nullptr);
-		auto clip = QRectF(x, activeRect.top(), totalW * std::clamp(_lyricsProgress, 0., 1.), activeRect.height());
-		drawScatter(QColor(255, 255, 255, int(255 * fade)), &clip);
+		// Soft gradient edge on the fill, same as the clean mode.
+		const auto filled = totalW * std::clamp(_lyricsProgress, 0., 1.);
+		const auto feather = std::min(24., totalW / 4.);
+		auto fill = QLinearGradient(QPointF(x, 0.), QPointF(x + filled, 0.));
+		fill.setColorAt(0., QColor(255, 255, 255, int(255 * fade)));
+		if (filled > feather) {
+			fill.setColorAt((filled - feather) / filled, QColor(255, 255, 255, int(255 * fade)));
+		}
+		fill.setColorAt(1., QColor(255, 255, 255, 0));
+		auto clip = QRectF(x, activeRect.top(), filled + feather, activeRect.height());
+		drawScatter(fill, &clip);
 	} else if (mode == 1) {
+		const auto glow = 0.5 + 0.5 * std::sin(now / 900. + 1.2);
+		const auto glowAlpha = int((16. + 12. * glow) * fade);
 		for (auto k = 0; k < 3; ++k) {
 			p.save();
-			p.translate((k - 1) * 1., (k % 2) * 1.);
-			drawScatter(QColor(120, 180, 255, int(26 * fade)), nullptr);
+			p.translate((k - 1) * 1.4, (k % 2) * 1.4);
+			drawScatter(QColor(120, 180, 255, glowAlpha), nullptr);
 			p.restore();
 		}
 		drawScatter(QColor(255, 255, 255, int(255 * fade)), nullptr);
 	} else if (mode == 2) {
 		const auto t = now / 1000.;
-		const auto sc = 1. + 0.03 * std::sin(t * 3.4);
+		const auto sc = 1.
+			+ 0.02 * (1. - fade)
+			+ 0.022 * std::sin(t * 3.4)
+			+ 0.008 * std::sin(t * 8.1);
 		p.save();
 		p.translate(cx, cy);
 		p.scale(sc, sc);

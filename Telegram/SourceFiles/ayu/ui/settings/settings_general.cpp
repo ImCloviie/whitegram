@@ -173,6 +173,44 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.setter = &AyuSettings::setHideTelegramOnViewOnce,
 	});
 
+	ayu.addSettingToggle({
+		.id = u"whitegram/hidePhoneNumber"_q,
+		.title = Lang::Id().startsWith(u"ru"_q)
+			? rpl::single(QString(u"Скрывать номер телефона в моём профиле"_q))
+			: rpl::single(QString(u"Hide phone number in my profile"_q)),
+		.getter = &AyuSettings::hidePhoneNumber,
+		.setter = &AyuSettings::setHidePhoneNumber,
+	});
+
+	{
+		const auto revealOptions = std::vector{
+			QString(Lang::Id().startsWith(u"ru"_q)
+				? u"При клике"_q
+				: u"On click"_q),
+			QString(Lang::Id().startsWith(u"ru"_q)
+				? u"При наведении"_q
+				: u"On hover"_q),
+		};
+		ayu.addChooseButton({
+			.id = u"whitegram/phoneRevealMode"_q,
+			.title = Lang::Id().startsWith(u"ru"_q)
+				? rpl::single(QString(u"Режим раскрытия номера"_q))
+				: rpl::single(QString(u"Phone reveal mode"_q)),
+			.boxTitle = Lang::Id().startsWith(u"ru"_q)
+				? rpl::single(QString(u"Режим раскрытия номера"_q))
+				: rpl::single(QString(u"Phone reveal mode"_q)),
+			.initialSelection = static_cast<int>(
+				AyuSettings::getInstance().phoneRevealMode()),
+			.options = revealOptions,
+			.setter = [](int i) {
+				AyuSettings::getInstance().setPhoneRevealMode(
+					static_cast<PhoneRevealMode>(i));
+			},
+			.icon = { &st::menuIconPhone },
+			.shown = AyuSettings::getInstance().hidePhoneNumberValue(),
+		});
+	}
+
 	const auto controller = builder.controller();
 	ayu.addToggle({
 		.id = u"ayu/disableStories"_q,

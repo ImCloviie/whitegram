@@ -6,6 +6,7 @@
 #include "ayu/ayu_settings.h"
 #include "styles/style_widgets.h"
 #include "ui/painter.h"
+#include "ui/effects/animation_value.h"
 
 #include <QtGui/QWheelEvent>
 
@@ -18,6 +19,14 @@ namespace {
 constexpr auto kLineH = 34;
 constexpr auto kActiveH = 46;
 constexpr auto kPad = 20;
+// Line switch animation, ms: text fades, the active row grows.
+constexpr auto kLineChangeMs = 340.;
+
+// Cubic-out: smooth deceleration for both fade and height interpolation.
+double easeOutCubic(double t) {
+	t = std::clamp(t, 0., 1.);
+	return 1. - std::pow(1. - t, 3.);
+}
 
 double hash01(int seed, int salt) {
 	auto h = uint32(seed * 2654435761u + salt * 40503u);
@@ -26,6 +35,9 @@ double hash01(int seed, int salt) {
 	h ^= h >> 13;
 	return (h % 1000) / 1000.;
 }
+
+// Smooth-scroll speed factor per frame, tuned to settle in ~0.5 s.
+constexpr auto kScrollFactor = 0.16;
 
 } // namespace
 
@@ -40,18 +52,24 @@ LyricsWindow::LyricsWindow(QWidget *parent)
 		// Smooth-scroll interpolation + pulse repaint while visible.
 		const auto diff = _scrollTarget - _scroll;
 		if (std::abs(diff) > 0.5) {
-			_scroll += diff * 0.18;
+			_scroll += diff * kScrollFactor;
 			update();
 		} else if (diff != 0.) {
 			_scroll = _scrollTarget;
 			update();
 		} else {
-			// Keep pulsing the active line when pulse mode is on.
-			if (AyuSettings::getInstance().musicLyricsAnimation() == 2) {
+			// Keep pulsing the active line when pulse mode is on, and while
+			// a line-change animation is still in flight.
+			const auto animating = _lineChangedAt > 0
+				&& (crl::now() - _lineChangedAt < kLineChangeMs);
+			if (animating
+				|| AyuSettings::getInstance().musicLyricsAnimation() == 2) {
 				update();
+			} else {
+				return isVisible();
 			}
 		}
-		return isVisible();
+		return true;
 	});
 }
 
@@ -64,6 +82,7 @@ void LyricsWindow::setTrack(const QString &artist, const QString &title) {
 void LyricsWindow::setLyrics(const Ayu::Ui::Lyrics::Data &data) {
 	_data = data;
 	_active = -1;
+	_lastActive = -1;
 	_scroll = 0.;
 	_scrollTarget = 0.;
 	_autoFollow = true;
@@ -77,6 +96,9 @@ void LyricsWindow::setPosition(long long positionMs, int active, double progress
 		_active = active;
 		_lineChangedAt = crl::now();
 		ensureVisible(active);
+		if (!_anim.animating()) {
+			_anim.start();
+		}
 	}
 	update();
 }
@@ -131,19 +153,19 @@ void LyricsWindow::paintLine(
 	auto x = rect.x() + (rect.width() - totalW) / 2.;
 	const auto cy = rect.center().y();
 
-	const auto drawWords = [&](const QColor &color, const QRect *clip = nullptr) {
+	const auto drawWords = [&](const QBrush &color, const QRect *clip = nullptr) {
 		p.save();
 		if (clip) p.setClipRect(*clip);
-		p.setPen(color);
+		p.setPen(QPen(color, 1.));
 		auto cx = x;
 		for (const auto &w : words) {
 			p.save();
 			p.translate(cx + w.w / 2., cy + w.dy);
 			if (w.angle != 0.) p.rotate(w.angle);
 			// Shadow for readability.
-			p.setPen(QColor(0, 0, 0, int(color.alpha() * 0.55)));
+			p.setPen(QColor(0, 0, 0, int(color.color().alpha() * 0.55)));
 			p.drawText(QRectF(-w.w / 2. + 1, -font.pixelSize() / 2. + 1, w.w, font.pixelSize() + 8), Qt::AlignCenter, w.word);
-			p.setPen(color);
+			p.setPen(QPen(color, 1.));
 			p.drawText(QRectF(-w.w / 2., -font.pixelSize() / 2., w.w, font.pixelSize() + 8), Qt::AlignCenter, w.word);
 			p.restore();
 			cx += w.w + spaceW;
@@ -160,23 +182,34 @@ void LyricsWindow::paintLine(
 	if (mode == 0) { // karaoke fill
 		drawWords(QColor(150, 150, 155, 200));
 		if (progress >= 0.) {
-			const auto fillW = totalW * std::clamp(progress, 0., 1.);
-			auto clip = QRect(int(x), rect.y(), int(fillW), rect.height());
-			drawWords(QColor(255, 255, 255, int(255 * fade)), &clip);
+			// Soft gradient edge, same approach as the island panel.
+			const auto clamped = std::clamp(progress, 0., 1.);
+			const auto filled = totalW * clamped;
+			const auto feather = std::min(28., totalW / 4.);
+			auto fill = QLinearGradient(QPointF(x, 0.), QPointF(x + filled, 0.));
+			fill.setColorAt(0., QColor(255, 255, 255, int(255 * fade)));
+			if (filled > feather) {
+				fill.setColorAt((filled - feather) / filled, QColor(255, 255, 255, int(255 * fade)));
+			}
+			fill.setColorAt(1., QColor(255, 255, 255, 0));
+			auto clip = QRect(int(x), rect.y(), int(filled + feather), rect.height());
+			drawWords(fill, &clip);
 		} else {
 			drawWords(QColor(255, 255, 255, int(255 * fade)));
 		}
 	} else if (mode == 1) { // fade + glow
-		// Glow pass.
+		// Glow pass: breathing bloom, 4 offset copies with gradient pens.
+		const auto now = crl::now();
+		const auto glow = 0.5 + 0.5 * std::sin(now / 900. + 1.2);
+		const auto a = int((20. + 16. * glow) * fade);
 		for (auto i = 0; i < 4; ++i) {
-			const auto a = int(28 * fade);
 			p.save();
 			p.setPen(QColor(120, 180, 255, a));
 			// Slight offsets fake the bloom.
 			auto cx = x;
 			for (const auto &w : words) {
 				p.save();
-				p.translate(cx + w.w / 2. + (i - 1.5), cy + w.dy + (i % 2 ? 1 : -1));
+				p.translate(cx + w.w / 2. + (i - 1.5), cy + w.dy + (i % 2 ? 1. : -1.));
 				if (w.angle != 0.) p.rotate(w.angle);
 				p.drawText(QRectF(-w.w / 2., -font.pixelSize() / 2., w.w, font.pixelSize() + 8), Qt::AlignCenter, w.word);
 				p.restore();
@@ -187,7 +220,9 @@ void LyricsWindow::paintLine(
 		drawWords(QColor(255, 255, 255, int(255 * fade)));
 	} else { // pulse
 		const auto t = crl::now() / 1000.;
-		const auto s = 1. + 0.035 * std::sin(t * 3.2);
+		const auto s = 1.
+			+ 0.028 * std::sin(t * 3.2)
+			+ 0.01 * std::sin(t * 8.4);
 		p.save();
 		p.translate(rect.center().x(), cy);
 		p.scale(s, s);
@@ -201,11 +236,27 @@ void LyricsWindow::ensureVisible(int active) {
 	if (active < 0 || !_autoFollow) {
 		return;
 	}
-	// Each line i occupies kLineH, active occupies kActiveH.
+	// Each line i occupies kLineH, active occupies kActiveH. The goal is
+	// to land the active line a bit above the middle, where it is easiest
+	// to read with the next lines below it.
 	auto y = double(kPad + 54);
-	for (auto i = 0; i < active; ++i) y += kLineH;
-	_scrollTarget = std::max(0., y - height() / 2.);
+	for (auto i = 0; i < active; ++i) {
+		y += kLineH;
+	}
+	_scrollTarget = std::max(0., y + kActiveH / 2. - height() / 2.);
+	_scrollTarget = std::min(_scrollTarget, maxScroll());
 	if (!_anim.animating()) _anim.start();
+}
+
+double LyricsWindow::maxScroll() const {
+	if (_data.lines.empty()) {
+		return 0.;
+	}
+	auto y = double(kPad + 54);
+	for (auto i = 0; i < int(_data.lines.size()); ++i) {
+		y += (i == _active) ? kActiveH : kLineH;
+	}
+	return std::max(0., y + kPad - height());
 }
 
 void LyricsWindow::updateAutoScroll() {
@@ -254,12 +305,22 @@ void LyricsWindow::paintEvent(QPaintEvent *e) {
 
 	const auto now = crl::now();
 	const auto sinceChange = now - _lineChangedAt;
-	const auto changeFade = std::clamp(sinceChange / 280., 0., 1.);
+	const auto changeFade = easeOutCubic(
+		std::clamp(sinceChange / kLineChangeMs, 0., 1.));
 
 	auto y = double(kPad + 54) - _scroll;
 	for (auto i = 0; i < int(_data.lines.size()); ++i) {
 		const auto isActive = (i == _active);
-		const auto h = isActive ? kActiveH : kLineH;
+		const auto wasActive = (i == _lastActive);
+		// The active row grows from kLineH to kActiveH as the line fades
+		// in, and the previously active one shrinks back: no hard layout
+		// jump on every line switch.
+		auto h = double(kLineH);
+		if (isActive) {
+			h = anim::interpolate(kLineH, kActiveH, changeFade);
+		} else if (wasActive) {
+			h = anim::interpolate(kActiveH, kLineH, changeFade);
+		}
 		if (y + h < 60 || y > height()) {
 			y += h;
 			continue;
@@ -272,20 +333,27 @@ void LyricsWindow::paintEvent(QPaintEvent *e) {
 		} else {
 			fade = 0.75;
 		}
-		paintLine(p, _data.lines[i].text, QRect(kPad, int(y), width() - 2 * kPad, h), isActive, isActive ? _progress : -1., fade, i * 131 + 7);
+		paintLine(p, _data.lines[i].text, QRect(kPad, int(y), width() - 2 * kPad, int(h)), isActive, isActive ? _progress : -1., fade, i * 131 + 7);
 		y += h;
 	}
+	_lastActive = _active;
 }
 
 void LyricsWindow::wheelEvent(QWheelEvent *e) {
 	_autoFollow = false;
-	_scrollTarget = std::clamp(_scrollTarget - e->angleDelta().y() * 0.6, 0., 4000.);
-	_scroll = std::clamp(_scroll - e->angleDelta().y() * 0.6, 0., 4000.);
+	// Only the target moves; _scroll eases toward it in the anim callback,
+	// so wheel scrolling glides instead of jumping a fixed step.
+	_scrollTarget = std::clamp(
+		_scrollTarget - e->angleDelta().y() * 0.6,
+		0.,
+		maxScroll());
 	// Return to auto-follow when scrolled near the active line.
 	if (_active >= 0) {
 		auto y = double(kPad + 54);
 		for (auto i = 0; i < _active; ++i) y += kLineH;
-		if (std::abs((y - height() / 2.) - _scroll) < 60.) _autoFollow = true;
+		if (std::abs((y + kActiveH / 2. - height() / 2.) - _scroll) < 60.) {
+			_autoFollow = true;
+		}
 	}
 	update();
 	if (!_anim.animating()) _anim.start();

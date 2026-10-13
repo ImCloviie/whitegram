@@ -54,9 +54,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_settings.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
 
 namespace Info::Stories {
 namespace {
@@ -208,17 +206,26 @@ InnerWidget::InnerWidget(
 	QWidget *parent,
 	not_null<Controller*> controller,
 	rpl::producer<int> albumId,
-	int addingToAlbumId)
+	int addingToAlbumId,
+	bool myProfile)
 : RpWidget(parent)
 , _controller(controller)
 , _peer(controller->key().storiesPeer())
 , _addingToAlbumId(addingToAlbumId)
+, _myProfile(myProfile)
 , _albumId(std::move(albumId))
 , _albumChanges(Data::StoryAlbumUpdate{
 	.peer = _peer,
 	.albumId = _addingToAlbumId,
 })
 , _api(std::make_unique<MTP::Sender>(&_peer->session().mtp())) {
+	// Everything built below looks for this mark to drop its opaque fills
+	// while the full profile background is painted under the page, as the
+	// layer reports it, see Widget::Widget.
+	AyuFeatures::CustomProfileBackground::MarkBackgroundHost(
+		this,
+		_fullBackgroundPainted.value());
+
 	preloadArchiveCount();
 
 	_albumId.value(
@@ -258,7 +265,12 @@ void InnerWidget::preloadArchiveCount() {
 
 void InnerWidget::setupAlbums() {
 	Ui::AddSkip(_top);
-	_albumsWrap = _top->add(object_ptr<Ui::BoxContentDivider>(_top));
+	_albumsWrap = _top->add(object_ptr<Ui::BoxContentDivider>(
+		_top,
+		st::boxDividerHeight,
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			_top.data(),
+			st::defaultDividerBar)));
 
 	_peer->owner().stories().albumsListValue(
 		_peer->id
@@ -278,6 +290,10 @@ rpl::producer<int> InnerWidget::fullProfileCoverHeightValue() const {
 	return _fullProfileCoverHeight.value();
 }
 
+void InnerWidget::setFullBackgroundPainted(rpl::producer<bool> painted) {
+	_fullBackgroundPainted = std::move(painted);
+}
+
 rpl::producer<> InnerWidget::backRequest() const {
 	return _backClicks.events();
 }
@@ -288,7 +304,7 @@ void InnerWidget::setupTop() {
 		return;
 	} else if (albumId == Data::kStoriesAlbumIdArchive) {
 		createAboutArchive();
-	} else if (_isStackBottom) {
+	} else if (_isStackBottom || _myProfile) {
 		if (_peer->isSelf()) {
 			createProfileTop();
 		} else if (_peer->owner().stories().hasArchive(_peer)) {
@@ -315,26 +331,16 @@ void InnerWidget::createProfileTop() {
 	startTop();
 
 	namespace Background = AyuFeatures::CustomProfileBackground;
-	const auto peer = _peer;
 	const auto coverSection = _top->add(
 		object_ptr<Ui::VerticalLayout>(_top));
 	_fullProfileCoverHeight = coverSection->heightValue();
 
-	auto fullProfileBackground = rpl::single(
-		rpl::empty
-	) | rpl::then(rpl::merge(
-		AyuSettings::getInstance().customProfileBackgroundChanges(),
-		Whitegram::Backend::profileBackgroundUpdates() | rpl::to_empty
-	)) | rpl::map([=] {
-		return Background::BackgroundEnabledFor(peer)
-			&& Background::UsesFullBackground(peer->id.value);
-	}) | rpl::distinct_until_changed();
 	Info::Saved::SetupSavedMusic(
 		coverSection,
 		_controller,
 		_peer,
 		_topBarColor.value(),
-		std::move(fullProfileBackground));
+		Background::BackgroundShownValue(coverSection));
 
 	using namespace Profile;
 	AddDetails(
@@ -351,7 +357,9 @@ void InnerWidget::createProfileTop() {
 			_top,
 			object_ptr<Ui::VerticalLayout>(_top)));
 	const auto divider = dividerWrap->entity();
-	Ui::AddDivider(divider);
+	Ui::AddDivider(
+		divider,
+		Background::AdaptiveStyle(divider, st::defaultDividerBar));
 	Ui::AddSkip(divider);
 
 	addGiftsButton(tracker);
@@ -398,7 +406,9 @@ void InnerWidget::addArchiveButton(Ui::MultiSlideTracker &tracker) {
 			object_ptr<Ui::SettingsButton>(
 				_top,
 				tr::lng_stories_archive_button(),
-				st::infoSharedMediaButton))
+				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+					_top.data(),
+					st::infoSharedMediaButton)))
 	)->setDuration(
 		st::infoSlideDuration
 	)->toggleOn(rpl::duplicate(count) | rpl::map(rpl::mappers::_1 > 0));
@@ -435,7 +445,9 @@ void InnerWidget::addRecentButton(Ui::MultiSlideTracker &tracker) {
 			object_ptr<Ui::SettingsButton>(
 				_top,
 				tr::lng_stories_recent_button(),
-				st::infoSharedMediaButton)));
+				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+					_top.data(),
+					st::infoSharedMediaButton))));
 
 	using namespace Dialogs::Stories;
 	auto last = LastForPeer(
@@ -502,7 +514,9 @@ void InnerWidget::addGiftsButton(Ui::MultiSlideTracker &tracker) {
 			object_ptr<Ui::SettingsButton>(
 				_top,
 				tr::lng_peer_gifts_title(),
-				st::infoSharedMediaButton))
+				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+					_top.data(),
+					st::infoSharedMediaButton)))
 	)->setDuration(
 		st::infoSlideDuration
 	)->toggleOn(rpl::duplicate(count) | rpl::map(rpl::mappers::_1 > 0));
@@ -612,7 +626,10 @@ void InnerWidget::createAboutArchive() {
 				? tr::lng_stories_channel_archive_about
 				: tr::lng_stories_archive_about)(),
 			st::infoStoriesAboutArchive),
-		st::infoStoriesAboutArchivePadding));
+		st::infoStoriesAboutArchivePadding,
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			_top.data(),
+			st::defaultDividerBar)));
 
 	finalizeTop();
 }
@@ -817,7 +834,9 @@ void InnerWidget::refreshAlbumsTabs() {
 		const auto tabsCount = tabs.size();
 		_albumsTabs = std::make_unique<Ui::SubTabs>(
 			_albumsWrap,
-			st::collectionSubTabs,
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				_albumsWrap,
+				st::collectionSubTabs),
 			Ui::SubTabs::Options{
 				.selected = selected,
 				.centered = true,

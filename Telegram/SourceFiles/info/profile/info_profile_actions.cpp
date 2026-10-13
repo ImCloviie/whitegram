@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ui/ghost_profile_box.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/ui/components/phone_blur.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
 
 #include "api/api_blocked_peers.h"
@@ -939,9 +940,7 @@ void DeleteContactNote(
 	) | rpl::start_spawning(result->lifetime());
 
 	auto label = BirthdayLabelText(rpl::duplicate(birthday));
-	auto text = BirthdayValueText(
-		rpl::duplicate(birthday)
-	) | rpl::map(tr::marked);
+	auto text = BirthdayValueMarkedText(user, rpl::duplicate(birthday));
 
 	const auto giftIcon = Ui::CreateChild<Ui::RpWidget>(layout);
 	giftIcon->resize(st::birthdayTodayIcon.size());
@@ -994,7 +993,12 @@ void DeleteContactNote(
 	layout->add(object_ptr<Ui::FlatLabel>(
 		layout,
 		std::move(nonEmptyText),
-		st::birthdayLabeled));
+		st::birthdayLabeled,
+		st::defaultPopupMenu,
+		Ui::Text::MarkedContext{
+			.customEmojiFactory = user->owner().customEmojiManager().factory(
+				Data::CustomEmojiManager::SizeTag::Normal),
+		}));
 	layout->add(Ui::CreateSkipWidget(layout, st::infoLabelSkip));
 	layout->add(object_ptr<Ui::FlatLabel>(
 		layout,
@@ -1030,7 +1034,7 @@ auto AddActionButton(
 		object_ptr<Ui::SettingsButton>(
 			parent,
 			std::move(text),
-			st))
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(parent, st)))
 	);
 	result->setDuration(
 		st::infoSlideDuration
@@ -1131,7 +1135,7 @@ rpl::producer<CreditsAmount> AddCurrencyAction(
 	const auto button = wrapButton->entity();
 	const auto name = Ui::CreateChild<Ui::FlatLabel>(button, st.rightLabel);
 	const auto icon = state->helper.paletteDependent({ .factory = [=] {
-		return Ui::Earn::IconCurrencyColored(
+		return Ui::Earn::IconCurrencyTwoTone(
 			st.rightLabel.style.font,
 			st.rightLabel.textFg->c);
 	}, .margin = st::channelEarnCurrencyCommonMargins });
@@ -1261,7 +1265,6 @@ private:
 	void addSection(Section section);
 	[[nodiscard]] Section makePersonalChannel(not_null<UserData*> user);
 	[[nodiscard]] Section makeInfo();
-	[[nodiscard]] Section makeAddAsContact(not_null<UserData*> user);
 	void addBotVerify();
 	void addMainApp(not_null<UserData*> user);
 	[[nodiscard]] Section makeBotPermissions(not_null<UserData*> user);
@@ -1506,9 +1509,20 @@ Section DetailsFiller::makeInfo() {
 	// The filler dies when this section is built, while the layer lives as
 	// long as the widget, so the peer has to be captured by value.
 	const auto infoBackgroundPeer = _peer;
-	AyuFeatures::CustomProfileBackground::AttachInfoBackgroundLayer(
-		result,
-		[=] { return infoBackgroundPeer.get(); });
+	auto infoBackgroundPainted
+		= AyuFeatures::CustomProfileBackground::AttachInfoBackgroundLayer(
+			result,
+			[=] { return infoBackgroundPeer.get(); });
+	{
+		// The rows of this block see through to its own background as well
+		// as to the one under the whole profile, while they are painted.
+		using namespace AyuFeatures::CustomProfileBackground;
+		using namespace rpl::mappers;
+		MarkBackgroundHost(result, rpl::combine(
+			BackgroundShownValue(result),
+			std::move(infoBackgroundPainted)
+		) | rpl::map(_1 || _2));
+	}
 	auto tracker = Ui::MultiSlideTracker();
 
 	// Fill context for a mention / hashtag / bot command link.
@@ -1538,9 +1552,9 @@ Section DetailsFiller::makeInfo() {
 				Qt::SkipEmptyParts).last();
 			if (!joinDate.isEmpty()) {
 				const auto weak = base::make_weak(window);
-				window->session().api().resolveJumpToDate(
+				window->session().api().resolveJumpToTime(
 					Dialogs::Key(peer->owner().history(peer)),
-					base::unixtime::parse(joinDate.toULongLong()).date(),
+					TimeId(joinDate.toULongLong()),
 					[=](not_null<PeerData*> p, MsgId m) {
 						const auto f = Window::SectionShow::Way::Forward;
 						if (const auto strong = weak.get()) {
@@ -1782,6 +1796,11 @@ Section DetailsFiller::makeInfo() {
 				tr::lng_profile_copy_phone(tr::now),
 				st::infoProfileLabeledPadding,
 				st::popupMenuWithIcons).text;
+			if (user->isSelf()) {
+				Ui::CreateChild<Ayu::UI::PhoneBlur>(
+					phoneLabel->parentWidget(),
+					phoneLabel);
+			}
 			const auto hook = [=](Ui::FlatLabel::ContextMenuRequest request) {
 				if (request.selection.empty()) {
 					const auto callback = [=] {
@@ -2053,6 +2072,19 @@ Section DetailsFiller::makeInfo() {
 				return false;
 			});
 		}
+	}
+	if (const auto user = _peer->asUser()) {
+		// It is a part of this block, so that the block background is
+		// painted under it too.
+		AddMainButton(
+			result,
+			tr::lng_info_add_as_contact(),
+			CanAddContactValue(user),
+			[=, controller = _controller->parentController()] {
+				controller->uiShow()->show(
+					Box(EditContactBox, controller, user));
+			},
+			&tracker);
 	}
 	raw->toggleOn(tracker.atLeastOneShownValue());
 	raw->finishAnimating();
@@ -2452,9 +2484,14 @@ void DetailsFiller::addMainApp(not_null<UserData*> user) {
 		return text;
 	});
 	auto setup = [url](not_null<Ui::FlatLabel*> label) {
-		label->setClickHandlerFilter([=](const auto &...) {
-			UrlClickHandler::Open(url);
-			return false;
+		label->setClickHandlerFilter([=](
+				const ClickHandlerPtr &link,
+				Qt::MouseButton) {
+			if (link && link->url() == url) {
+				UrlClickHandler::Open(url);
+				return false;
+			}
+			return true;
 		});
 	};
 
@@ -2481,7 +2518,9 @@ Section DetailsFiller::makeBotPermissions(not_null<UserData*> user) {
 		object_ptr<Ui::SettingsButton>(
 			inner,
 			tr::lng_profile_bot_emoji_status_access(),
-			st::infoSharedMediaButton));
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				inner,
+				st::infoSharedMediaButton)));
 	object_ptr<Profile::FloatingIcon>(
 		emoji,
 		st::infoIconEmojiStatusAccess,
@@ -2503,29 +2542,6 @@ Section DetailsFiller::makeBotPermissions(not_null<UserData*> user) {
 	return Section{
 		.widget = std::move(wrap),
 		.shown = rpl::single(true),
-	};
-}
-
-Section DetailsFiller::makeAddAsContact(not_null<UserData*> user) {
-	const auto parent = _stack->layout();
-	auto wrap = object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-		parent,
-		object_ptr<Ui::VerticalLayout>(parent));
-	const auto raw = wrap.data();
-	AddMainButton(
-		raw->entity(),
-		tr::lng_info_add_as_contact(),
-		CanAddContactValue(user),
-		[=, controller = _controller->parentController()] {
-			controller->uiShow()->show(
-				Box(EditContactBox, controller, user));
-		},
-		nullptr,
-		nullptr);
-	raw->toggleOn(CanAddContactValue(user));
-	return Section{
-		.widget = std::move(wrap),
-		.shown = raw->toggledValue(),
 	};
 }
 
@@ -2935,7 +2951,6 @@ void DetailsFiller::buildSections() {
 	}
 	addSection(makeInfo());
 	if (const auto user = _peer->asUser()) {
-		addSection(makeAddAsContact(user));
 		addBotVerify();
 		if (const auto info = user->botInfo.get()) {
 			if (info->hasMainApp) {
@@ -3030,7 +3045,9 @@ void ActionsFiller::addAffiliateProgram(not_null<UserData*> user) {
 		tr::lng_manage_peer_bot_star_ref(),
 		rpl::duplicate(commission),
 		recipients->open,
-		st::infoSharedMediaCountButton,
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			inner,
+			st::infoSharedMediaCountButton),
 		{ .icon = &st::menuIconSharing }));
 	Ui::AddSkip(inner);
 	Ui::AddDividerText(
@@ -3040,7 +3057,11 @@ void ActionsFiller::addAffiliateProgram(not_null<UserData*> user) {
 			rpl::single(TextWithEntities{ user->name() }),
 			lt_amount,
 			rpl::duplicate(commission) | rpl::map(tr::marked),
-			tr::rich));
+			tr::rich),
+		st::defaultBoxDividerLabelPadding,
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			inner,
+			st::defaultDividerLabel));
 	Ui::AddSkip(inner);
 
 	wrap->toggleOn(std::move(
@@ -3061,7 +3082,11 @@ void ActionsFiller::addBalanceActions(not_null<UserData*> user) {
 	auto currencyBalance = AddCurrencyAction(user, inner, _controller);
 	auto creditsBalance = AddCreditsAction(user, inner, _controller);
 	Ui::AddSkip(inner);
-	Ui::AddDivider(inner);
+	Ui::AddDivider(
+		inner,
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			inner,
+			st::defaultDividerBar));
 	Ui::AddSkip(inner);
 	wrap->toggleOn(
 		rpl::combine(
@@ -3090,7 +3115,11 @@ void ActionsFiller::addInviteToGroupAction(not_null<UserData*> user) {
 	Ui::AddSkip(about->entity());
 	Ui::AddDividerText(
 		about->entity(),
-		InviteToChatAbout(user) | rpl::filter(notEmpty));
+		InviteToChatAbout(user) | rpl::filter(notEmpty),
+		st::defaultBoxDividerLabelPadding,
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			about->entity(),
+			st::defaultDividerLabel));
 	Ui::AddSkip(about->entity());
 	about->finishAnimating();
 }
@@ -3138,14 +3167,20 @@ void ActionsFiller::addFastButtonsMode(not_null<UserData*> user) {
 	const auto button = _wrap->add(object_ptr<Ui::SettingsButton>(
 		_wrap,
 		rpl::single(u"Fast buttons mode"_q),
-		st::infoSharedMediaButton));
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			_wrap.data(),
+			st::infoSharedMediaButton)));
 	object_ptr<Info::Profile::FloatingIcon>(
 		button,
 		st::infoIconMediaBot,
 		st::infoSharedMediaButtonIconPosition);
 
 	AddSkip(_wrap);
-	AddDivider(_wrap);
+	AddDivider(
+		_wrap,
+		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			_wrap.data(),
+			st::defaultDividerBar));
 	AddSkip(_wrap);
 
 	button->toggleOn(bots->enabledValue(user));

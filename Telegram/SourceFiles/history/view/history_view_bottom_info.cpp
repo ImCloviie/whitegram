@@ -516,9 +516,10 @@ void BottomInfo::layoutDateText() {
 		const auto prefix = !author.isEmpty() ? u", "_q : QString();
 		const auto date = editedPrimary
 			? FormatEditedDate(_data.date, _data.editedDate)
-			: edited + ((_data.flags & Data::Flag::ForwardedDate)
+			: edited + ((_data.flags
+				& (Data::Flag::ForwardedDate | Data::Flag::FullDate))
 			? Ui::FormatDateTimeSavedFrom(_data.date)
-			: formatMessageTime(_data.date.time()));
+			: QLocale().toString(_data.date.time(), QLocale::ShortFormat));
 
 		const auto afterAuthor = prefix + date;
 		const auto afterAuthorWidth = st::msgDateFont->width(afterAuthor);
@@ -608,9 +609,10 @@ void BottomInfo::layoutDateText() {
 
 		const auto dateStr = editedPrimary
 			? FormatEditedDate(_data.date, _data.editedDate)
-			: (_data.flags & Data::Flag::ForwardedDate)
+			: (_data.flags
+				& (Data::Flag::ForwardedDate | Data::Flag::FullDate))
 			? Ui::FormatDateTimeSavedFrom(_data.date)
-			: formatMessageTime(_data.date.time());
+			: QLocale().toString(_data.date.time(), QLocale::ShortFormat);
 
 		const auto date = TextWithEntities{}
 			.append(edited)
@@ -796,6 +798,8 @@ BottomInfo::Data BottomInfoDataFromMessage(not_null<Message*> message) {
 	}
 	if (message->context() == Context::ShortcutMessages) {
 		result.flags |= Flag::Shortcut;
+	} else if (message->context() == Context::MediaEditor) {
+		result.flags |= Flag::FullDate;
 	}
 	if (!item->isPost()
 		|| !item->hasRealFromId()

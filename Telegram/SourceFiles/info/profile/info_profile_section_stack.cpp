@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_section_stack.h"
 
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ui/widgets/box_content_divider.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/slide_wrap.h"
@@ -22,12 +23,13 @@ namespace {
 
 [[nodiscard]] not_null<Ui::SlideWrap<>*> CreatePlainSeparator(
 		not_null<Ui::VerticalLayout*> layout) {
+	using AyuFeatures::CustomProfileBackground::AdaptiveStyle;
 	auto inner = object_ptr<Ui::VerticalLayout>(layout);
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
 	inner->add(object_ptr<Ui::BoxContentDivider>(
 		inner.data(),
 		st::boxDividerHeight,
-		st::defaultDividerBar));
+		AdaptiveStyle(inner.data(), st::defaultDividerBar)));
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
 	return layout->add(object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 		layout,
@@ -38,6 +40,7 @@ namespace {
 		not_null<Ui::VerticalLayout*> layout,
 		rpl::producer<TextWithEntities> text,
 		Fn<void(not_null<Ui::FlatLabel*>)> setup) {
+	using AyuFeatures::CustomProfileBackground::AdaptiveStyle;
 	auto inner = object_ptr<Ui::VerticalLayout>(layout);
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
 	auto label = object_ptr<Ui::FlatLabel>(
@@ -49,7 +52,7 @@ namespace {
 		inner.data(),
 		std::move(label),
 		st::defaultBoxDividerLabelPadding,
-		st::defaultDividerLabel.bar,
+		AdaptiveStyle(inner.data(), st::defaultDividerLabel.bar),
 		RectPart::Top | RectPart::Bottom));
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
 	const auto wrap = layout->add(

@@ -73,14 +73,18 @@ rpl::producer<bool> SetupSavedMusic(
 			container,
 			object_ptr<Ui::VerticalLayout>(container)));
 
+	// Applied to the button as it changes. Building the button again would
+	// hide it and slide it in again, and the background turns on once its
+	// first frame is painted, a moment after the profile is shown.
+	const auto transparent = container->lifetime().make_state<
+		rpl::variable<bool>>(std::move(fullProfileBackground));
+
 	rpl::combine(
 		std::move(musicValue),
-		std::move(topBarColor),
-		std::move(fullProfileBackground)
+		std::move(topBarColor)
 	) | rpl::on_next([=](
 			HistoryItem *item,
-			std::optional<QColor> color,
-			bool transparent) {
+			std::optional<QColor> color) {
 		while (divider->entity()->count()) {
 			delete divider->entity()->widgetAt(0);
 		}
@@ -104,8 +108,11 @@ rpl::producer<bool> SetupSavedMusic(
 				musicButton->ease = anim::easeOutCubic;
 				musicButton->setDuration(250);
 				musicButton->entity()->setAcceptBoth(true);
-				musicButton->entity()->setProfileBackgroundTransparent(
-					transparent);
+				transparent->value(
+				) | rpl::on_next([=](bool value) {
+					musicButton->entity()->setProfileBackgroundTransparent(
+						value);
+				}, musicButton->lifetime());
 				musicButton->entity()->clicks() | rpl::filter([=](Qt::MouseButton mouseButton)
 				{
 					return mouseButton == Qt::RightButton;

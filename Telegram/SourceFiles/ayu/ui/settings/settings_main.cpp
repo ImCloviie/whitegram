@@ -9,12 +9,13 @@
 #include "settings/sections/settings_main.h"
 #include "lang_auto.h"
 #include "lang/lang_instance.h"
+#include "lang/lang_keys.h"
 #include "ayu/ayu_settings.h"
+#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
 #include "ayu/features/self_destruct/self_destruct.h"
 #include "ayu/features/self_destruct/self_destruct_box.h"
 #include "ayu/features/custom_archives/custom_archives.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/ui/ayu_logo.h"
 #include "ayu/ui/components/icon_picker.h"
 #include "ayu/ui/settings/custom_archives_box.h"
@@ -615,6 +616,182 @@ protected:
 
 private:
 	const not_null<Ui::VerticalLayout*> _content;
+
+};
+
+class ProfileBackgroundCard final : public Ui::RpWidget {
+public:
+	ProfileBackgroundCard(
+		QWidget *parent,
+		QString title,
+		QString hint,
+		uint64 peerId,
+		::CustomProfileBackground::Zone zone,
+		Fn<void()> pick,
+		Fn<void()> remove)
+	: Ui::RpWidget(parent)
+	, _title(std::move(title))
+	, _hint(std::move(hint))
+	, _peerId(peerId)
+	, _zone(zone)
+	, _pick(std::move(pick))
+	, _remove(std::move(remove)) {
+		setMouseTracking(true);
+		AyuSettings::getInstance().customProfileBackgroundChanges(
+		) | rpl::on_next([=] {
+			_preview = QImage();
+			_path.clear();
+			update();
+		}, lifetime());
+	}
+
+protected:
+	void paintEvent(QPaintEvent *e) override {
+		auto p = QPainter(this);
+		auto hq = PainterHighQualityEnabler(p);
+
+		const auto radius = st::profileBackgroundCardRadius;
+		const auto rect = this->rect().marginsRemoved(
+			st::profileBackgroundCardMargin);
+		if (rect.isEmpty()) {
+			return;
+		}
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowBgOver);
+		p.drawRoundedRect(rect, radius, radius);
+
+		const auto inner = rect.marginsRemoved(st::profileBackgroundCardPadding);
+
+		// Preview plate.
+		const auto preview = QRect(
+			inner.x(),
+			inner.y(),
+			inner.width(),
+			st::profileBackgroundPreviewHeight);
+		const auto previewRadius = st::profileBackgroundPreviewRadius;
+		p.setBrush(st::windowBg);
+		p.drawRoundedRect(preview, previewRadius, previewRadius);
+
+		const auto path = BackgroundFilePath();
+		if (!path.isEmpty()) {
+			ensurePreview(path);
+			if (!_preview.isNull()) {
+				p.save();
+				QPainterPath clip;
+				clip.addRoundedRect(preview, previewRadius, previewRadius);
+				p.setClipPath(clip);
+				const auto scaled = _preview.scaled(
+					preview.size(),
+					Qt::KeepAspectRatioByExpanding,
+					Qt::SmoothTransformation);
+				p.drawImage(preview.topLeft(), scaled);
+				p.restore();
+			}
+		}
+
+		// Title.
+		p.setPen(st::windowActiveTextFg);
+		p.setFont(st::semiboldFont);
+		const auto textTop = preview.bottom()
+			+ 1 + st::profileBackgroundZoneSkip;
+		p.drawText(
+			QRect(inner.x(), textTop, inner.width(), st::semiboldFont->height),
+			_title,
+			Qt::AlignVCenter | Qt::AlignLeft);
+
+		// Status badge under the title.
+		const auto has = !path.isEmpty();
+		const auto badgeText = has
+			? QString::fromUtf8("Настроен")
+			: QString::fromUtf8("Не задан");
+		p.setFont(st::defaultTextStyle.font);
+		const auto badgeWidth = st::defaultTextStyle.font->width(badgeText)
+			+ st::profileBackgroundBadgePadding.left()
+			+ st::profileBackgroundBadgePadding.right();
+		const auto badgeHeight = st::defaultTextStyle.font->height
+			+ st::profileBackgroundBadgePadding.top()
+			+ st::profileBackgroundBadgePadding.bottom();
+		const auto badge = QRect(
+			inner.x(),
+			textTop + st::semiboldFont->height + 4,
+			badgeWidth,
+			badgeHeight);
+		p.setBrush(has ? st::groupCallLive1 : st::windowSubTextFg);
+		p.setPen(Qt::NoPen);
+		p.drawRoundedRect(badge, st::profileBackgroundBadgeRadius, st::profileBackgroundBadgeRadius);
+		p.setPen(st::windowBg);
+		p.drawText(badge, badgeText, Qt::AlignVCenter | Qt::AlignHCenter);
+
+		// Remove button on the right of the badge, only when set.
+		if (has) {
+			const auto removeText = Lang::GetInstance().id().startsWith(u"ru"_q)
+				? QString::fromUtf8("Удалить")
+				: QString("Remove");
+			const auto removeWidth = st::defaultTextStyle.font->width(removeText)
+				+ st::profileBackgroundBadgePadding.left()
+				+ st::profileBackgroundBadgePadding.right();
+			const auto remove = QRect(
+				inner.x() + inner.width() - removeWidth,
+				badge.y(),
+				removeWidth,
+				badgeHeight);
+			_removeRect = remove;
+			p.setBrush(Qt::NoBrush);
+			p.setPen(st::boxTextFgError->c);
+			p.setFont(st::defaultTextStyle.font);
+			p.drawText(remove, removeText, Qt::AlignVCenter | Qt::AlignHCenter);
+		} else {
+			_removeRect = QRect();
+		}
+	}
+
+	void mousePressEvent(QMouseEvent *e) override {
+		if (e->button() == Qt::LeftButton) {
+			if (_remove && _removeRect.contains(e->pos())) {
+				_remove();
+			} else {
+				_pick();
+			}
+		}
+	}
+
+	int resizeGetHeight(int newWidth) override {
+		return st::profileBackgroundCardMargin.top()
+			+ st::profileBackgroundCardPadding.top()
+			+ st::profileBackgroundPreviewHeight
+			+ st::profileBackgroundZoneSkip
+			+ st::semiboldFont->height
+			+ 4
+			+ st::defaultTextStyle.font->height
+			+ 2 * st::profileBackgroundBadgePadding.top()
+			+ st::profileBackgroundCardPadding.bottom()
+			+ st::profileBackgroundCardMargin.bottom();
+	}
+
+private:
+	[[nodiscard]] QString BackgroundFilePath() const {
+		return AyuFeatures::CustomProfileBackground::BackgroundFilePath(
+			_peerId,
+			_zone);
+	}
+
+	void ensurePreview(const QString &path) {
+		if (_path == path && !_preview.isNull()) {
+			return;
+		}
+		_path = path;
+		_preview = QImage(path);
+	}
+
+	QString _title;
+	QString _hint;
+	uint64 _peerId = 0;
+	::CustomProfileBackground::Zone _zone = ::CustomProfileBackground::Zone::Full;
+	Fn<void()> _pick;
+	Fn<void()> _remove;
+	QRect _removeRect;
+	QString _path;
+	QImage _preview;
 
 };
 
@@ -1926,7 +2103,6 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 	namespace Background = AyuFeatures::CustomProfileBackground;
 	using Zone = Background::Zone;
 	auto ayu = AyuSectionBuilder(builder);
-	const auto settings = &AyuSettings::getInstance();
 	const auto peerId = builder.session()->userPeerId().value;
 	const auto controller = builder.controller();
 
@@ -1947,69 +2123,35 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 		};
 	});
 	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
 
-	auto zoneShown = [&](Zone zone) -> rpl::producer<bool> {
-		return rpl::single(rpl::empty)
-			| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
-			| rpl::map([=]() -> bool {
-				return Background::HasBackground(peerId, zone);
-			});
-	};
-	auto zoneLabel = [=](Zone zone) -> rpl::producer<QString> {
-		return rpl::single(rpl::empty)
-			| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
-			| rpl::map([=]() -> QString {
-				const auto id = Lang::GetInstance().id();
-				const auto baseId = Lang::GetInstance().baseId();
-				const auto isRu = id.startsWith(u"ru"_q)
-					|| baseId.startsWith(u"ru"_q);
-				const auto name = Background::BackgroundFileName(peerId, zone);
-				return name.isEmpty()
-					? (isRu
-						? QString::fromUtf8("Не задан")
-						: QString("Not set"))
-					: name;
-			});
-	};
 	auto addZone = [&](
 			Zone zone,
 			const QString &titleRu,
 			const QString &titleEn,
 			const QString &hintRu,
 			const QString &hintEn) {
-		builder.addSubsectionTitle(trWhitegram(titleRu, titleEn));
-		builder.addDividerText(trWhitegram(hintRu, hintEn));
-		builder.addButton({
-			.id = u"whitegram/profileBackground/"_q
-				+ QString::number(int(zone)),
-			.title = trWhitegram(titleRu, titleEn),
-			.icon = { &st::menuIconPhoto },
-			.label = zoneLabel(zone),
-			.onClick = [=] {
-				Background::PickBackground(controller, peerId, zone);
-			},
-			.keywords = {
-				u"background"_q,
-				QString::fromUtf8("фон"),
-				QString::fromUtf8("профиль"),
-			},
+		const auto isRu = Lang::GetInstance().id().startsWith(u"ru"_q)
+			|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+		builder.add([&](const WidgetContext &ctx)
+				-> SectionBuilder::WidgetToAdd {
+			return {
+				.widget = object_ptr<ProfileBackgroundCard>(
+					ctx.container,
+					isRu ? titleRu : titleEn,
+					isRu ? hintRu : hintEn,
+					peerId,
+					zone,
+					[=] { Background::PickBackground(controller, peerId, zone); },
+					[=] { Background::RemoveBackground(peerId, zone); }),
+			};
 		});
-		builder.addButton({
-			.id = u"whitegram/profileBackground/remove/"_q
-				+ QString::number(int(zone)),
-			.title = trWhitegram(
-				QString::fromUtf8("Убрать фон"),
-				QString("Remove background")),
-			.st = &st::settingsAttentionButtonWithIcon,
-			.icon = { &st::menuIconDeleteAttention },
-			.onClick = [=] {
-				Background::RemoveBackground(peerId, zone);
-			},
-			.shown = zoneShown(zone),
+		builder.add(nullptr, [titleEn] {
+			return SearchEntry{
+				.id = u"whitegram/profileBackground/"_q,
+				.title = titleEn,
+				.keywords = { u"background"_q, u"profile"_q },
+			};
 		});
-		builder.addSkip();
 	};
 
 	addZone(
@@ -2051,8 +2193,11 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 			QString::fromUtf8("Затемнение фона"),
 			QString("Background dimming")),
 		.steps = 101,
-		.current = settings->profileBackgroundDim(),
+		.current = AyuSettings::getInstance().profileBackgroundDim(),
 		.indexToValue = [](int index) { return index; },
+		.onChanged = [](int value) {
+			AyuSettings::getInstance().setProfileBackgroundDim(value);
+		},
 		.onFinalChanged = [](int value) {
 			AyuSettings::getInstance().setProfileBackgroundDim(value);
 		},
@@ -2068,15 +2213,14 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 			"Затемнение помогает сохранить читаемость текста на светлых "
 			"фонах. 100% — как задумано, 0% — без затемнения. Другие "
 			"пользователи Whitegram тоже увидят эти фоны. Лучше всего "
-			"подходят вертикальные изображения вроде 1080×2400."),
+			"подходят вертикальные изображения вроде 1080×2800."),
 		QString(
 			"Dimming keeps text readable on bright backgrounds. 100% is "
 			"the designed look, 0% is no dimming. Other Whitegram users "
 			"will see these backgrounds too. Vertical images like "
-			"1080×2400 work best.")));
+			"1080×2800 work best.")));
 	builder.addSkip();
 });
-
 [[nodiscard]] std::vector<QString> MusicIslandExpandModeOptions() {
 	const auto id = Lang::GetInstance().id();
 	const auto baseId = Lang::GetInstance().baseId();

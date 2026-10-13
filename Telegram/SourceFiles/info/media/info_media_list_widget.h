@@ -398,6 +398,7 @@ private:
 	int _visibleTop = 0;
 	int _visibleBottom = 0;
 	bool _preloadEnabled = true;
+	bool _backgroundShown = false;
 	ListScrollTopState _scrollTopState;
 	rpl::event_stream<int> _scrollToRequests;
 	rpl::event_stream<std::optional<int>> _fullCountUpdates;

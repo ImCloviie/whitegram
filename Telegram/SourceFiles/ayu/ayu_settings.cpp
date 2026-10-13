@@ -12,6 +12,7 @@
 #include "ayu/ayu_worker.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/ui/ayu_logo.h"
 #include "core/application.h"
 #include "media/audio/media_audio_track.h"
@@ -738,10 +739,24 @@ void AyuSettings::initTimeSpentTracker() {
 		settings._timeSpentTimer = std::make_unique<base::Timer>([] {
 			auto &s = getInstance();
 			s.setTotalTimeSpent(s.getTotalTimeSpent() + 1);
+			if (const auto window = Core::App().activeWindow()) {
+				if (const auto session = window->maybeSession()) {
+					Whitegram::Backend::SyncTimeSpent(
+						session->userId().bare,
+						s.getTotalTimeSpent());
+				}
+			}
 		});
 	}
 	if (!settings._timeSpentTimer->isActive()) {
 		settings._timeSpentTimer->callEach(60 * crl::time(1000));
+	}
+	if (const auto window = Core::App().activeWindow()) {
+		if (const auto session = window->maybeSession()) {
+			Whitegram::Backend::SyncTimeSpent(
+				session->userId().bare,
+				settings.getTotalTimeSpent());
+		}
 	}
 }
 
@@ -1415,6 +1430,18 @@ void AyuSettings::setHideTelegramOnViewOnce(bool val) {
 	save();
 }
 
+void AyuSettings::setHidePhoneNumber(bool val) {
+	if (_hidePhoneNumber.current() == val) return;
+	_hidePhoneNumber = val;
+	save();
+}
+
+void AyuSettings::setPhoneRevealMode(PhoneRevealMode val) {
+	if (_phoneRevealMode.current() == val) return;
+	_phoneRevealMode = val;
+	save();
+}
+
 void AyuSettings::setMusicIslandEnabled(bool val) {
 	if (_musicIslandEnabled.current() == val) return;
 	_musicIslandEnabled = val;
@@ -1781,6 +1808,8 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"customProfileBackgrounds", s._customProfileBackgrounds},
 		{"streamerMode", s._streamerMode.current()},
 		{"hideTelegramOnViewOnce", s._hideTelegramOnViewOnce.current()},
+		{"hidePhoneNumber", s._hidePhoneNumber.current()},
+		{"phoneRevealMode", s._phoneRevealMode.current()},
 		{"musicIslandEnabled", s._musicIslandEnabled.current()},
 		{"musicIslandPosition", s._musicIslandPosition.current()},
 		{"musicIslandHideTopBar", s._musicIslandHideTopBar.current()},
@@ -1979,6 +2008,8 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 	s._streamerMode = j.value("streamerMode", defaults._streamerMode.current());
 	s._hideTelegramOnViewOnce = j.value("hideTelegramOnViewOnce", defaults._hideTelegramOnViewOnce.current());
+	s._hidePhoneNumber = j.value("hidePhoneNumber", defaults._hidePhoneNumber.current());
+	s._phoneRevealMode = j.value("phoneRevealMode", defaults._phoneRevealMode.current());
 	s._musicIslandEnabled = j.value(
 		"musicIslandEnabled",
 		defaults._musicIslandEnabled.current());

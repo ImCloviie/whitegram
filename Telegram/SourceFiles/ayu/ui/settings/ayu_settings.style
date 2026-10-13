@@ -154,3 +154,12 @@ whitegramUpdatesActionButton: RoundButton(defaultActiveButton) {
 		font: font(14px semibold);
 	}
 }
+
+profileBackgroundCardRadius: 16px;
+profileBackgroundCardMargin: margins(12px, 6px, 12px, 10px);
+profileBackgroundPreviewHeight: 120px;
+profileBackgroundPreviewRadius: 12px;
+profileBackgroundCardPadding: margins(14px, 14px, 14px, 14px);
+profileBackgroundZoneSkip: 14px;
+profileBackgroundBadgePadding: margins(10px, 4px, 10px, 4px);
+profileBackgroundBadgeRadius: 10px;

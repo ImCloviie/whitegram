@@ -62,6 +62,7 @@ constexpr auto kContentOverlayAlpha = 150;
 	const auto dim = AyuSettings::getInstance().profileBackgroundDim();
 	return (base * dim + 50) / 100;
 }
+
 constexpr auto kSeeThroughOverOpacity = 0.6;
 constexpr auto kSeeThroughDividerOpacity = 0.5;
 constexpr auto kHostObjectName = "whitegramProfileBackgroundHost";

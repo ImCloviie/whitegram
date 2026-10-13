@@ -9,6 +9,7 @@
 #include "settings/sections/settings_main.h"
 #include "lang_auto.h"
 #include "lang/lang_instance.h"
+#include "lang/lang_keys.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
@@ -723,7 +724,7 @@ protected:
 
 		// Remove button on the right of the badge, only when set.
 		if (has) {
-			const auto removeText = Lang::Id().startsWith(u"ru"_q)
+			const auto removeText = Lang::GetInstance().id().startsWith(u"ru"_q)
 				? QString::fromUtf8("Удалить")
 				: QString("Remove");
 			const auto removeWidth = st::defaultTextStyle.font->width(removeText)
@@ -2194,10 +2195,10 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 		.steps = 101,
 		.current = AyuSettings::getInstance().profileBackgroundDim(),
 		.indexToValue = [](int index) { return index; },
-		.onFinalChanged = [](int value) {
+		.onChanged = [](int value) {
 			AyuSettings::getInstance().setProfileBackgroundDim(value);
 		},
-		.onChanged = [](int value) {
+		.onFinalChanged = [](int value) {
 			AyuSettings::getInstance().setProfileBackgroundDim(value);
 		},
 		.formatLabel = [](int value) {

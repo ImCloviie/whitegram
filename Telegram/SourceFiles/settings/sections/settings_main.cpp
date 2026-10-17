@@ -176,7 +176,7 @@ Cover::Cover(
 			Window::GifPauseReason::Layer);
 	},
 	0, // customStatusLoopsLimit
-	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor)
+	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor | Info::Profile::BadgeType::WhitegramUser | Info::Profile::BadgeType::WhitegramDeveloper | Info::Profile::BadgeType::WhitegramCustom)
 , _userpic(
 	this,
 	controller,
@@ -238,13 +238,9 @@ Cover::Cover(
 			_badge.widget(),
 			_badge.sizeTag());
 	});
-	const auto isCustomBadge = isCustomBadgePeer(getBareID(_user));
-	const auto isExtera = isExteraPeer(getBareID(_user));
-	const auto isSupporter = isSupporterPeer(getBareID(_user));
-	const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(_user));
-	if (isExtera || isSupporter || isCustomBadge || isWhitegramSponsor) {
-		_exteraBadge.setPremiumClickCallback(badgeClickHandler(_user));
-	}
+	// The handler returns early for a peer without a badge, and the
+	// Whitegram user badge can appear asynchronously.
+	_exteraBadge.setPremiumClickCallback(badgeClickHandler(_user));
 	rpl::merge(
 		_badge.updated(),
 		_exteraBadge.updated()

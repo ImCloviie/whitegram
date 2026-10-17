@@ -158,7 +158,7 @@ ComposedBadge::ComposedBadge(
 		nullptr,
 		std::move(animationPaused),
 		0,
-		Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor) {
+		Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor | Info::Profile::BadgeType::WhitegramUser | Info::Profile::BadgeType::WhitegramDeveloper | Info::Profile::BadgeType::WhitegramCustom) {
 	if (hasUnread) {
 		_unread = Badge::CreateUnread(this, rpl::single(
 			rpl::empty

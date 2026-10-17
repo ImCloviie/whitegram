@@ -15,6 +15,7 @@
 #include "ayu/data/entities.h"
 #include "ayu/data/messages_storage.h"
 #include "ayu/features/filters/filters_controller.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "ayu/ui/boxes/donate_info_box.h"
 #include "ayu/ui/toasts.h"
@@ -61,6 +62,10 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 
+#include "rpl/filter.h"
+#include "rpl/map.h"
+#include "rpl/merge.h"
+
 namespace {
 
 constexpr auto usernameResolverBotId = 7424190611L;
@@ -106,7 +111,10 @@ BadgeToastIcon::BadgeToastIcon(
 	Info::Profile::BadgeType::Extera
 		| Info::Profile::BadgeType::ExteraSupporter
 		| Info::Profile::BadgeType::ExteraCustom
-		| Info::Profile::BadgeType::WhitegramSponsor) {
+		| Info::Profile::BadgeType::WhitegramSponsor
+		| Info::Profile::BadgeType::WhitegramUser
+		| Info::Profile::BadgeType::WhitegramDeveloper
+		| Info::Profile::BadgeType::WhitegramCustom) {
 	setAttribute(Qt::WA_TransparentForMouseEvents);
 	_badge.setOverrideStyle(&st::exteraBadgeToastBadge);
 	_badge.updated() | rpl::on_next([=] {
@@ -190,11 +198,38 @@ bool isWhitegramSponsorPeer(ID peerId) {
 	return (peerId == 1135044445) || RCManager::getInstance().whitegramSponsors().contains(peerId);
 }
 
+bool isWhitegramUserPeer(ID peerId) {
+	return Whitegram::Backend::IsWhitegramUser(peerId);
+}
+
+bool isWhitegramDeveloperPeer(ID peerId) {
+	return peerId == 1135044445;
+}
+
 bool isCustomBadgePeer(ID peerId) {
+	// Only the icon-based custom badges count: developer and sponsor
+	// admin badges are drawn by their own paths, otherwise the custom
+	// emoji painter would get an empty id and crash.
+	if (const auto badge = Whitegram::Backend::AdminBadgeFor(peerId)) {
+		if (badge->isCustom()) {
+			return true;
+		}
+	}
 	return RCManager::getInstance().supporterCustomBadges().contains(peerId);
 }
 
 CustomBadge getCustomBadge(ID peerId) {
+	// The badges from the Whitegram backend admin panel win over the
+	// remote config ones. The Whitegram ones are icon-based, they carry
+	// no custom emoji id, only the toast text.
+	if (const auto badge = Whitegram::Backend::AdminBadgeFor(peerId)) {
+		return CustomBadge{
+			.emojiStatusId = EmojiStatusId{},
+			.text = badge->isCustom()
+				? Whitegram::Backend::CustomBadgeText(badge->customId)
+				: badge->text,
+		};
+	}
 	const auto &badges = RCManager::getInstance().supporterCustomBadges();
 	if (const auto it = badges.find(peerId); it != badges.end()) {
 		return it->second;
@@ -235,11 +270,54 @@ QImage MakeWhitegramSponsorLogoImage() {
 	return image.isNull() ? MakeWhitegramSponsorBadgeImage() : image;
 }
 
+QImage MakeWhitegramUserBadgeImage() {
+	return LoadScaledGuiImage(u":/gui/icons/ayu/"_q, u"whitegram_user_icon"_q);
+}
+
+QImage MakeWhitegramDeveloperBadgeImage() {
+	return LoadScaledGuiImage(u":/gui/icons/ayu/"_q, u"whitegram_developer_icon"_q);
+}
+
+// The badge image of a peer: a server variant icon if the badge was given
+// out through the admin panel, a bundled icon otherwise.
+QImage MakeWhitegramAdminBadgeImage(uint64 peerId) {
+	const auto admin = Whitegram::Backend::AdminBadgeFor(peerId);
+	if (!admin) {
+		return QImage();
+	}
+	if (admin->isCustom()) {
+		return Whitegram::Backend::CustomBadgeIcon(admin->customId);
+	}
+	if (!admin->variant.isEmpty()) {
+		const auto image = Whitegram::Backend::VariantIcon(admin->variant);
+		if (!image.isNull()) {
+			return image;
+		}
+	}
+	return admin->isDeveloper()
+		? MakeWhitegramDeveloperBadgeImage()
+		: QImage();
+}
+
 [[nodiscard]] Info::Profile::Badge::Content ComputeExteraBadgeContent(
 		not_null<PeerData*> peer) {
-	if (isWhitegramSponsorPeer(getBareID(peer))) {
+	const auto admin = Whitegram::Backend::AdminBadgeFor(getBareID(peer));
+	if (peer->isUser() && (isWhitegramDeveloperPeer(getBareID(peer))
+			|| (admin && admin->isDeveloper()))) {
+		return Info::Profile::Badge::Content{
+			.badge = Info::Profile::BadgeType::WhitegramDeveloper,
+			.customId = admin ? admin->variant : QString(),
+		};
+	} else if (admin && admin->isCustom()) {
+		return Info::Profile::Badge::Content{
+			.badge = Info::Profile::BadgeType::WhitegramCustom,
+			.customId = admin->customId,
+		};
+	} else if (isWhitegramSponsorPeer(getBareID(peer))
+			|| (admin && admin->isSponsor())) {
 		return Info::Profile::Badge::Content{
 			.badge = Info::Profile::BadgeType::WhitegramSponsor,
+			.customId = admin ? admin->variant : QString(),
 		};
 	} else if (isCustomBadgePeer(getBareID(peer))) {
 		return Info::Profile::Badge::Content{
@@ -254,39 +332,87 @@ QImage MakeWhitegramSponsorLogoImage() {
 		return Info::Profile::Badge::Content{
 			.badge = Info::Profile::BadgeType::ExteraSupporter,
 		};
+	} else if (peer->isUser()) {
+		const auto peerId = getBareID(peer);
+		if (isWhitegramUserPeer(peerId)) {
+			return Info::Profile::Badge::Content{
+				.badge = Info::Profile::BadgeType::WhitegramUser,
+			};
+		}
+		// The server answers asynchronously, the badge appears then.
+		Whitegram::Backend::FetchWhitegramUser(peerId);
 	}
 	return {};
 }
 
 rpl::producer<Info::Profile::Badge::Content> ExteraBadgeTypeFromPeer(not_null<PeerData*> peer) {
-	return rpl::single(ComputeExteraBadgeContent(peer));
+	// The update streams fire after a network reply lands, by that time
+	// the peer may already be destroyed (an account logged out, a
+	// contact removed). Resolving the peer again on every event instead
+	// of capturing the pointer keeps the callbacks off freed memory.
+	const auto session = &peer->session();
+	const auto peerId = peer->id;
+	return rpl::merge(
+		rpl::single(ComputeExteraBadgeContent(peer)),
+		Whitegram::Backend::whitegramUserUpdates(
+		) | rpl::filter([=](uint64 updatedId) {
+			return updatedId == peerId.value;
+		}) | rpl::map([=] {
+			const auto loaded = session->data().peerLoaded(peerId);
+			return loaded
+				? ComputeExteraBadgeContent(loaded)
+				: Info::Profile::Badge::Content();
+		}),
+		Whitegram::Backend::badgeUpdates(
+		) | rpl::map([=] {
+			const auto loaded = session->data().peerLoaded(peerId);
+			return loaded
+				? ComputeExteraBadgeContent(loaded)
+				: Info::Profile::Badge::Content();
+		}));
 }
 
 Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 	return [=]
 	{
 		const auto badge = ComputeExteraBadgeContent(peer);
-		const auto isCustomBadge = isCustomBadgePeer(getBareID(peer));
+		const auto admin = Whitegram::Backend::AdminBadgeFor(getBareID(peer));
+		const auto isWhitegramCustom = admin
+			&& admin->isCustom();
 		const auto isExtera = isExteraPeer(getBareID(peer));
 		const auto isSupporter = isSupporterPeer(getBareID(peer));
-		const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(peer));
+		const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(peer))
+			|| (admin && admin->isSponsor());
+		const auto isWhitegramUser = isWhitegramUserPeer(getBareID(peer));
+		const auto isWhitegramDeveloper = peer->isUser()
+			&& (isWhitegramDeveloperPeer(getBareID(peer))
+				|| (admin && admin->isDeveloper()));
 
 		TextWithEntities text;
-		if (isCustomBadge) {
+		if (isWhitegramDeveloper) {
+			text = tr::wg_DeveloperPopup(
+				tr::now,
+				lt_item,
+				TextWithEntities{peer->name()},
+				tr::rich);
+		} else if (isWhitegramCustom) {
+			const auto customText = getCustomBadge(getBareID(peer)).text;
+			text = customText.isEmpty()
+				? tr::wg_CustomPopup(
+					tr::now,
+					lt_item,
+					TextWithEntities{peer->name()},
+					tr::rich)
+				: tr::rich(customText);
+		} else if (isCustomBadgePeer(getBareID(peer))) {
 			const auto custom = getCustomBadge(getBareID(peer));
 			text = custom.text.isEmpty()
-					   ? (isExtera
-							  ? tr::ayu_DeveloperPopup(
-								  tr::now,
-								  lt_item,
-								  TextWithEntities{peer->name()},
-								  tr::rich)
-							  : tr::wg_SponsorPopup(
-								  tr::now,
-								  lt_item,
-								  TextWithEntities{peer->name()},
-								  tr::rich))
-					   : tr::rich(custom.text);
+				? tr::wg_CustomPopup(
+					tr::now,
+					lt_item,
+					TextWithEntities{peer->name()},
+					tr::rich)
+				: tr::rich(custom.text);
 		} else if (isExtera) {
 			text = peer->isUser()
 					   ? tr::ayu_DeveloperPopup(
@@ -307,6 +433,12 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 				tr::rich);
 		} else if (isWhitegramSponsor) {
 			text = tr::wg_SponsorPopup(
+				tr::now,
+				lt_item,
+				TextWithEntities{peer->name()},
+				tr::rich);
+		} else if (isWhitegramUser) {
+			text = tr::wg_UserPopup(
 				tr::now,
 				lt_item,
 				TextWithEntities{peer->name()},

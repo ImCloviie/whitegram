@@ -341,7 +341,7 @@ MainMenu::MainMenu(
 	nullptr,
 	[=] { return controller->isGifPausedAtLeastFor(GifPauseReason::Layer); },
 	0,
-	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor))
+	Info::Profile::BadgeType::Extera | Info::Profile::BadgeType::ExteraSupporter | Info::Profile::BadgeType::ExteraCustom | Info::Profile::BadgeType::WhitegramSponsor | Info::Profile::BadgeType::WhitegramUser | Info::Profile::BadgeType::WhitegramDeveloper | Info::Profile::BadgeType::WhitegramCustom))
 , _scroll(this, st::defaultSolidScroll)
 , _inner(_scroll->setOwnedWidget(
 	object_ptr<Ui::VerticalLayout>(_scroll.data())))
@@ -452,13 +452,9 @@ MainMenu::MainMenu(
 	});
 	{
 		const auto user = controller->session().user();
-		const auto isCustomBadge = isCustomBadgePeer(getBareID(user));
-		const auto isExtera = isExteraPeer(getBareID(user));
-		const auto isSupporter = isSupporterPeer(getBareID(user));
-		const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(user));
-		if (isExtera || isSupporter || isCustomBadge || isWhitegramSponsor) {
-			_exteraBadge->setPremiumClickCallback(badgeClickHandler(user));
-		}
+		// The handler returns early for a peer without a badge, and the
+		// Whitegram user badge can appear asynchronously.
+		_exteraBadge->setPremiumClickCallback(badgeClickHandler(user));
 	}
 
 	_controller->session().downloaderTaskFinished(

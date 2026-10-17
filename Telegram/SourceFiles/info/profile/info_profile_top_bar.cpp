@@ -542,13 +542,9 @@ TopBar::TopBar(
 			_botVerify->updated());
 	}
 	if (_exteraBadge) {
-		const auto isCustomBadge = isCustomBadgePeer(getBareID(_peer));
-		const auto isExtera = isExteraPeer(getBareID(_peer));
-		const auto isSupporter = isSupporterPeer(getBareID(_peer));
-		const auto isWhitegramSponsor = isWhitegramSponsorPeer(getBareID(_peer));
-		if (isExtera || isSupporter || isCustomBadge || isWhitegramSponsor) {
-			_exteraBadge->setPremiumClickCallback(badgeClickHandler(_peer));
-		}
+		// The handler returns early for a peer without a badge, and the
+		// Whitegram user badge can appear asynchronously.
+		_exteraBadge->setPremiumClickCallback(badgeClickHandler(_peer));
 		badgeUpdates = rpl::merge(
 			std::move(badgeUpdates),
 			_exteraBadge->updated());

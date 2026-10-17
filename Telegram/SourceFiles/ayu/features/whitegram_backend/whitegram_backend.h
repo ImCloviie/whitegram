@@ -39,6 +39,50 @@ void FetchProfileBackgrounds(uint64 userId);
 
 void InitClientInfo();
 void FetchClientInfo();
+
+// The server keeps the ids of the clients that registered themselves,
+// that is how the badge of a Whitegram user is known.
+void RegisterUser(uint64 userId);
+void FetchWhitegramUser(uint64 userId);
+[[nodiscard]] bool IsWhitegramUser(uint64 userId);
+[[nodiscard]] rpl::producer<uint64> whitegramUserUpdates();
+
+// The badges given out through the admin panel of the backend: either a
+// named type (developer, sponsor) or a custom badge with a server icon.
+struct AdminBadge {
+	// "developer", "sponsor" or "custom".
+	QString type;
+	// The id of the custom badge, for type == "custom".
+	QString customId;
+	// The icon variant of a developer or sponsor badge, e.g. "momentum".
+	QString variant;
+	// The toast text of the badge.
+	QString text;
+
+	[[nodiscard]] bool isDeveloper() const {
+		return type == u"developer"_q;
+	}
+	[[nodiscard]] bool isSponsor() const {
+		return type == u"sponsor"_q;
+	}
+	[[nodiscard]] bool isCustom() const {
+		return type == u"custom"_q;
+	}
+
+	friend inline bool operator==(
+		const AdminBadge &,
+		const AdminBadge &) = default;
+};
+void FetchBadges();
+[[nodiscard]] std::optional<AdminBadge> AdminBadgeFor(uint64 userId);
+
+// The icon of a custom badge or of a built-in variant, downloaded from
+// the backend and cached.
+[[nodiscard]] QImage CustomBadgeIcon(const QString &customId);
+[[nodiscard]] QString CustomBadgeText(const QString &customId);
+[[nodiscard]] QImage VariantIcon(const QString &variant);
+
+[[nodiscard]] rpl::producer<> badgeUpdates();
 [[nodiscard]] QString BetaBadgeText();
 [[nodiscard]] rpl::producer<QString> betaBadgeTextValue();
 [[nodiscard]] QString LocalPreBetaVersion();

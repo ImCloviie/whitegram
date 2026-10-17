@@ -9,7 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ui/ghost_profile_box.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/ayu_settings.h"
-#include "ayu/ui/components/phone_blur.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
 
 #include "api/api_blocked_peers.h"
@@ -137,6 +136,25 @@ namespace {
 
 constexpr auto kDay = Data::WorkingInterval::kDay;
 constexpr auto kPeerIdLinkIndex = uint16(1);
+
+// Reveals the native Telegram phone spoiler on hover, when the
+// Whitegram "reveal on hover" mode is enabled. Without this the
+// spoiler is only revealed by a click, like in vanilla Telegram.
+void SetupPhoneSpoilerRevealOnHover(not_null<Ui::FlatLabel*> label) {
+	base::install_event_filter(label, [=](not_null<QEvent*> e) {
+		if (AyuSettings::getInstance().phoneRevealMode()
+			!= PhoneRevealMode::OnHover) {
+			return base::EventFilterResult::Continue;
+		}
+		const auto type = e->type();
+		if (type == QEvent::Enter) {
+			label->setSpoilerRevealed(true, anim::type::normal);
+		} else if (type == QEvent::Leave) {
+			label->setSpoilerRevealed(false, anim::type::normal);
+		}
+		return base::EventFilterResult::Continue;
+	});
+}
 
 class DraggableUrlClickHandler final : public UrlClickHandler {
 public:
@@ -1796,11 +1814,7 @@ Section DetailsFiller::makeInfo() {
 				tr::lng_profile_copy_phone(tr::now),
 				st::infoProfileLabeledPadding,
 				st::popupMenuWithIcons).text;
-			if (user->isSelf()) {
-				Ui::CreateChild<Ayu::UI::PhoneBlur>(
-					phoneLabel->parentWidget(),
-					phoneLabel);
-			}
+			SetupPhoneSpoilerRevealOnHover(phoneLabel);
 			const auto hook = [=](Ui::FlatLabel::ContextMenuRequest request) {
 				if (request.selection.empty()) {
 					const auto callback = [=] {

@@ -43,6 +43,8 @@ outChannelBadgeSelectedIcon: icon {{ "ayu/channel", msgOutDateFgSelected }};
 infoExteraOfficialBadge: icon {{ "ayu/extera_official", profileVerifiedCheckBg }};
 infoExteraSupporterBadge: icon {{ "ayu/extera_badge", profileVerifiedCheckBg }};
 infoWhitegramSponsorBadge: icon {{ "ayu/sponsor_icon", profileVerifiedCheckBg }};
+infoWhitegramUserBadge: icon {{ "ayu/whitegram_user_icon", profileVerifiedCheckBg }};
+infoWhitegramDeveloperBadge: icon {{ "ayu/whitegram_developer_icon", profileVerifiedCheckBg }};
 
 
 winEnterWithGuestIcon: icon {{ "ayu/ghost_tray", windowFg }};
@@ -79,6 +81,16 @@ dialogsWhitegramSponsorIcon: ThreeStateIcon {
 	icon: icon {{ "ayu/sponsor_icon", dialogsVerifiedIconBg }};
 	over: icon {{ "ayu/sponsor_icon", dialogsVerifiedIconBgOver }};
 	active: icon {{ "ayu/sponsor_icon", dialogsVerifiedIconBgActive }};
+}
+dialogsWhitegramDeveloperIcon: ThreeStateIcon {
+	icon: icon {{ "ayu/whitegram_developer_icon", dialogsVerifiedIconBg }};
+	over: icon {{ "ayu/whitegram_developer_icon", dialogsVerifiedIconBgOver }};
+	active: icon {{ "ayu/whitegram_developer_icon", dialogsVerifiedIconBgActive }};
+}
+dialogsWhitegramUserIcon: ThreeStateIcon {
+	icon: icon {{ "ayu/whitegram_user_icon", dialogsVerifiedIconBg }};
+	over: icon {{ "ayu/whitegram_user_icon", dialogsVerifiedIconBgOver }};
+	active: icon {{ "ayu/whitegram_user_icon", dialogsVerifiedIconBgActive }};
 }
 
 ayuHistoryFileInPlugin: icon {{ "ayu/history_file_plugin", historyFileInIconFg }};

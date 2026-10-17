@@ -730,6 +730,8 @@ void TopBarWidget::paintTopBar(Painter &p) {
 			.exteraOfficial = &st::dialogsExteraOfficialIcon.icon,
 			.exteraSupporter = &st::dialogsExteraSupporterIcon.icon,
 			.whitegramSponsor = &st::dialogsWhitegramSponsorIcon.icon,
+			.whitegramDeveloper = &st::dialogsWhitegramDeveloperIcon.icon,
+			.whitegramUser = &st::dialogsWhitegramUserIcon.icon,
 			.premium = &st::dialogsPremiumIcon.icon,
 			.scam = &st::attentionButtonFg,
 			.direct = &st::windowSubTextFg,

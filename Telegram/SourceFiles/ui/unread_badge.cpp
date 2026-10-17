@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "styles/style_info.h"
 
@@ -275,22 +276,69 @@ int PeerBadge::drawGetWidth(Painter &p, Descriptor &&descriptor) {
 	const auto paintStar = premiumStar && !paintVerify
 		&& !hidePremiumStatuses;
 
-	const auto paintExteraCustom =
-		isCustomBadgePeer(getBareID(peer)) && !hidePremiumStatuses;
+	const auto admin = Whitegram::Backend::AdminBadgeFor(getBareID(peer));
+	const auto paintWhitegramDeveloper = peer->isUser()
+		&& (isWhitegramDeveloperPeer(getBareID(peer))
+			|| (admin && admin->isDeveloper()))
+		&& !hidePremiumStatuses;
+	const auto paintWhitegramCustom = admin
+		&& admin->isCustom()
+		&& !paintWhitegramDeveloper
+		&& !hidePremiumStatuses;
+	const auto paintExteraCustom = !paintWhitegramDeveloper
+		&& !paintWhitegramCustom
+		&& isCustomBadgePeer(getBareID(peer)) && !hidePremiumStatuses;
 	const auto paintExteraDev = isExteraPeer(getBareID(peer))
 		&& !paintExteraCustom
+		&& !paintWhitegramDeveloper
+		&& !paintWhitegramCustom
 		&& !hidePremiumStatuses;
 	const auto paintWhitegramSponsor = !paintExteraDev
-		&& isWhitegramSponsorPeer(getBareID(peer))
+		&& (isWhitegramSponsorPeer(getBareID(peer))
+			|| (admin && admin->isSponsor()))
 		&& !paintExteraCustom
+		&& !paintWhitegramDeveloper
+		&& !paintWhitegramCustom
 		&& !hidePremiumStatuses;
 	const auto paintExteraSupporter = !paintExteraDev && !paintWhitegramSponsor
 		&& isSupporterPeer(getBareID(peer))
 		&& !paintExteraCustom
+		&& !paintWhitegramDeveloper
+		&& !paintWhitegramCustom
 		&& !hidePremiumStatuses;
-	const auto paintExtera = paintExteraDev || paintExteraSupporter || paintWhitegramSponsor;
+	if (peer->isUser()
+		&& !isWhitegramUserPeer(getBareID(peer))
+		&& !hidePremiumStatuses) {
+		// The server answers asynchronously, the badge appears then.
+		Whitegram::Backend::FetchWhitegramUser(getBareID(peer));
+	}
+	const auto paintWhitegramUser = peer->isUser()
+		&& isWhitegramUserPeer(getBareID(peer))
+		&& !paintWhitegramDeveloper
+		&& !paintWhitegramCustom
+		&& !paintExteraCustom
+		&& !paintExteraDev
+		&& !paintWhitegramSponsor
+		&& !paintExteraSupporter
+		&& !hidePremiumStatuses;
+	const auto paintExtera = paintExteraDev
+		|| paintExteraSupporter
+		|| paintWhitegramSponsor
+		|| paintWhitegramDeveloper
+		|| paintWhitegramUser
+		|| paintWhitegramCustom;
 	auto exteraWidth = 0;
-	if (paintExteraDev) {
+	if (paintWhitegramDeveloper) {
+		exteraWidth = (descriptor.whitegramDeveloper
+			? descriptor.whitegramDeveloper
+			: descriptor.exteraSupporter)->width();
+	} else if (paintWhitegramCustom) {
+		exteraWidth = descriptor.rectForName.height();
+	} else if (paintWhitegramUser) {
+		exteraWidth = (descriptor.whitegramUser
+			? descriptor.whitegramUser
+			: descriptor.exteraSupporter)->width();
+	} else if (paintExteraDev) {
 		exteraWidth = descriptor.exteraOfficial->width();
 	} else if (paintWhitegramSponsor && descriptor.whitegramSponsor) {
 		exteraWidth = descriptor.whitegramSponsor->width();
@@ -360,10 +408,16 @@ int PeerBadge::drawGetWidth(Painter &p, Descriptor &&descriptor) {
 			rectForName.setWidth(rectForName.width() + exteraWidth);
 			descriptor.nameWidth += result;
 		}
-		if (paintExteraDev) {
+		if (paintWhitegramDeveloper) {
+			result += drawWhitegramDeveloper(p, descriptor);
+		} else if (paintExteraDev) {
 			result += drawExteraOfficial(p, descriptor);
 		} else if (paintWhitegramSponsor) {
 			result += drawWhitegramSponsor(p, descriptor);
+		} else if (paintWhitegramUser) {
+			result += drawWhitegramUser(p, descriptor);
+		} else if (paintWhitegramCustom) {
+			result += drawWhitegramCustom(p, descriptor);
 		} else {
 			result += drawExteraSupporter(p, descriptor);
 		}
@@ -477,6 +531,11 @@ int PeerBadge::drawExteraCustom(
 		const Descriptor &descriptor) {
 	const auto peer = descriptor.peer;
 	const auto id = getCustomBadge(getBareID(peer)).emojiStatusId;
+	if (!id) {
+		// No custom emoji id: nothing can be painted here, the emoji
+		// object below would stay empty and crash.
+		return 0;
+	}
 	const auto rectForName = descriptor.rectForName;
 	const auto iconw = descriptor.premium->width();
 	const auto iconx = rectForName.x()
@@ -545,6 +604,20 @@ int PeerBadge::drawExteraSupporter(Painter &p, const Descriptor &descriptor) {
 }
 
 int PeerBadge::drawWhitegramSponsor(Painter &p, const Descriptor &descriptor) {
+	// A server variant icon wins over the bundled one.
+	const auto admin = Whitegram::Backend::AdminBadgeFor(
+		getBareID(descriptor.peer));
+	if (admin && !admin->variant.isEmpty()) {
+		const auto image = Whitegram::Backend::VariantIcon(admin->variant);
+		if (!image.isNull()) {
+			const auto rectForName = descriptor.rectForName;
+			const auto size = rectForName.height();
+			const auto px = rectForName.x()
+				+ qMin(descriptor.nameWidth, rectForName.width() - size);
+			p.drawImage(QRect(px, rectForName.y(), size, size), image);
+			return size;
+		}
+	}
 	const auto icon = descriptor.whitegramSponsor ? descriptor.whitegramSponsor : descriptor.exteraSupporter;
 	const auto iconw = icon->width();
 	const auto rectForName = descriptor.rectForName;
@@ -566,6 +639,92 @@ int PeerBadge::drawWhitegramSponsor(Painter &p, const Descriptor &descriptor) {
 	}
 	
 	return iconw;
+}
+
+int PeerBadge::drawWhitegramDeveloper(Painter &p, const Descriptor &descriptor) {
+	// A server variant icon wins over the bundled one.
+	const auto admin = Whitegram::Backend::AdminBadgeFor(
+		getBareID(descriptor.peer));
+	if (admin && !admin->variant.isEmpty()) {
+		const auto image = Whitegram::Backend::VariantIcon(admin->variant);
+		if (!image.isNull()) {
+			const auto rectForName = descriptor.rectForName;
+			const auto size = rectForName.height();
+			const auto px = rectForName.x()
+				+ qMin(descriptor.nameWidth, rectForName.width() - size);
+			p.drawImage(QRect(px, rectForName.y(), size, size), image);
+			return size;
+		}
+	}
+	const auto icon = descriptor.whitegramDeveloper
+		? descriptor.whitegramDeveloper
+		: descriptor.exteraSupporter;
+	const auto iconw = icon->width();
+	const auto rectForName = descriptor.rectForName;
+	const auto nameWidth = descriptor.nameWidth;
+	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
+	const auto py = rectForName.y();
+
+	static const auto image = MakeWhitegramDeveloperBadgeImage();
+	if (!image.isNull()) {
+		p.drawImage(
+			QRect(px, py, iconw, icon->height()),
+			image);
+	} else {
+		icon->paint(
+			p,
+			px,
+			py,
+			descriptor.outerWidth);
+	}
+
+	return iconw;
+}
+
+int PeerBadge::drawWhitegramUser(Painter &p, const Descriptor &descriptor) {
+	const auto icon = descriptor.whitegramUser
+		? descriptor.whitegramUser
+		: descriptor.exteraSupporter;
+	const auto iconw = icon->width();
+	const auto rectForName = descriptor.rectForName;
+	const auto nameWidth = descriptor.nameWidth;
+	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
+	const auto py = rectForName.y();
+
+	static const auto image = MakeWhitegramUserBadgeImage();
+	if (!image.isNull()) {
+		p.drawImage(
+			QRect(px, py, iconw, icon->height()),
+			image);
+	} else {
+		icon->paint(
+			p,
+			px,
+			py,
+			descriptor.outerWidth);
+	}
+
+	return iconw;
+}
+
+int PeerBadge::drawWhitegramCustom(Painter &p, const Descriptor &descriptor) {
+	const auto admin = Whitegram::Backend::AdminBadgeFor(
+		getBareID(descriptor.peer));
+	const auto image = (admin && admin->isCustom())
+		? Whitegram::Backend::CustomBadgeIcon(admin->customId)
+		: QImage();
+	const auto rectForName = descriptor.rectForName;
+	const auto size = rectForName.height();
+	const auto px = rectForName.x()
+		+ qMin(descriptor.nameWidth, rectForName.width() - size);
+	const auto py = rectForName.y();
+	if (!image.isNull()) {
+		p.drawImage(QRect(px, py, size, size), image);
+	} else {
+		// The icon is still downloading: reserve the space so the name
+		// does not jump when it arrives.
+	}
+	return size;
 }
 
 QRect PeerBadge::emojiStatusRect() const {

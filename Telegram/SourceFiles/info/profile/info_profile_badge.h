@@ -47,6 +47,9 @@ enum class BadgeType : ushort {
 	ExteraSupporter = 0x80,
 	ExteraCustom = 0x100,
 	WhitegramSponsor = 0x200,
+	WhitegramUser = 0x400,
+	WhitegramDeveloper = 0x800,
+	WhitegramCustom = 0x1000,
 };
 inline constexpr bool is_flag_type(BadgeType) { return true; }
 
@@ -55,6 +58,8 @@ public:
 	struct Content {
 		BadgeType badge = BadgeType::None;
 		EmojiStatusId emojiStatusId;
+		// The id of the Whitegram custom badge, for WhitegramCustom.
+		QString customId;
 
 		friend inline bool operator==(Content, Content) = default;
 	};

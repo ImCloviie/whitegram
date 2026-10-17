@@ -237,8 +237,6 @@ set(ayugram_files
         ayu/ui/components/message_preview.h
         ayu/ui/components/music_island.cpp
         ayu/ui/components/music_island.h
-        ayu/ui/components/phone_blur.cpp
-        ayu/ui/components/phone_blur.h
         ayu/ui/components/lyrics_window.cpp
         ayu/ui/components/lyrics_window.h
         ayu/ui/components/saved_music.cpp

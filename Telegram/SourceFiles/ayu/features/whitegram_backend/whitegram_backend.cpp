@@ -1,4 +1,4 @@
-// This is the source code of Whitegram for Desktop.
+﻿// This is the source code of Whitegram for Desktop.
 //
 // Copyright @ImCloviie, 2026
 #include "ayu/features/connection_bypass/bypass_hosts.h"
@@ -10,8 +10,15 @@
 #include "core/application.h"
 #include "core/update_checker.h"
 #include "core/version.h"
+#include "data/data_changes.h"
+#include "data/data_peer.h"
+#include "data/data_peer_id.h"
+#include "data/data_session.h"
 #include "lang/lang_instance.h"
 #include "base/platform/base_platform_info.h"
+#include "main/main_account.h"
+#include "main/main_domain.h"
+#include "main/main_session.h"
 #include "storage/localstorage.h"
 
 #include <QtCore/QDateTime>
@@ -34,12 +41,16 @@
 namespace Whitegram::Backend {
 namespace {
 
-constexpr auto kDefaultBaseUrl = "http://31.76.111.240:8787";
+constexpr auto kDefaultBaseUrl = "http://31.76.111.19:8787";
 constexpr auto kDefaultApiKey = "WgProd_k7Hx9mP2vQ4nR8sT1uY6zA3bC5dE0fJ";
 constexpr auto kBackendRequestTimeout = 15 * 1000;
 // A change has longer, the server stores a whole background before it
 // answers. Both are times without any data going either way.
 constexpr auto kBackendWriteTimeout = 60 * 1000;
+// Downloads carry whole files (video backgrounds reach tens of MB), the
+// whole-transfer limit must fit them on a slow connection: 15s gives up
+// on anything past ~16 MB at 1 MB/s and the background never shows up.
+constexpr auto kBackendDownloadTimeout = 180 * 1000;
 // An upload is stopped for a newer change only while more than this is
 // left to send. The network thread can be a little ahead of the reported
 // progress, and a body that reaches the server whole gets stored. The
@@ -855,7 +866,7 @@ void DownloadBackgroundFile(
 	request.setAttribute(
 		QNetworkRequest::RedirectPolicyAttribute,
 		QNetworkRequest::NoLessSafeRedirectPolicy);
-	request.setTransferTimeout(kBackendRequestTimeout);
+	request.setTransferTimeout(kBackendDownloadTimeout);
 	const auto reply = Service::Instance().accessManager().get(request);
 	ExpectedDownloads()[{ userId, zone }] = ExpectedDownload{
 		.number = download,
@@ -1387,6 +1398,222 @@ void ParseUpdateManifest(const QByteArray &payload) {
 	}
 }
 
+[[nodiscard]] QString WhitegramUsersDiskCachePath() {
+	return cWorkingDir() + u"tdata/whitegram/users.json"_q;
+}
+
+// The ids the server confirmed as Whitegram users, kept on the disk so
+// the badge is there before the server answers, and while it can't.
+[[nodiscard]] std::set<uint64> &KnownWhitegramUsers() {
+	static auto result = [] {
+		auto loaded = std::set<uint64>();
+		auto file = QFile(WhitegramUsersDiskCachePath());
+		if (file.open(QIODevice::ReadOnly)) {
+			try {
+				const auto json = nlohmann::json::parse(
+					file.readAll().constData());
+				for (const auto &item : json) {
+					if (item.is_number()) {
+						loaded.insert(item.get<uint64>());
+					}
+				}
+			} catch (...) {
+			}
+		}
+		return loaded;
+	}();
+	return result;
+}
+
+void SaveWhitegramUsersDiskCache() {
+	const auto path = WhitegramUsersDiskCachePath();
+	QDir().mkpath(QFileInfo(path).absolutePath());
+	auto json = nlohmann::json::array();
+	for (const auto id : KnownWhitegramUsers()) {
+		json.push_back(id);
+	}
+	auto file = QFile(path);
+	if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+		file.write(QByteArray::fromStdString(json.dump()));
+	}
+}
+
+// The ids asked about in this run, asked only once: a "no" is cached for
+// the run, the user could install Whitegram any moment anyway.
+[[nodiscard]] std::set<uint64> &RequestedWhitegramUsers() {
+	static auto result = std::set<uint64>();
+	return result;
+}
+
+// The ids this client registered for in this run.
+[[nodiscard]] std::set<uint64> &RegisteredWhitegramUsers() {
+	static auto result = std::set<uint64>();
+	return result;
+}
+
+[[nodiscard]] rpl::event_stream<uint64> &WhitegramUserUpdatesStream() {
+	static auto result = rpl::event_stream<uint64>();
+	return result;
+}
+
+// Fires the updates stream and asks the dialogs list and the chat top
+// bar to repaint the peer, their badges are painted there directly.
+void NotifyPeerBadgeChanged(uint64 userId) {
+	WhitegramUserUpdatesStream().fire_copy(userId);
+	for (const auto &[index, account] : Core::App().domain().accounts()) {
+		if (const auto session = account->maybeSession()) {
+			if (const auto peer = session->data().peerLoaded(
+					peerFromUser(UserId(userId)))) {
+				session->changes().peerUpdated(
+					peer,
+					Data::PeerUpdate::Flag::EmojiStatus);
+			}
+		}
+	}
+}
+
+// The custom badges given out through the admin panel, by user id.
+[[nodiscard]] std::map<uint64, AdminBadge> &AdminBadges() {
+	static auto result = std::map<uint64, AdminBadge>();
+	return result;
+}
+
+// The texts of the custom badges, by custom badge id.
+[[nodiscard]] std::map<QString, QString> &CustomBadgeTexts() {
+	static auto result = std::map<QString, QString>();
+	return result;
+}
+
+// The icon images of the custom badges, by custom badge id.
+[[nodiscard]] std::map<QString, QImage> &CustomBadgeIcons() {
+	static auto result = std::map<QString, QImage>();
+	return result;
+}
+
+// The icon images of the built-in variants, by variant id.
+[[nodiscard]] std::map<QString, QImage> &VariantIcons() {
+	static auto result = std::map<QString, QImage>();
+	return result;
+}
+
+// The icon ids an image download was started for.
+[[nodiscard]] std::set<QString> &RequestedBadgeIcons() {
+	static auto result = std::set<QString>();
+	return result;
+}
+
+[[nodiscard]] rpl::event_stream<> &BadgeUpdatesStream() {
+	static auto result = rpl::event_stream<>();
+	return result;
+}
+
+[[nodiscard]] QString CustomBadgesDiskCacheDir() {
+	return cWorkingDir() + u"tdata/whitegram/badges"_q;
+}
+
+[[nodiscard]] QString CustomBadgeIconCachePath(const QString &id) {
+	return CustomBadgesDiskCacheDir() + u"/"_q + id + u".png"_q;
+}
+
+[[nodiscard]] QString VariantIconCachePath(const QString &id) {
+	return CustomBadgesDiskCacheDir() + u"/variant_"_q + id + u".png"_q;
+}
+
+void LoadVariantIconFromDisk(const QString &id) {
+	auto &icons = VariantIcons();
+	if (icons.contains(id)) {
+		return;
+	}
+	auto image = QImage(VariantIconCachePath(id));
+	if (!image.isNull()) {
+		if (image.devicePixelRatio() < 1.) {
+			image.setDevicePixelRatio(style::DevicePixelRatio());
+		}
+		icons.emplace(id, std::move(image));
+	}
+}
+
+void LoadCustomBadgeIconFromDisk(const QString &id) {
+	auto &icons = CustomBadgeIcons();
+	if (icons.contains(id)) {
+		return;
+	}
+	auto image = QImage(CustomBadgeIconCachePath(id));
+	if (!image.isNull()) {
+		if (image.devicePixelRatio() < 1.) {
+			image.setDevicePixelRatio(style::DevicePixelRatio());
+		}
+		icons.emplace(id, std::move(image));
+	}
+}
+
+void SaveCustomBadgeIconToDisk(const QString &id, const QImage &image) {
+	QDir().mkpath(CustomBadgesDiskCacheDir());
+	image.save(CustomBadgeIconCachePath(id), "PNG");
+}
+
+void SaveVariantIconToDisk(const QString &id, const QImage &image) {
+	QDir().mkpath(CustomBadgesDiskCacheDir());
+	image.save(VariantIconCachePath(id), "PNG");
+}
+
+void FetchBadgeIcon(const QString &id, const bool isVariant) {
+	if (id.isEmpty() || RequestedBadgeIcons().contains(id)) {
+		return;
+	}
+	auto &icons = isVariant ? VariantIcons() : CustomBadgeIcons();
+	if (icons.contains(id)) {
+		return;
+	}
+	RequestedBadgeIcons().insert(id);
+	const auto url = QUrl(
+		isVariant
+			? (BaseUrl() + u"/api/v1/badges/variant-icons/"_q + id)
+			: (BaseUrl() + u"/api/v1/badges/icons/"_q + id));
+	const auto reply = Service::Instance().accessManager().get(
+		AuthorizedRequest(url));
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { reply->deleteLater(); });
+		if (reply->error() != QNetworkReply::NoError) {
+			return;
+		}
+		auto image = QImage();
+		if (!image.loadFromData(reply->readAll(), "PNG")
+			|| image.isNull()) {
+			return;
+		}
+		// The server icons come as plain 96px images, the draw code
+		// divides by the device pixel ratio, so set it: otherwise the
+		// badge is painted enormous and clipped away.
+		image.setDevicePixelRatio(style::DevicePixelRatio());
+		if (isVariant) {
+			VariantIcons()[id] = image;
+			SaveVariantIconToDisk(id, image);
+		} else {
+			CustomBadgeIcons()[id] = image;
+			SaveCustomBadgeIconToDisk(id, image);
+		}
+		BadgeUpdatesStream().fire({});
+		// Repaint the dialogs rows wearing this icon.
+		for (const auto &[uid, badge] : AdminBadges()) {
+			const auto mine = isVariant
+				? (badge.variant == id)
+				: (badge.customId == id);
+			if (mine) {
+				NotifyPeerBadgeChanged(uid);
+			}
+		}
+	});
+}
+
+void FetchCustomBadgeIcon(const QString &id) {
+	FetchBadgeIcon(id, false);
+}
+
+void FetchVariantIcon(const QString &id) {
+	FetchBadgeIcon(id, true);
+}
+
 } // namespace
 
 QString BaseUrl() {
@@ -1484,6 +1711,175 @@ void InitClientInfo() {
 	Service::Instance().applyLocalBetaBadge();
 	FetchClientInfo();
 	CheckUpdateAvailability();
+	FetchBadges();
+}
+
+void RegisterUser(uint64 userId) {
+	if (!userId || RegisteredWhitegramUsers().contains(userId)) {
+		return;
+	}
+	RegisteredWhitegramUsers().insert(userId);
+	const auto url = QUrl(BaseUrl() + u"/api/v1/users/register"_q);
+	auto request = AuthorizedRequest(url);
+	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+	const auto body = QByteArray("{\"userId\":")
+		+ QByteArray::number(userId)
+		+ QByteArray("}");
+	const auto reply = Service::Instance().accessManager().post(request, body);
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { reply->deleteLater(); });
+		if (reply->error() != QNetworkReply::NoError) {
+			// Tried again on the next start.
+			RegisteredWhitegramUsers().erase(userId);
+			return;
+		}
+		if (!IsWhitegramUser(userId)) {
+			KnownWhitegramUsers().insert(userId);
+			SaveWhitegramUsersDiskCache();
+			NotifyPeerBadgeChanged(userId);
+		}
+	});
+}
+
+void FetchWhitegramUser(uint64 userId) {
+	if (!userId
+		|| IsWhitegramUser(userId)
+		|| RequestedWhitegramUsers().contains(userId)) {
+		return;
+	}
+	RequestedWhitegramUsers().insert(userId);
+	const auto url = QUrl(BaseUrl()
+		+ u"/api/v1/users/check/"_q
+		+ QString::number(userId));
+	const auto reply = Service::Instance().accessManager().get(
+		AuthorizedRequest(url));
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { reply->deleteLater(); });
+		// A failed id stays in RequestedWhitegramUsers: the fetch is
+		// triggered from the painting code, a retry every repaint would
+		// spam a server that is down.
+		if (reply->error() != QNetworkReply::NoError) {
+			return;
+		}
+		try {
+			const auto json = nlohmann::json::parse(
+				reply->readAll().constData());
+			if (json.value("whitegram", false)
+				&& !IsWhitegramUser(userId)) {
+				KnownWhitegramUsers().insert(userId);
+				SaveWhitegramUsersDiskCache();
+				NotifyPeerBadgeChanged(userId);
+			}
+		} catch (...) {
+		}
+	});
+}
+
+bool IsWhitegramUser(uint64 userId) {
+	return userId && KnownWhitegramUsers().contains(userId);
+}
+
+rpl::producer<uint64> whitegramUserUpdates() {
+	return WhitegramUserUpdatesStream().events();
+}
+
+void FetchBadges() {
+	const auto url = QUrl(BaseUrl() + u"/api/v1/badges"_q);
+	const auto reply = Service::Instance().accessManager().get(
+		AuthorizedRequest(url));
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { reply->deleteLater(); });
+		if (reply->error() != QNetworkReply::NoError) {
+			return;
+		}
+		try {
+			const auto json = nlohmann::json::parse(
+				reply->readAll().constData());
+			const auto list = json.value("badges", nlohmann::json::array());
+			auto parsed = std::map<uint64, AdminBadge>();
+			auto texts = std::map<QString, QString>();
+			for (const auto &item : list) {
+				const auto uid = std::stoull(
+					item.value("userId", std::string("0")));
+				if (!uid) {
+					continue;
+				}
+				auto badge = AdminBadge();
+				badge.type = QString::fromStdString(
+					item.value("type", std::string("custom")));
+				badge.customId = QString::fromStdString(
+					item.value("customId", std::string()));
+				badge.variant = QString::fromStdString(
+					item.value("variant", std::string()));
+				badge.text = QString::fromStdString(
+					item.value("text", std::string()));
+				if (badge.isCustom() && !badge.customId.isEmpty()) {
+					if (!badge.text.isEmpty()) {
+						texts[badge.customId] = badge.text;
+					}
+					// The icons may be cached from the previous run.
+					LoadCustomBadgeIconFromDisk(badge.customId);
+					FetchCustomBadgeIcon(badge.customId);
+				} else if (!badge.variant.isEmpty()) {
+					LoadVariantIconFromDisk(badge.variant);
+					FetchVariantIcon(badge.variant);
+				}
+				parsed[uid] = std::move(badge);
+			}
+			auto &badges = AdminBadges();
+			if (badges != parsed || CustomBadgeTexts() != texts) {
+				auto changed = std::set<uint64>();
+				for (const auto &[id, badge] : parsed) {
+					const auto i = badges.find(id);
+					if (i == badges.end() || i->second != badge) {
+						changed.insert(id);
+					}
+				}
+				for (const auto &[id, badge] : badges) {
+					if (!parsed.contains(id)) {
+						changed.insert(id);
+					}
+				}
+				badges = std::move(parsed);
+				CustomBadgeTexts() = std::move(texts);
+				BadgeUpdatesStream().fire({});
+				for (const auto id : changed) {
+					NotifyPeerBadgeChanged(id);
+				}
+			}
+		} catch (...) {
+		}
+	});
+}
+
+std::optional<AdminBadge> AdminBadgeFor(uint64 userId) {
+	const auto &badges = AdminBadges();
+	const auto i = badges.find(userId);
+	return (i != badges.end())
+		? std::optional<AdminBadge>(i->second)
+		: std::nullopt;
+}
+
+QImage VariantIcon(const QString &variant) {
+	const auto &icons = VariantIcons();
+	const auto i = icons.find(variant);
+	return (i != icons.end()) ? i->second : QImage();
+}
+
+QImage CustomBadgeIcon(const QString &customId) {
+	const auto &icons = CustomBadgeIcons();
+	const auto i = icons.find(customId);
+	return (i != icons.end()) ? i->second : QImage();
+}
+
+QString CustomBadgeText(const QString &customId) {
+	const auto &texts = CustomBadgeTexts();
+	const auto i = texts.find(customId);
+	return (i != texts.end()) ? i->second : QString();
+}
+
+rpl::producer<> badgeUpdates() {
+	return BadgeUpdatesStream().events();
 }
 
 void SyncTimeSpent(uint64 userId, int64 localMinutes) {

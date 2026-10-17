@@ -898,6 +898,14 @@ void PaintRow(
 				st::dialogsWhitegramSponsorIcon,
 				context.active,
 				context.selected),
+			.whitegramDeveloper = &ThreeStateIcon(
+				st::dialogsWhitegramDeveloperIcon,
+				context.active,
+				context.selected),
+			.whitegramUser = &ThreeStateIcon(
+				st::dialogsWhitegramUserIcon,
+				context.active,
+				context.selected),
 			.premium = &ThreeStateIcon(
 				st::dialogsPremiumIcon,
 				context.active,

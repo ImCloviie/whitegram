@@ -10,6 +10,7 @@
 #include "lang_auto.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
+#include "main/main_session_settings.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
@@ -1521,13 +1522,73 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 		},
 	});
 
+	{
+		const auto controller = builder.controller();
+		builder.addButton({
+			.id = u"whitegram/hidePhoneNumber"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Скрывать номер телефона в моём профиле"),
+				QString("Hide phone number in my profile")),
+			.icon = { &st::menuIconPhone },
+			.toggled = controller->session().settings().phoneNumberHiddenValue(),
+			.onClick = [=] {
+				auto &settings = controller->session().settings();
+				settings.setPhoneNumberHidden(
+					!settings.phoneNumberHidden());
+				controller->session().saveSettingsDelayed();
+			},
+			.keywords = {
+				u"phone"_q,
+				u"spoiler"_q,
+				QString::fromUtf8("номер"),
+				QString::fromUtf8("телефон"),
+				QString::fromUtf8("скрыть"),
+				QString::fromUtf8("спойлер"),
+			},
+		});
+	}
+
+	{
+		const auto id = Lang::GetInstance().id();
+		const auto baseId = Lang::GetInstance().baseId();
+		const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+		const auto revealOptions = std::vector{
+			QString(isRu
+				? QString::fromUtf8("При клике (как в Telegram)")
+				: QString("On click (like Telegram)")),
+			QString(isRu
+				? QString::fromUtf8("При наведении")
+				: QString("On hover")),
+		};
+		ayu.addChooseButton({
+			.id = u"whitegram/phoneRevealMode"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Режим раскрытия номера"),
+				QString("Phone reveal mode")),
+			.boxTitle = trWhitegram(
+				QString::fromUtf8("Режим раскрытия номера"),
+				QString("Phone reveal mode")),
+			.initialSelection = static_cast<int>(
+				AyuSettings::getInstance().phoneRevealMode()),
+			.options = revealOptions,
+			.setter = [](int i) {
+				AyuSettings::getInstance().setPhoneRevealMode(
+					static_cast<PhoneRevealMode>(i));
+			},
+			.icon = { &st::menuIconPhone },
+		});
+	}
+
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Автоматически скрывает Telegram от программ захвата экрана (OBS, Discord и др.) "
-			"во время просмотра одноразовых сообщений, фото, видео и кружков."),
+			"Номер скрывается спойлером, как в Telegram: включить его можно "
+			"и правым кликом по номеру в профиле. Режим «При наведении» — "
+			"расширение Whitegram: номер показывается, пока курсор над ним."),
 		QString(
-			"Automatically hides Telegram from screen capture software (OBS, Discord, etc.) "
-			"while viewing view-once messages, photos, videos, and video notes.")));
+			"The number is hidden with a spoiler, like in Telegram: it can "
+			"also be toggled by right-clicking the number in the profile. "
+			"The 'On hover' mode is a Whitegram extension: the number shows "
+			"while the cursor is over it.")));
 	builder.addSkip();
 });
 

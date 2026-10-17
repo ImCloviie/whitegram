@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "styles/style_ayu_icons.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/utils/telegram_helpers.h"
 
 
@@ -37,7 +38,10 @@ namespace {
 		|| (content.badge == BadgeType::Extera)
 		|| (content.badge == BadgeType::ExteraSupporter)
 		|| (content.badge == BadgeType::ExteraCustom)
-		|| (content.badge == BadgeType::WhitegramSponsor);
+		|| (content.badge == BadgeType::WhitegramSponsor)
+		|| (content.badge == BadgeType::WhitegramUser)
+		|| (content.badge == BadgeType::WhitegramDeveloper)
+		|| (content.badge == BadgeType::WhitegramCustom);
 }
 
 } // namespace
@@ -262,6 +266,82 @@ void Badge::setContent(Content content) {
 			} else {
 				st::infoWhitegramSponsorBadge.paint(p, skip, 0, check->width());
 			}
+		}, _view->lifetime());
+	} break;
+	case BadgeType::WhitegramUser:
+	case BadgeType::WhitegramDeveloper: {
+		const auto isDeveloper = (_content.badge == BadgeType::WhitegramDeveloper);
+		static const auto userImage = MakeWhitegramUserBadgeImage();
+		static const auto developerImage = MakeWhitegramDeveloperBadgeImage();
+		const auto &image = isDeveloper ? developerImage : userImage;
+		// A server icon variant may replace the bundled one, and it may
+		// arrive asynchronously, so it is looked up on every paint.
+		const auto variant = _content.customId;
+		const auto &fallback = isDeveloper
+			? st::infoWhitegramDeveloperBadge
+			: st::infoWhitegramUserBadge;
+		const auto skip = st::infoVerifiedCheckPosition.x();
+		const auto iconSize = image.isNull()
+			? QSize(fallback.width(), fallback.height())
+			: (image.size() / image.devicePixelRatio());
+		_view->resize(
+			iconSize.width() + skip,
+			iconSize.height());
+		_view->paintRequest(
+		) | rpl::on_next([=, check = _view.data()]{
+			Painter p(check);
+			auto drawn = false;
+			if (!variant.isEmpty()) {
+				const auto server = Whitegram::Backend::VariantIcon(variant);
+				if (!server.isNull()) {
+					const auto size = server.size() / server.devicePixelRatio();
+					check->resize(size.width() + skip, size.height());
+					p.drawImage(
+						QRect(skip,
+						      (check->height() - size.height()) / 2,
+						      size.width(),
+						      size.height()),
+						server);
+					drawn = true;
+				}
+			}
+			if (!drawn && !image.isNull()) {
+				p.drawImage(
+					QRect(skip,
+					      (check->height() - iconSize.height()) / 2,
+					      iconSize.width(),
+					      iconSize.height()),
+					image);
+			} else if (!drawn && image.isNull()) {
+				if (_overrideSt) {
+					fallback.paint(p, skip, 0, check->width(), _overrideSt->premiumFg->c);
+				} else {
+					fallback.paint(p, skip, 0, check->width());
+				}
+			}
+		}, _view->lifetime());
+	} break;
+	case BadgeType::WhitegramCustom: {
+		// The icon comes from the Whitegram backend, it may arrive a bit
+		// later than this view was created.
+		const auto customId = _content.customId;
+		const auto skip = st::infoVerifiedCheckPosition.x();
+		_view->resize(22 + skip, 22);
+		_view->paintRequest(
+		) | rpl::on_next([=, check = _view.data()]{
+			const auto image = Whitegram::Backend::CustomBadgeIcon(customId);
+			if (image.isNull()) {
+				return;
+			}
+			const auto iconSize = image.size() / image.devicePixelRatio();
+			check->resize(iconSize.width() + skip, iconSize.height());
+			Painter p(check);
+			p.drawImage(
+				QRect(skip,
+				      (check->height() - iconSize.height()) / 2,
+				      iconSize.width(),
+				      iconSize.height()),
+				image);
 		}, _view->lifetime());
 	} break;
 	}

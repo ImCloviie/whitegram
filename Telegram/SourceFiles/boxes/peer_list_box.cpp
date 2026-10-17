@@ -948,6 +948,12 @@ int PeerListRow::paintNameIconGetWidth(
 		.whitegramSponsor = &(selected
 			? st::dialogsWhitegramSponsorIcon.over
 			: st::dialogsWhitegramSponsorIcon.icon),
+		.whitegramDeveloper = &(selected
+			? st::dialogsWhitegramDeveloperIcon.over
+			: st::dialogsWhitegramDeveloperIcon.icon),
+		.whitegramUser = &(selected
+			? st::dialogsWhitegramUserIcon.over
+			: st::dialogsWhitegramUserIcon.icon),
 		.premium = &(selected
 			? st::dialogsPremiumIcon.over
 			: st::dialogsPremiumIcon.icon),

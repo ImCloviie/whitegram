@@ -374,7 +374,7 @@ void BuildCryptoSettings(SectionBuilder &builder) {
 	});
 	ayu.addSettingToggle({
 		.id = u"whitegram/showTON"_q,
-		.title = rpl::single(QString("Toncoin (TON)")),
+		.title = rpl::single(QString("Gram (prev. Toncoin)")),
 		.getter = &AyuSettings::showTON,
 		.setter = &AyuSettings::setShowTON,
 	});
@@ -421,6 +421,60 @@ void BuildCryptoSettings(SectionBuilder &builder) {
 			QString("Russian Ruble (RUB)")),
 		.getter = &AyuSettings::showFiatRUB,
 		.setter = &AyuSettings::setShowFiatRUB,
+	});
+
+	ayu.addSectionDivider();
+	builder.addSubsectionTitle(
+		trWhitegram(
+			QString::fromUtf8("Настройки графиков"),
+			QString("Chart Settings")));
+
+	ayu.addSettingToggle({
+		.id = u"whitegram/showCryptoCharts"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Показывать мини-графики"),
+			QString("Show mini charts")),
+		.getter = &AyuSettings::showCryptoCharts,
+		.setter = &AyuSettings::setShowCryptoCharts,
+	});
+	ayu.addSettingToggle({
+		.id = u"whitegram/showCryptoChanges"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Показывать изменение за 24 часа"),
+			QString("Show 24-hour change")),
+		.getter = &AyuSettings::showCryptoChanges,
+		.setter = &AyuSettings::setShowCryptoChanges,
+	});
+
+	const auto chartDays = AyuSettings::getInstance().cryptoChartDays();
+	const auto chartDaysIndex = (chartDays == 1)
+		? 0
+		: (chartDays == 7)
+			? 1
+			: (chartDays == 30)
+				? 2
+				: 3;
+	ayu.addChooseButton({
+		.id = u"whitegram/cryptoChartDays"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Период мини-графиков"),
+			QString("Mini chart period")),
+		.boxTitle = trWhitegram(
+			QString::fromUtf8("Период мини-графиков"),
+			QString("Mini chart period")),
+		.initialSelection = chartDaysIndex,
+		.options = {
+			QString::fromUtf8("24 часа"),
+			QString::fromUtf8("7 дней"),
+			QString::fromUtf8("30 дней"),
+			QString::fromUtf8("90 дней"),
+		},
+		.setter = [](int index) {
+			static constexpr int kDays[] = { 1, 7, 30, 90 };
+			if (index >= 0 && index < 4) {
+				AyuSettings::getInstance().setCryptoChartDays(kDays[index]);
+			}
+		},
 	});
 }
 
@@ -1365,6 +1419,8 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 		.keywords = {
 			u"crypto"_q,
 			u"bitcoin"_q,
+			u"gram"_q,
+			u"ton"_q,
 			QString::fromUtf8("крипто"),
 			QString::fromUtf8("курс"),
 		},
@@ -1530,7 +1586,7 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 				QString::fromUtf8("Скрывать номер телефона в моём профиле"),
 				QString("Hide phone number in my profile")),
 			.icon = { &st::menuIconPhone },
-			.toggled = controller->session().settings().phoneNumberHiddenValue(),
+			.toggled = builder.session()->settings().phoneNumberHiddenValue(),
 			.onClick = [=] {
 				auto &settings = controller->session().settings();
 				settings.setPhoneNumberHidden(

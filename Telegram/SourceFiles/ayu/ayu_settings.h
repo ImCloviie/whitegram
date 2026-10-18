@@ -1429,6 +1429,24 @@ public:
   [[nodiscard]] bool showFiatUSD() const { return _showFiatUSD.current(); }
   [[nodiscard]] bool showFiatEUR() const { return _showFiatEUR.current(); }
   [[nodiscard]] bool showFiatRUB() const { return _showFiatRUB.current(); }
+  [[nodiscard]] bool showCryptoCharts() const {
+    return _showCryptoCharts.current();
+  }
+  [[nodiscard]] bool showCryptoChanges() const {
+    return _showCryptoChanges.current();
+  }
+  [[nodiscard]] int cryptoChartDays() const {
+    return _cryptoChartDays.current();
+  }
+  [[nodiscard]] rpl::producer<bool> showCryptoChartsChanges() const {
+    return _showCryptoCharts.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> showCryptoChangesChanges() const {
+    return _showCryptoChanges.changes();
+  }
+  [[nodiscard]] rpl::producer<int> cryptoChartDaysChanges() const {
+    return _cryptoChartDays.changes();
+  }
 
 
 
@@ -1444,6 +1462,9 @@ public:
   void setShowFiatUSD(bool val);
   void setShowFiatEUR(bool val);
   void setShowFiatRUB(bool val);
+  void setShowCryptoCharts(bool val);
+  void setShowCryptoChanges(bool val);
+  void setCryptoChartDays(int val);
 
   [[nodiscard]] bool startupAnimationEnabled() const {
     return _startupAnimationEnabled.current();
@@ -1739,6 +1760,9 @@ private:
   rpl::variable<bool> _showFiatUSD = true;
   rpl::variable<bool> _showFiatEUR = true;
   rpl::variable<bool> _showFiatRUB = true;
+  rpl::variable<bool> _showCryptoCharts = true;
+  rpl::variable<bool> _showCryptoChanges = true;
+  rpl::variable<int> _cryptoChartDays = 7;
 
   rpl::variable<int64> _totalTimeSpent = 0;
   rpl::variable<bool> _showTimeSpentInDrawer = false;

@@ -285,6 +285,8 @@ set(ayugram_files
         ayu/features/filters/filters_utils.h
         ayu/features/whitegram_crypto.cpp
         ayu/features/whitegram_crypto.h
+        ayu/features/whitegram_crypto_charts.cpp
+        ayu/features/whitegram_crypto_charts.h
         ayu/features/connection_bypass/connection_bypass.cpp
         ayu/features/connection_bypass/connection_bypass.h
         ayu/features/connection_bypass/bypass_hosts.cpp

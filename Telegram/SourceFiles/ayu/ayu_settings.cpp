@@ -872,6 +872,7 @@ void AyuSettings::validate() {
 	validateRange(_wideMultiplier, 0.5, 4.0, defaults._wideMultiplier);
 	validateRange(_avatarCorners, 0, AyuUiSettings::kMaxAvatarCorners, defaults._avatarCorners);
 	validateRange(_cryptoFiatCurrency, 0, 2, defaults._cryptoFiatCurrency);
+	validateRange(_cryptoChartDays, 1, 90, defaults._cryptoChartDays);
 
 	const auto embeddedType = _messageShotSettings._embeddedThemeType.current();
 	auto embeddedTypeValid = (embeddedType == -1) || (embeddedType >= 0 && embeddedType <= 3); // from Window::Theme::EmbeddedType::DayBlue to Window::Theme::EmbeddedType::NightGreen
@@ -1851,6 +1852,9 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"showFiatUSD", s._showFiatUSD.current()},
 		{"showFiatEUR", s._showFiatEUR.current()},
 		{"showFiatRUB", s._showFiatRUB.current()},
+		{"showCryptoCharts", s._showCryptoCharts.current()},
+		{"showCryptoChanges", s._showCryptoChanges.current()},
+		{"cryptoChartDays", s._cryptoChartDays.current()},
 		{"totalTimeSpent", s._totalTimeSpent.current()},
 		{"showTimeSpentInDrawer", s._showTimeSpentInDrawer.current()},
 		{"whitegramAutoUpdate", s._whitegramAutoUpdate.current()},
@@ -2179,6 +2183,15 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._showFiatUSD = j.value("showFiatUSD", defaults._showFiatUSD.current());
 	s._showFiatEUR = j.value("showFiatEUR", defaults._showFiatEUR.current());
 	s._showFiatRUB = j.value("showFiatRUB", defaults._showFiatRUB.current());
+	s._showCryptoCharts = j.value(
+		"showCryptoCharts",
+		defaults._showCryptoCharts.current());
+	s._showCryptoChanges = j.value(
+		"showCryptoChanges",
+		defaults._showCryptoChanges.current());
+	s._cryptoChartDays = j.value(
+		"cryptoChartDays",
+		defaults._cryptoChartDays.current());
 	s._totalTimeSpent = j.value(
 		"totalTimeSpent",
 		defaults._totalTimeSpent.current());
@@ -2366,6 +2379,25 @@ void AyuSettings::setShowFiatEUR(bool val) {
 void AyuSettings::setShowFiatRUB(bool val) {
 	if (_showFiatRUB.current() == val) return;
 	_showFiatRUB = val;
+	save();
+}
+
+void AyuSettings::setShowCryptoCharts(bool val) {
+	if (_showCryptoCharts.current() == val) return;
+	_showCryptoCharts = val;
+	save();
+}
+
+void AyuSettings::setShowCryptoChanges(bool val) {
+	if (_showCryptoChanges.current() == val) return;
+	_showCryptoChanges = val;
+	save();
+}
+
+void AyuSettings::setCryptoChartDays(int val) {
+	val = std::clamp(val, 1, 90);
+	if (_cryptoChartDays.current() == val) return;
+	_cryptoChartDays = val;
 	save();
 }
 

@@ -2943,9 +2943,10 @@ void InputField::paintEvent(QPaintEvent *e) {
 		p.setClipRect(r);
 
 		auto placeholderTop = anim::interpolate(0, _st.placeholderShift, placeholderShiftDegree);
+		auto placeholderLeft = anim::interpolate(0, _st.placeholderShiftLeft, placeholderShiftDegree);
 
 		QRect r(rect().marginsRemoved(margins));
-		r.moveTop(r.top() + placeholderTop);
+		r.translate(placeholderLeft, placeholderTop);
 		if (style::RightToLeft()) r.moveLeft(width() - r.left() - r.width());
 
 		auto placeholderScale = 1. - (1. - _st.placeholderScale) * placeholderShiftDegree;
@@ -4282,6 +4283,8 @@ void InputField::setTextWithTags(
 	_insertedTagsAreFromMime = false;
 	_realInsertPosition = 0;
 	_realCharsAdded = prepared.text.size();
+	// The whole text is replaced, so old block formats (quotes) must not survive.
+	_insertedTagsReplace = true;
 	const auto document = _inner->document();
 	auto cursor = QTextCursor(document);
 	if (historyAction == HistoryAction::Clear) {
@@ -4303,6 +4306,7 @@ void InputField::setTextWithTags(
 	if (historyAction == HistoryAction::Clear) {
 		document->setUndoRedoEnabled(true);
 	}
+	_insertedTagsReplace = false;
 	_insertedTags.clear();
 	_realInsertPosition = -1;
 	finishAnimating();

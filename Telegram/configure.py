@@ -51,6 +51,8 @@ if not qt_version.resolve(arch):
 if 'qt6' in arguments:
     arguments.remove('qt6')
 
+if 'qt5' in arguments:
+    arguments.remove('qt5')
 has_api_credentials = any(
     arg.startswith('-DTDESKTOP_API_ID=') or arg.startswith('-DTDESKTOP_API_HASH=')
     for arg in arguments

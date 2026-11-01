@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/peer_gifts/info_peer_gifts_widget.h"
 #include "info/profile/info_profile_actions.h"
 #include "info/profile/info_profile_icon.h"
+#include "info/profile/info_profile_section_stack.h"
 #include "info/profile/info_profile_top_bar.h"
 #include "info/profile/info_profile_values.h"
 #include "info/profile/info_profile_widget.h"
@@ -343,43 +344,49 @@ void InnerWidget::createProfileTop() {
 		Background::BackgroundShownValue(coverSection));
 
 	using namespace Profile;
-	AddDetails(
-		coverSection,
+	auto detailsStack = SectionStack(coverSection);
+	BuildProfileDetailsSections(
+		detailsStack,
 		_controller,
 		_peer,
 		nullptr,
 		nullptr,
 		{ v::null });
 
-	auto tracker = Ui::MultiSlideTracker();
-	const auto dividerWrap = _top->add(
-		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-			_top,
-			object_ptr<Ui::VerticalLayout>(_top)));
-	const auto divider = dividerWrap->entity();
-	Ui::AddDivider(
-		divider,
-		Background::AdaptiveStyle(divider, st::defaultDividerBar));
-	Ui::AddSkip(divider);
+	detailsStack.finalize();
 
-	addGiftsButton(tracker);
-	addArchiveButton(tracker);
-	addRecentButton(tracker);
+	auto stack = SectionStack(_top);
+	stack.addPlainSeparator();
+	const auto addButton = [&](object_ptr<Ui::SlideWrap<>> button) {
+		const auto raw = button.data();
+		stack.add({
+			.widget = std::move(button),
+			.shown = raw->toggledValue(),
+		});
+		return raw;
+	};
+	const auto buttons = {
+		addButton(makeGiftsButton()),
+		addButton(makeArchiveButton()),
+		addButton(makeRecentButton()),
+	};
+	stack.finalize();
+	// Layout insertion shows even wrappers whose initial toggle is off.
+	for (const auto button : buttons) {
+		button->finishAnimating();
+	}
 
-	dividerWrap->toggleOn(tracker.atLeastOneShownValue());
-
-	finalizeTop();
+	finalizeTop(false);
 }
 
 void InnerWidget::createButtons() {
 	startTop();
-	auto tracker = Ui::MultiSlideTracker();
-	addArchiveButton(tracker);
-	addRecentButton(tracker);
+	_top->add(makeArchiveButton())->finishAnimating();
+	_top->add(makeRecentButton())->finishAnimating();
 	finalizeTop();
 }
 
-void InnerWidget::addArchiveButton(Ui::MultiSlideTracker &tracker) {
+object_ptr<Ui::SlideWrap<>> InnerWidget::makeArchiveButton() {
 	Expects(_top != nullptr);
 
 	const auto stories = &_peer->owner().stories();
@@ -400,16 +407,16 @@ void InnerWidget::addArchiveButton(Ui::MultiSlideTracker &tracker) {
 		return stories->albumIdsCount(_peer->id, kArchive);
 	}) | rpl::start_spawning(_top->lifetime());
 
-	const auto archiveWrap = _top->add(
-		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+	auto wrap = object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+		_top,
+		object_ptr<Ui::SettingsButton>(
 			_top,
-			object_ptr<Ui::SettingsButton>(
-				_top,
-				tr::lng_stories_archive_button(),
-				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
-					_top.data(),
-					st::infoSharedMediaButton)))
-	)->setDuration(
+			tr::lng_stories_archive_button(),
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				_top.data(),
+				st::infoSharedMediaButton)));
+	const auto archiveWrap = wrap.data();
+	archiveWrap->setDuration(
 		st::infoSlideDuration
 	)->toggleOn(rpl::duplicate(count) | rpl::map(rpl::mappers::_1 > 0));
 
@@ -433,21 +440,21 @@ void InnerWidget::addArchiveButton(Ui::MultiSlideTracker &tracker) {
 		archive,
 		st::infoIconMediaStoriesArchive,
 		st::infoSharedMediaButtonIconPosition)->show();
-	tracker.track(archiveWrap);
+	return wrap;
 }
 
-void InnerWidget::addRecentButton(Ui::MultiSlideTracker &tracker) {
+object_ptr<Ui::SlideWrap<>> InnerWidget::makeRecentButton() {
 	Expects(_top != nullptr);
 
-	const auto recentWrap = _top->add(
-		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+	auto wrap = object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+		_top,
+		object_ptr<Ui::SettingsButton>(
 			_top,
-			object_ptr<Ui::SettingsButton>(
-				_top,
-				tr::lng_stories_recent_button(),
-				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
-					_top.data(),
-					st::infoSharedMediaButton))));
+			tr::lng_stories_recent_button(),
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				_top.data(),
+				st::infoSharedMediaButton)));
+	const auto recentWrap = wrap.data();
 
 	using namespace Dialogs::Stories;
 	auto last = LastForPeer(
@@ -495,10 +502,10 @@ void InnerWidget::addRecentButton(Ui::MultiSlideTracker &tracker) {
 	) | rpl::map([](const Content &content) {
 		return !content.elements.empty();
 	}));
-	tracker.track(recentWrap);
+	return wrap;
 }
 
-void InnerWidget::addGiftsButton(Ui::MultiSlideTracker &tracker) {
+object_ptr<Ui::SlideWrap<>> InnerWidget::makeGiftsButton() {
 	Expects(_top != nullptr);
 
 	const auto user = _peer->asUser();
@@ -508,16 +515,16 @@ void InnerWidget::addGiftsButton(Ui::MultiSlideTracker &tracker) {
 		user
 	) | rpl::start_spawning(_top->lifetime());
 
-	const auto giftsWrap = _top->add(
-		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+	auto wrap = object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+		_top,
+		object_ptr<Ui::SettingsButton>(
 			_top,
-			object_ptr<Ui::SettingsButton>(
-				_top,
-				tr::lng_peer_gifts_title(),
-				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
-					_top.data(),
-					st::infoSharedMediaButton)))
-	)->setDuration(
+			tr::lng_peer_gifts_title(),
+			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				_top.data(),
+				st::infoSharedMediaButton)));
+	const auto giftsWrap = wrap.data();
+	giftsWrap->setDuration(
 		st::infoSlideDuration
 	)->toggleOn(rpl::duplicate(count) | rpl::map(rpl::mappers::_1 > 0));
 
@@ -541,7 +548,7 @@ void InnerWidget::addGiftsButton(Ui::MultiSlideTracker &tracker) {
 		gifts,
 		st::infoIconMediaGifts,
 		st::infoSharedMediaButtonIconPosition)->show();
-	tracker.track(giftsWrap);
+	return wrap;
 }
 
 bool InnerWidget::hasFlexibleTopBar() const {
@@ -601,10 +608,13 @@ void InnerWidget::showFinished() {
 	}
 }
 
-void InnerWidget::finalizeTop() {
+void InnerWidget::finalizeTop(bool addAlbumsSkip) {
 	const auto addPossibleAlbums = !_addingToAlbumId
 		&& (_albumId.current() != Data::kStoriesAlbumIdArchive);
 	if (addPossibleAlbums) {
+		if (addAlbumsSkip) {
+			Ui::AddSkip(_top);
+		}
 		setupAlbums();
 	}
 	_top->resizeToWidth(width());

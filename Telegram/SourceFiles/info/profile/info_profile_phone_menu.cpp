@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_phone_menu.h"
 
 #include "data/data_user.h"
+#include "ayu/ayu_settings.h"
 #include "lang/lang_keys.h"
 #include "main/main_app_config.h"
 #include "main/main_app_config_values.h"
@@ -152,17 +153,53 @@ void AddPhoneSpoilerMenu(
 		return;
 	}
 	const auto session = &user->session();
-	const auto toggle = [=] {
-		auto &settings = session->settings();
-		settings.setPhoneNumberHidden(!settings.phoneNumberHidden());
-		session->saveSettingsDelayed();
-	};
-	Menu::AddCheckedAction(
+	const auto isRu = Lang::Id().startsWith(u"ru"_q);
+	const auto hidden = session->settings().phoneNumberHidden();
+
+	// The submenu carries the toggle itself plus the reveal mode, so the
+	// spoiler can be turned on and off from the same place.
+	const auto toggleAction = Menu::AddCheckedAction(
 		menu,
-		tr::lng_context_spoiler_effect(tr::now),
-		toggle,
+		isRu ? QString::fromUtf8("Скрыть под спойлер") : QString("Hide with spoiler"),
+		nullptr,
 		&st::menuIconSpoiler,
-		session->settings().phoneNumberHidden());
+		hidden);
+	toggleAction->setMenu(Ui::CreateChild<QMenu>(menu->menu().get()));
+	const auto sub = menu->ensureSubmenu(
+		toggleAction,
+		st::popupMenuWithIcons);
+
+	{
+		const auto toggle = [=] {
+			auto &settings = session->settings();
+			settings.setPhoneNumberHidden(!settings.phoneNumberHidden());
+			session->saveSettingsDelayed();
+		};
+		Menu::AddCheckedAction(
+			sub,
+			isRu ? QString::fromUtf8("Включено") : QString("Enabled"),
+			toggle,
+			nullptr,
+			hidden);
+	}
+	{
+		const auto current = AyuSettings::getInstance().phoneRevealMode();
+		const auto setMode = [](PhoneRevealMode mode) {
+			AyuSettings::getInstance().setPhoneRevealMode(mode);
+		};
+		Menu::AddCheckedAction(
+			sub,
+			isRu ? QString::fromUtf8("При наведении") : QString("On hover"),
+			[=] { setMode(PhoneRevealMode::OnHover); },
+			nullptr,
+			current == PhoneRevealMode::OnHover);
+		Menu::AddCheckedAction(
+			sub,
+			isRu ? QString::fromUtf8("При клике") : QString("On click"),
+			[=] { setMode(PhoneRevealMode::OnClick); },
+			nullptr,
+			current == PhoneRevealMode::OnClick);
+	}
 }
 
 } // namespace Profile

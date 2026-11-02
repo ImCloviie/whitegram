@@ -5,6 +5,8 @@
 
 #include "ayu/ayu_settings.h"
 
+#include <QtNetwork/QNetworkRequest>
+
 namespace Whitegram::Backend {
 
 using Zone = CustomProfileBackground::Zone;
@@ -19,6 +21,10 @@ inline constexpr auto kMaxProfileBackgroundUploadSize
 
 [[nodiscard]] QString BaseUrl();
 [[nodiscard]] QString ApiKey();
+
+// Pins the backend's self-signed certificate on the request when it
+// goes over HTTPS, so no other CA can MITM the backend traffic.
+void ApplyTlsPinning(QNetworkRequest &request);
 
 void UploadProfileBackground(
 	uint64 userId,
@@ -89,6 +95,15 @@ void FetchBadges();
 
 void CheckUpdateAvailability();
 void SyncTimeSpent(uint64 userId, int64 localMinutes);
+void SetTimeSpentVisible(uint64 userId, bool visible);
+
+// Asks the backend for the time spent in Whitegram of any user and
+// fires timeSpentUpdates() with the id when the answer lands. The
+// answer is zero for users who hid their time.
+void FetchTimeSpent(uint64 userId);
+[[nodiscard]] int64 CachedTimeSpent(uint64 userId);
+[[nodiscard]] bool CachedTimeSpentVisible(uint64 userId);
+[[nodiscard]] rpl::producer<uint64> timeSpentUpdates();
 [[nodiscard]] bool IsUpdateAvailable();
 [[nodiscard]] rpl::producer<bool> updateAvailableValue();
 void TriggerUpdateDownload();

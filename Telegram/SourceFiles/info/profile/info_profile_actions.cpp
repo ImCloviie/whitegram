@@ -125,6 +125,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ui/utils/ayu_profile_values.h"
 #include "ayu/utils/telegram_helpers.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "styles/style_ayu_styles.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/text/text_entity.h"
@@ -1807,13 +1808,14 @@ Section DetailsFiller::makeInfo() {
 				user->session().supportHelper().infoTextValue(user));
 		}
 
+		const auto phoneLine = addInfoOneLine(
+			tr::lng_info_mobile_label(),
+			PhoneWithSpoilerValue(user, PhoneOrHiddenValue(user)),
+			tr::lng_profile_copy_phone(tr::now),
+			st::infoProfileLabeledPadding,
+			st::popupMenuWithIcons);
 		{
-			const auto phoneLabel = addInfoOneLine(
-				tr::lng_info_mobile_label(),
-				PhoneWithSpoilerValue(user, PhoneOrHiddenValue(user)),
-				tr::lng_profile_copy_phone(tr::now),
-				st::infoProfileLabeledPadding,
-				st::popupMenuWithIcons).text;
+			const auto phoneLabel = phoneLine.text;
 			SetupPhoneSpoilerRevealOnHover(phoneLabel);
 			const auto hook = [=](Ui::FlatLabel::ContextMenuRequest request) {
 				if (request.selection.empty()) {
@@ -1872,20 +1874,107 @@ Section DetailsFiller::makeInfo() {
 				user->session().createInternalLinkFull(username)));
 		}, usernameLine.text->lifetime());
 
+		// Whitegram: the time the user has spent in the app, published
+		// on the Whitegram backend. The row only exists for Whitegram
+		// users (self included) who did not hide it in the settings.
+		if (!user->isBot()) {
+			const auto selfId = user->session().userId().bare;
+			const auto rowUserId = uint64(getBareID(_peer));
+			Whitegram::Backend::FetchWhitegramUser(rowUserId);
+			Whitegram::Backend::FetchTimeSpent(rowUserId);
+			const auto isRu = [] {
+				const auto id = Lang::GetInstance().id();
+				const auto baseId = Lang::GetInstance().baseId();
+				return id.startsWith(u"ru"_q)
+					|| baseId.startsWith(u"ru"_q);
+			}();
+			// A combine of event streams would never fire before every
+			// stream's first event (for the own profile the "is a
+			// Whitegram user" answer is cached and no event arrives at
+			// all), so the row value would stay empty forever. A merge
+			// with an immediate single() recomputes the text right away
+			// and on every later change.
+			auto triggers = rpl::merge(
+				rpl::single(rpl::empty),
+				Whitegram::Backend::timeSpentUpdates(
+				) | rpl::filter([=](uint64 updatedId) {
+					return updatedId == rowUserId;
+				}) | rpl::to_empty,
+				Whitegram::Backend::whitegramUserUpdates(
+				) | rpl::filter([=](uint64 updatedId) {
+					return updatedId == rowUserId;
+				}) | rpl::to_empty,
+				AyuSettings::getInstance().timeSpentFormatValue(
+				) | rpl::to_empty,
+				AyuSettings::getInstance().showTimeSpentInProfileChanges(
+				) | rpl::to_empty);
+			addInfoOneLine(
+				TextWithEntities{
+					isRu
+						? QString::fromUtf8("В Whitegram")
+						: QString("In Whitegram"),
+				},
+				std::move(triggers) | rpl::map([=] {
+					const auto isSelf = (rowUserId == selfId);
+					const auto isWhitegram = isSelf
+						|| Whitegram::Backend::IsWhitegramUser(rowUserId);
+					if (!isWhitegram) {
+						return TextWithEntities();
+					}
+					// Hidden: the backend answers 0, and the local
+					// flag decides for the own row.
+					const auto visible = isSelf
+						? AyuSettings::getInstance().showTimeSpentInProfile()
+						: Whitegram::Backend::CachedTimeSpentVisible(
+							rowUserId);
+					if (!visible) {
+						return TextWithEntities();
+					}
+					const auto minutes = isSelf
+						? AyuSettings::getInstance().getTimeSpentFor(rowUserId)
+						: Whitegram::Backend::CachedTimeSpent(rowUserId);
+					const auto format = AyuSettings::getInstance()
+						.timeSpentFormat();
+					return TextWithEntities{
+						::formatTimeSpent(minutes, format),
+					};
+				}),
+				QString(),
+				st::infoProfileLabeledPadding,
+				st::popupMenuWithIcons);
+		}
+
 		const auto qrButton = Ui::CreateChild<Ui::IconButton>(
 			usernameLine.text->parentWidget(),
 			st::infoProfileLabeledButtonQr);
 		qrButton->setAccessibleName(tr::lng_group_invite_context_qr(tr::now));
-		UsernamesValue(_peer) | rpl::on_next([=](const auto &u) {
-			qrButton->setVisible(!u.empty());
-		}, qrButton->lifetime());
 		const auto rightSkip = st::infoProfileLabeledButtonQrRightSkip;
-		fitLabelToButton(qrButton, usernameLine.text, rightSkip);
-		fitLabelToButton(qrButton, usernameLine.subtext, rightSkip);
-		qrButton->setClickedCallback([=, show = controller->uiShow()] {
+		const auto showQr = [=, show = controller->uiShow()] {
 			Ui::DefaultShowFillPeerQrBoxCallback(show, user);
 			return false;
-		});
+		};
+		if (user->isSelf()) {
+			const auto phoneQr = Ui::CreateChild<Ui::IconButton>(
+				phoneLine.text->parentWidget(),
+				st::infoProfileLabeledButtonQr);
+			phoneQr->setAccessibleName(tr::lng_group_invite_context_qr(tr::now));
+			fitLabelToButton(phoneQr, phoneLine.text, rightSkip);
+			fitLabelToButton(phoneQr, phoneLine.subtext, rightSkip);
+			phoneQr->setClickedCallback(showQr);
+			UsernameValue(user, true) | rpl::on_next([=](
+					const TextWithEntities &username) {
+				const auto hasUsername = !username.text.isEmpty();
+				phoneQr->setVisible(!hasUsername);
+				qrButton->setVisible(hasUsername);
+			}, qrButton->lifetime());
+		} else {
+			UsernamesValue(_peer) | rpl::on_next([=](const auto &u) {
+				qrButton->setVisible(!u.empty());
+			}, qrButton->lifetime());
+		}
+		fitLabelToButton(qrButton, usernameLine.text, rightSkip);
+		fitLabelToButton(qrButton, usernameLine.subtext, rightSkip);
+		qrButton->setClickedCallback(showQr);
 
 		if (!user->isBot()) {
 			tracker.track(result->add(
@@ -3734,26 +3823,6 @@ void BuildProfileDetailsSections(
 		filler.setDetailsSectionCreated(std::move(detailsSectionCreated));
 		filler.buildSections();
 	}
-}
-
-void AddDetails(
-		not_null<Ui::VerticalLayout*> container,
-		not_null<Controller*> controller,
-		not_null<PeerData*> peer,
-		Data::ForumTopic *topic,
-		Data::SavedSublist *sublist,
-		Origin origin) {
-	auto layout = object_ptr<Ui::VerticalLayout>(container);
-	auto stack = SectionStack(layout.data());
-	BuildProfileDetailsSections(
-		stack,
-		controller,
-		peer,
-		topic,
-		sublist,
-		origin);
-	stack.finalize();
-	container->add(std::move(layout));
 }
 
 } // namespace Profile

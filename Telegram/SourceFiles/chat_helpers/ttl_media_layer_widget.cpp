@@ -390,6 +390,7 @@ void ShowTTLMediaLayerWidget(
 	layer->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
 		AyuFeatures::StreamerMode::RequireViewOnceGuard());
 	Core::App().screenshotProtection().addContentReason(
+		controller->widget(),
 		rpl::single(true),
 		layer->lifetime());
 	base::install_event_filter(layer.get(), [=](not_null<QEvent*> e) {

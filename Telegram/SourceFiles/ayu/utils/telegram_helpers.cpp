@@ -706,6 +706,48 @@ QString formatMessageTime(const QTime &time) {
 	);
 }
 
+QString formatTimeSpent(int64 minutes, int format) {
+	if (minutes <= 0) {
+		return QString::fromUtf8("0 мин.");
+	}
+	const auto hours = minutes / 60;
+	const auto mins = minutes % 60;
+	const auto days = hours / 24;
+	const auto restHours = hours % 24;
+
+	switch (format) {
+	case 1:
+		// Hours + minutes, e.g. "340 ч. 11 мин."
+		return QString::fromUtf8("%1 ч. %2 мин.")
+			.arg(hours)
+			.arg(mins);
+	case 2:
+		// Days, e.g. "14 дн."; keeps hours for values under a day.
+		if (days > 0) {
+			return QString::fromUtf8("%1 дн.").arg(days);
+		}
+		return QString::fromUtf8("%1 ч.").arg(hours);
+	case 3:
+		// Days + hours, e.g. "14 дн. 3 ч."; hours+minutes under a day.
+		if (days > 0) {
+			return QString::fromUtf8("%1 дн. %2 ч.")
+				.arg(days)
+				.arg(restHours);
+		}
+		return QString::fromUtf8("%1 ч. %2 мин.")
+			.arg(hours)
+			.arg(mins);
+	case 0:
+	default:
+		// Hours only, e.g. "340 ч"; minutes for values under an hour.
+		if (hours > 0) {
+			return QString::fromUtf8("%1 ч").arg(hours);
+		}
+		return QString::fromUtf8("%1 мин.").arg(mins);
+	}
+}
+
+
 int getMediaSizeBytes(not_null<HistoryItem*> message) {
 	if (!message->media()) {
 		return -1;

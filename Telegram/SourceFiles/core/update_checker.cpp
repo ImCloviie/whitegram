@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/update_checker.h"
 
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
+
 #include "ayu/ayu_settings.h"
 #include "platform/platform_specific.h"
 #include "base/platform/base_platform_info.h"
@@ -793,6 +795,7 @@ void HttpChecker::start() {
 	auto request = QNetworkRequest(url);
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 	request.setTransferTimeout(int(kUpdaterTimeout));
+	Whitegram::Backend::ApplyTlsPinning(request);
 	_manager = std::make_unique<QNetworkAccessManager>();
 	_reply = _manager->get(request);
 	_reply->connect(_reply, &QNetworkReply::finished, [=] {
@@ -985,6 +988,7 @@ void HttpLoaderActor::sendRequest() {
 		true);
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
 	request.setTransferTimeout(int(kUpdaterTimeout));
+	Whitegram::Backend::ApplyTlsPinning(request);
 	_reply.reset(_manager.get(request));
 	connect(
 		_reply.get(),

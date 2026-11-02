@@ -97,13 +97,153 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang_auto.h"
 #include "ayu/ui/settings/settings_main.h"
 #include "ayu/features/whitegram_crypto.h"
+#include "ayu/features/whitegram_crypto_charts.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "ui/layers/generic_box.h"
+#include "ui/wrap/padding_wrap.h"
+#include "ui/wrap/vertical_layout.h"
+#include "ui/widgets/buttons.h"
+#include "ui/widgets/labels.h"
+#include "styles/style_layers.h"
 #include "styles/style_info.h"
 
 namespace Window {
 namespace {
 
 constexpr auto kPlayStatusLimit = 12;
+
+// Opens a small box with a full interactive price chart of the asset:
+// 7 days of hourly history, crosshair, price+date tooltip on hover.
+void ShowCryptoChartBox(
+		not_null<Window::SessionController*> controller,
+		const QString &symbol,
+		const QString &coinId,
+		bool fiatRow,
+		const QString &fiatCode) {
+	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+		// Title: "GRAM · Gram" style, symbol first.
+		const auto &prices = Whitegram::CryptoProvider::instance()
+			.currentPrices();
+		auto title = symbol;
+		for (const auto &coin : prices) {
+			if (coin.symbol == symbol) {
+				title = symbol + u"  \u00b7  "_q + coin.name;
+				break;
+			}
+		}
+		box->setTitle(rpl::single(title));
+
+		const auto chartHolder = box->addRow(
+			object_ptr<Ui::FixedHeightWidget>(box, 260));
+		const auto chart = Ui::CreateChild<Whitegram::FullChart>(
+			chartHolder,
+			260);
+		chart->setColor(QColor(0x53, 0x8a, 0xf0));
+		chart->setPrecision(2);
+		chart->setPricePrefix(u"$"_q);
+
+		chartHolder->widthValue(
+		) | rpl::on_next([=](int width) {
+			chart->setGeometryToLeft(0, 0, width, 260, width);
+		}, chartHolder->lifetime());
+
+		// Range switch: 24 hours / 7 days / 30 days / 90 days, starting
+		// from the period chosen in the crypto settings.
+		struct RangeOption {
+			int days = 7;
+			QString label;
+			Ui::RoundButton *button = nullptr;
+		};
+		const auto options = box->lifetime().make_state<
+			std::vector<RangeOption>>(std::vector<RangeOption>{
+			{ 1, u"24H"_q },
+			{ 7, u"7D"_q },
+			{ 30, u"1M"_q },
+			{ 90, u"3M"_q },
+		});
+		auto initialDays = AyuSettings::getInstance().cryptoChartDays();
+		if (initialDays != 1 && initialDays != 7
+			&& initialDays != 30 && initialDays != 90) {
+			initialDays = 7;
+		}
+
+		const auto load = [=](int days) {
+			chart->setError(QString());
+			const auto done = crl::guard(chart, [=](
+					std::vector<Whitegram::ChartEntry> entries,
+					bool ok) {
+				if (ok && entries.size() >= 2) {
+					chart->setEntries(std::move(entries));
+				} else {
+					// A clear error state instead of a forever-loading
+					// chart; clicking the chart retries.
+					chart->setError(
+						QString::fromUtf8("Не удалось загрузить график\n"
+							"Нажмите, чтобы повторить"));
+				}
+			});
+			if (fiatRow) {
+				Whitegram::CryptoProvider::instance().requestFiatHistory(
+					fiatCode,
+					days,
+					done);
+			} else {
+				Whitegram::CryptoProvider::instance().requestCoinHistory(
+					coinId,
+					days,
+					done);
+			}
+		};
+
+		chart->retryRequests(
+		) | rpl::on_next([=] {
+			load(initialDays);
+		}, chart->lifetime());
+
+		// Rate-limit countdown: shows "temporarily blocked, N s" instead
+		// of a forever-loading chart while the provider waits out the
+		// API's anti-spam ban.
+		Whitegram::CryptoProvider::instance().rateLimitSecondsLeftValue(
+		) | rpl::on_next([=](int seconds) {
+			chart->setRateLimitSeconds(seconds);
+		}, chart->lifetime());
+
+		const auto rangeRow = box->addRow(
+			object_ptr<Ui::FixedHeightWidget>(box, 40));
+
+		for (auto &option : *options) {
+			option.button = Ui::CreateChild<Ui::RoundButton>(
+				rangeRow,
+				rpl::single(option.label),
+				st::defaultBoxButton);
+			option.button->resizeToWidth(52);
+			const auto days = option.days;
+			option.button->setClickedCallback([=] {
+				load(days);
+			});
+		}
+
+		// Lay the range buttons out in a row centered on the width.
+		const auto layout = [=] {
+			auto x = 0;
+			for (auto &option : *options) {
+				if (option.button) {
+					option.button->moveToLeft(x, 0);
+				}
+				x += 56;
+			}
+		};
+		layout();
+		rangeRow->widthValue(
+		) | rpl::on_next([=](int) {
+			layout();
+		}, rangeRow->lifetime());
+
+		load(initialDays);
+
+		box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+	}));
+}
 
 [[nodiscard]] bool CanCheckSpecialEvent() {
 	static const auto result = [] {
@@ -994,6 +1134,97 @@ void MainMenu::setupMenu() {
 		const auto cryptoContainer = _menu->add(
 			object_ptr<Ui::VerticalLayout>(_menu));
 
+		// One row: "SYM  price  +x.x%" on the left (shifted left of the
+		// menu button text) and a small real sparkline chart on the right.
+		// Clicking the chart opens a box with a full interactive chart.
+		const auto addRateRow = [=](
+				const QString &symbol,
+				const QString &text,
+				const QString &changeText,
+				bool positive,
+				const Whitegram::PriceHistory *history,
+				const QString &coinId,
+				bool fiatRow,
+				const QString &fiatCode) {
+			const auto &s = AyuSettings::getInstance();
+			const auto showChart = s.showCryptoCharts();
+			const auto rowHeight = 40;
+
+			// Fixed height row: RpWidget alone reports height 0 and the
+			// vertical layout collapses it to nothing.
+			const auto row = Ui::CreateChild<Ui::FixedHeightWidget>(
+				cryptoContainer,
+				rowHeight);
+			row->show();
+
+			const auto labelText = text
+				+ (changeText.isEmpty() ? QString() : u"  "_q + changeText);
+			const auto label = Ui::CreateChild<Ui::FlatLabel>(
+				row,
+				rpl::single(labelText),
+				st::defaultFlatLabel);
+			label->show();
+
+			// The sparkline spans most of the row height, so the line is
+			// clearly visible; it hides entirely when disabled in settings.
+			const auto sparkHeight = rowHeight - 8;
+			const auto sparkline = showChart
+				? Ui::CreateChild<Whitegram::Sparkline>(row, sparkHeight)
+				: nullptr;
+			if (sparkline) {
+				sparkline->setColor(positive
+					? QColor(0x4e, 0xb5, 0x71)
+					: QColor(0xe4, 0x7c, 0x6f));
+				sparkline->setPrecision(2);
+				sparkline->setPricePrefix(u"$"_q);
+				sparkline->show();
+				if (history && !history->empty()) {
+					sparkline->setEntries(history->points);
+				}
+				sparkline->clicks(
+				) | rpl::on_next([=] {
+					ShowCryptoChartBox(
+						_controller,
+						symbol,
+						coinId,
+						fiatRow,
+						fiatCode);
+				}, sparkline->lifetime());
+			}
+
+			row->widthValue(
+			) | rpl::on_next([=](int width) {
+				const auto sparkWidth = 76;
+				const auto sparkLeft = showChart
+					? (width - sparkWidth - 12)
+					: width;
+				if (sparkline) {
+					sparkline->setGeometryToLeft(
+						sparkLeft,
+						8,
+						sparkWidth,
+						sparkHeight,
+						width);
+				}
+				// Resize first: the vertical centering must use the
+				// final (possibly wrapped) height, otherwise a
+				// two-line label sits too high and its second line
+				// disappears under the next row.
+				label->resizeToWidth(std::max(
+					1,
+					sparkLeft - st::mainMenuButton.padding.left() + 24));
+				label->moveToLeft(
+					st::mainMenuButton.padding.left() - 24,
+					(rowHeight - label->height()) / 2,
+					width);
+			}, row->lifetime());
+
+			cryptoContainer->add(
+				object_ptr<Ui::FixedHeightWidget>::fromRaw(row),
+				{ 0, 1, 0, 1 });
+			return row;
+		};
+
 		const auto rebuild = [=] {
 			while (cryptoContainer->count()) {
 				delete cryptoContainer->widgetAt(0);
@@ -1001,43 +1232,65 @@ void MainMenu::setupMenu() {
 
 			const auto &s = AyuSettings::getInstance();
 			const auto fiat = s.cryptoFiatCurrency();
-			const auto &prices = Whitegram::CryptoProvider::instance().currentPrices();
+			const auto &prices = Whitegram::CryptoProvider::instance()
+				.currentPrices();
+			const auto &histories = Whitegram::CryptoProvider::instance()
+				.currentHistories();
 
+			const auto findHistory = [&](const QString &id) {
+				for (const auto &h : histories) {
+					if (h.id == id) {
+						return &h;
+					}
+				}
+				return (const Whitegram::PriceHistory*)nullptr;
+			};
+
+			auto shownCoinIds = std::vector<QString>();
 			for (const auto &coin : prices) {
 				const auto show =
 					(coin.symbol == u"BTC"_q && s.showBTC())
 					|| (coin.symbol == u"ETH"_q && s.showETH())
-					|| (coin.symbol == u"TON"_q && s.showTON())
+					|| (coin.symbol == u"GRAM"_q && s.showTON())
 					|| (coin.symbol == u"SOL"_q && s.showSOL())
 					|| (coin.symbol == u"BNB"_q && s.showBNB());
 				if (!show) {
 					continue;
 				}
+				shownCoinIds.push_back(coin.id);
 
-				auto price = 0.0;
-				switch (fiat) {
-				case 1: price = coin.priceEur; break;
-				case 2: price = coin.priceRub; break;
-				default: price = coin.priceUsd; break;
-				}
+				const auto price = Whitegram::CryptoProvider::coinPrice(
+					coin,
+					fiat);
 
 				const auto text = coin.symbol
 					+ u"  "_q
 					+ Whitegram::CryptoProvider::formatPrice(price, fiat);
 
-				const auto changeText = (coin.change24h >= 0 ? u"+"_q : QString())
-					+ QString::number(coin.change24h, 'f', 1)
-					+ u"%"_q;
+				const auto changeText = s.showCryptoChanges()
+					? ((coin.change24h >= 0
+						? u"+"_q
+						: QString())
+						+ QString::number(coin.change24h, 'f', 1)
+						+ u"%"_q)
+					: QString();
 
-				const auto label = Ui::CreateChild<Ui::FlatLabel>(
-					cryptoContainer,
-					rpl::single(text + u"  "_q + changeText),
-					st::defaultFlatLabel);
-				cryptoContainer->add(
-					object_ptr<Ui::FlatLabel>::fromRaw(label),
-					{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+				addRateRow(
+					coin.symbol,
+					text,
+					changeText,
+					coin.change24h >= 0.0,
+					findHistory(coin.id),
+					coin.id,
+					false,
+					QString());
 			}
-			
+
+			// Refresh the sparkline data set: the provider fetches the
+			// 7-day history for every shown coin and fiat once per 5 min.
+			Whitegram::CryptoProvider::instance().refreshHistories(
+				shownCoinIds);
+
 			// Fiat calculation hack using BTC as the bridge
 			if (!prices.empty()) {
 				const auto &btc = prices.front();
@@ -1046,7 +1299,7 @@ void MainMenu::setupMenu() {
 					const auto eurToRub = btc.priceRub / btc.priceEur;
 					const auto usdToEur = btc.priceEur / btc.priceUsd;
 					const auto eurToUsd = btc.priceUsd / btc.priceEur;
-					
+
 					if (s.showFiatUSD()) {
 						QString text;
 						switch (fiat) {
@@ -1054,16 +1307,18 @@ void MainMenu::setupMenu() {
 						case 2: text = u"USD  "_q + Whitegram::CryptoProvider::formatPrice(usdToRub, 2); break;
 						default: text = u"USD  "_q + Whitegram::CryptoProvider::formatPrice(1.0, 0); break;
 						}
-						
-						const auto label = Ui::CreateChild<Ui::FlatLabel>(
-							cryptoContainer,
-							rpl::single(text),
-							st::defaultFlatLabel);
-						cryptoContainer->add(
-							object_ptr<Ui::FlatLabel>::fromRaw(label),
-							{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+
+						addRateRow(
+							u"USD"_q,
+							text,
+							QString(),
+							true,
+							findHistory(u"usd"_q),
+							QString(),
+							true,
+							u"USD"_q);
 					}
-					
+
 					if (s.showFiatEUR()) {
 						QString text;
 						switch (fiat) {
@@ -1071,14 +1326,16 @@ void MainMenu::setupMenu() {
 						case 2: text = u"EUR  "_q + Whitegram::CryptoProvider::formatPrice(eurToRub, 2); break;
 						default: text = u"EUR  "_q + Whitegram::CryptoProvider::formatPrice(1.0, 1); break;
 						}
-						
-						const auto label = Ui::CreateChild<Ui::FlatLabel>(
-							cryptoContainer,
-							rpl::single(text),
-							st::defaultFlatLabel);
-						cryptoContainer->add(
-							object_ptr<Ui::FlatLabel>::fromRaw(label),
-							{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+
+						addRateRow(
+							u"EUR"_q,
+							text,
+							QString(),
+							true,
+							findHistory(u"eur"_q),
+							QString(),
+							true,
+							u"EUR"_q);
 					}
 
 					if (s.showFiatRUB()) {
@@ -1088,18 +1345,20 @@ void MainMenu::setupMenu() {
 						case 1: text = u"RUB  "_q + Whitegram::CryptoProvider::formatPrice(1.0 / eurToRub, 1); break;
 						default: text = u"RUB  "_q + Whitegram::CryptoProvider::formatPrice(1.0, 2); break;
 						}
-						
-						const auto label = Ui::CreateChild<Ui::FlatLabel>(
-							cryptoContainer,
-							rpl::single(text),
-							st::defaultFlatLabel);
-						cryptoContainer->add(
-							object_ptr<Ui::FlatLabel>::fromRaw(label),
-							{ st::mainMenuButton.padding.left(), 4, 0, 4 });
+
+						addRateRow(
+							u"RUB"_q,
+							text,
+							QString(),
+							true,
+							findHistory(u"rub"_q),
+							QString(),
+							true,
+							u"RUB"_q);
 					}
 				}
 			}
-			
+
 			cryptoContainer->resizeToWidth(cryptoContainer->width());
 		};
 
@@ -1111,8 +1370,37 @@ void MainMenu::setupMenu() {
 			rebuild();
 		}, cryptoContainer->lifetime());
 
+		std::move(
+			crypto.historiesValue()
+		) | rpl::on_next([=](const std::vector<Whitegram::PriceHistory> &) {
+			rebuild();
+		}, cryptoContainer->lifetime());
+
 		AyuSettings::getInstance().cryptoFiatCurrencyChanges(
 		) | rpl::on_next([=](int) {
+			rebuild();
+		}, cryptoContainer->lifetime());
+
+		AyuSettings::getInstance().showCryptoChartsChanges(
+		) | rpl::on_next([=](bool) {
+			rebuild();
+		}, cryptoContainer->lifetime());
+
+		AyuSettings::getInstance().showCryptoChangesChanges(
+		) | rpl::on_next([=](bool) {
+			rebuild();
+		}, cryptoContainer->lifetime());
+
+		AyuSettings::getInstance().cryptoChartDaysChanges(
+		) | rpl::on_next([=](int) {
+			// The new period changes the wanted history set: the provider
+			// refetches it and the rebuild follows from historiesValue().
+			auto ids = std::vector<QString>();
+			for (const auto &coin : Whitegram::CryptoProvider::instance()
+				.currentPrices()) {
+				ids.push_back(coin.id);
+			}
+			Whitegram::CryptoProvider::instance().refreshHistories(ids);
 			rebuild();
 		}, cryptoContainer->lifetime());
 	}
@@ -1122,20 +1410,41 @@ void MainMenu::setupMenu() {
 			object_ptr<Ui::PlainShadow>(_menu),
 			{ 0, st::mainMenuSkip + 8, 0, st::mainMenuSkip + 8 });
 
-		auto timeText = AyuSettings::getInstance().totalTimeSpent() | rpl::map([](int64 minutes) {
-			int hours = minutes / 60;
-			int mins = minutes % 60;
-			return QString::fromUtf8("В приложении: %1 ч. %2 мин.").arg(hours).arg(mins);
+		// The label template is user-chosen (settings → time counter).
+		const auto labelPrefix = [](int style) {
+			switch (style) {
+			case 1: return QString::fromUtf8("В Whitegram: ");
+			case 2: return QString::fromUtf8("Залипание: ");
+			case 3: return QString::fromUtf8("Онлайн: ");
+			default: return QString::fromUtf8("В приложении: ");
+			}
+		};
+
+		// The producer fires on every minute tick; the text is read for the
+		// account of THIS window, so two windows of two accounts each show
+		// their own counter instead of sharing the active one.
+		auto timeText = rpl::combine(
+			AyuSettings::getInstance().totalTimeSpent(),
+			AyuSettings::getInstance().timeSpentFormatValue(),
+			AyuSettings::getInstance().timeSpentLabelStyleValue()
+		) | rpl::map([controller = _controller, labelPrefix](int64, int format, int labelStyle) {
+			const auto userId = controller->session().userId().bare;
+			return labelPrefix(labelStyle)
+				+ formatTimeSpent(
+					AyuSettings::getInstance().getTimeSpentFor(userId),
+					format);
 		});
 
 		const auto timeLabel = Ui::CreateChild<Ui::FlatLabel>(
 			_menu,
 			std::move(timeText),
 			st::defaultFlatLabel);
-			
+
+		// Aligned with the crypto rows above (they sit 24px left of the
+		// regular menu padding).
 		_menu->add(
 			object_ptr<Ui::FlatLabel>::fromRaw(timeLabel),
-			{ st::mainMenuButton.padding.left(), 8, 0, 8 });
+			{ st::mainMenuButton.padding.left() - 24, 8, 0, 8 });
 	}
 }
 

@@ -200,6 +200,14 @@ void ShowCryptoChartBox(
 			load(initialDays);
 		}, chart->lifetime());
 
+		// Rate-limit countdown: shows "temporarily blocked, N s" instead
+		// of a forever-loading chart while the provider waits out the
+		// API's anti-spam ban.
+		Whitegram::CryptoProvider::instance().rateLimitSecondsLeftValue(
+		) | rpl::on_next([=](int seconds) {
+			chart->setRateLimitSeconds(seconds);
+		}, chart->lifetime());
+
 		const auto rangeRow = box->addRow(
 			object_ptr<Ui::FixedHeightWidget>(box, 40));
 
@@ -1156,10 +1164,6 @@ void MainMenu::setupMenu() {
 				rpl::single(labelText),
 				st::defaultFlatLabel);
 			label->show();
-			if (!positive) {
-				label->setTextColorOverride(
-					st::windowActiveTextFg->c);
-			}
 
 			// The sparkline spans most of the row height, so the line is
 			// clearly visible; it hides entirely when disabled in settings.
@@ -1190,25 +1194,29 @@ void MainMenu::setupMenu() {
 
 			row->widthValue(
 			) | rpl::on_next([=](int width) {
-				const auto sparkWidth = 96;
+				const auto sparkWidth = 76;
 				const auto sparkLeft = showChart
-					? (width - sparkWidth - 8)
+					? (width - sparkWidth - 12)
 					: width;
 				if (sparkline) {
 					sparkline->setGeometryToLeft(
 						sparkLeft,
-						4,
+						8,
 						sparkWidth,
 						sparkHeight,
 						width);
 				}
+				// Resize first: the vertical centering must use the
+				// final (possibly wrapped) height, otherwise a
+				// two-line label sits too high and its second line
+				// disappears under the next row.
+				label->resizeToWidth(std::max(
+					1,
+					sparkLeft - st::mainMenuButton.padding.left() + 24));
 				label->moveToLeft(
 					st::mainMenuButton.padding.left() - 24,
 					(rowHeight - label->height()) / 2,
 					width);
-				label->resizeToWidth(std::max(
-					1,
-					sparkLeft - st::mainMenuButton.padding.left() + 16));
 			}, row->lifetime());
 
 			cryptoContainer->add(
@@ -1402,20 +1410,41 @@ void MainMenu::setupMenu() {
 			object_ptr<Ui::PlainShadow>(_menu),
 			{ 0, st::mainMenuSkip + 8, 0, st::mainMenuSkip + 8 });
 
-		auto timeText = AyuSettings::getInstance().totalTimeSpent() | rpl::map([](int64 minutes) {
-			int hours = minutes / 60;
-			int mins = minutes % 60;
-			return QString::fromUtf8("В приложении: %1 ч. %2 мин.").arg(hours).arg(mins);
+		// The label template is user-chosen (settings → time counter).
+		const auto labelPrefix = [](int style) {
+			switch (style) {
+			case 1: return QString::fromUtf8("В Whitegram: ");
+			case 2: return QString::fromUtf8("Залипание: ");
+			case 3: return QString::fromUtf8("Онлайн: ");
+			default: return QString::fromUtf8("В приложении: ");
+			}
+		};
+
+		// The producer fires on every minute tick; the text is read for the
+		// account of THIS window, so two windows of two accounts each show
+		// their own counter instead of sharing the active one.
+		auto timeText = rpl::combine(
+			AyuSettings::getInstance().totalTimeSpent(),
+			AyuSettings::getInstance().timeSpentFormatValue(),
+			AyuSettings::getInstance().timeSpentLabelStyleValue()
+		) | rpl::map([controller = _controller, labelPrefix](int64, int format, int labelStyle) {
+			const auto userId = controller->session().userId().bare;
+			return labelPrefix(labelStyle)
+				+ formatTimeSpent(
+					AyuSettings::getInstance().getTimeSpentFor(userId),
+					format);
 		});
 
 		const auto timeLabel = Ui::CreateChild<Ui::FlatLabel>(
 			_menu,
 			std::move(timeText),
 			st::defaultFlatLabel);
-			
+
+		// Aligned with the crypto rows above (they sit 24px left of the
+		// regular menu padding).
 		_menu->add(
 			object_ptr<Ui::FlatLabel>::fromRaw(timeLabel),
-			{ st::mainMenuButton.padding.left(), 8, 0, 8 });
+			{ st::mainMenuButton.padding.left() - 24, 8, 0, 8 });
 	}
 }
 

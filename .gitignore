@@ -4,6 +4,8 @@ Release/
 /ThirdParty/
 /Telegram/build/target
 /Telegram/build/ai-machine-tag
+# The backend API key lives here locally, never in git.
+/Telegram/build/whitegram_backend_key.txt
 /Telegram/tests/
 /Telegram/gyp/tests/*.test
 /Telegram/out/

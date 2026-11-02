@@ -344,6 +344,7 @@ private:
 	void refreshWithCollapsedRows(bool toTop = false);
 	bool needCollapsedRowsRefresh() const;
 	bool chooseHashtag();
+	bool chooseCollapsedRow(Qt::KeyboardModifiers modifiers);
 	ChosenRow computeChosenRow() const;
 	bool isRowActive(not_null<Row*> row, const RowDescriptor &entry) const;
 	bool isSearchResultActive(

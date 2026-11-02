@@ -87,6 +87,12 @@ QString formatTTL(int time, bool isDoc);
 QString formatDateTime(const QDateTime &date);
 QString formatMessageTime(const QTime &time);
 
+// Formats minutes of time spent in Whitegram according to the format
+// setting: 0 = "340 ч", 1 = "340 ч. 11 мин.", 2 = "14 дн.", 3 =
+// "14 дн. 3 ч". Format 0/2 keep their short form for small values
+// ("45 мин." / "2 ч.") so a fresh account does not show "0 ч".
+QString formatTimeSpent(int64 minutes, int format);
+
 QString getDCName(int dc);
 
 QString getMediaSize(not_null<HistoryItem*> message);

@@ -1496,6 +1496,16 @@ public:
   }
   void setTotalTimeSpent(int64 val);
 
+  // Per-account counters: minutes tick only for the account whose window is
+  // active. _totalTimeSpent mirrors the active account's counter for the
+  // existing single-value UI (drawer label, settings page).
+  [[nodiscard]] int64 getTimeSpentFor(uint64 userId) const {
+    const auto i = _timeSpentByAccount.find(userId);
+    return (i == _timeSpentByAccount.end()) ? 0 : i->second;
+  }
+  // Multi-device merge: a higher server value raises the account's counter.
+  void mergeTimeSpentFromServer(uint64 userId, int64 serverMinutes);
+
   [[nodiscard]] bool showTimeSpentInDrawer() const {
     return _showTimeSpentInDrawer.current();
   }
@@ -1506,6 +1516,45 @@ public:
     return _showTimeSpentInDrawer.changes();
   }
   void setShowTimeSpentInDrawer(bool val);
+
+  // Formats of the time-spent row: 0 = "340 ч" (default),
+  // 1 = "340 ч. 11 мин.", 2 = "14 дн." (>24h), 3 = "14 дн. 3 ч".
+  [[nodiscard]] int timeSpentFormat() const {
+    return _timeSpentFormat.current();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentFormatValue() const {
+    return _timeSpentFormat.value();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentFormatChanges() const {
+    return _timeSpentFormat.changes();
+  }
+  void setTimeSpentFormat(int val);
+
+  // Whether the own total time is published to the profile row other
+  // Whitegram users see.
+  [[nodiscard]] bool showTimeSpentInProfile() const {
+    return _showTimeSpentInProfile.current();
+  }
+  [[nodiscard]] rpl::producer<bool> showTimeSpentInProfileValue() const {
+    return _showTimeSpentInProfile.value();
+  }
+  [[nodiscard]] rpl::producer<bool> showTimeSpentInProfileChanges() const {
+    return _showTimeSpentInProfile.changes();
+  }
+  void setShowTimeSpentInProfile(bool val);
+
+  // The drawer counter label template: 0 = "В приложении: …",
+  // 1 = "В Whitegram: …", 2 = "Залипание: …", 3 = "Онлайн: …".
+  [[nodiscard]] int timeSpentLabelStyle() const {
+    return _timeSpentLabelStyle.current();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentLabelStyleValue() const {
+    return _timeSpentLabelStyle.value();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentLabelStyleChanges() const {
+    return _timeSpentLabelStyle.changes();
+  }
+  void setTimeSpentLabelStyle(int val);
 
   [[nodiscard]] bool whitegramAutoUpdate() const {
     return _whitegramAutoUpdate.current();
@@ -1765,7 +1814,11 @@ private:
   rpl::variable<int> _cryptoChartDays = 7;
 
   rpl::variable<int64> _totalTimeSpent = 0;
+  std::map<uint64, int64> _timeSpentByAccount;
   rpl::variable<bool> _showTimeSpentInDrawer = false;
+  rpl::variable<int> _timeSpentFormat = 0;
+  rpl::variable<bool> _showTimeSpentInProfile = true;
+  rpl::variable<int> _timeSpentLabelStyle = 0;
   rpl::variable<bool> _whitegramAutoUpdate = true;
   rpl::variable<bool> _hasSelfDestructPassword = false;
   QString _selfDestructSalt;

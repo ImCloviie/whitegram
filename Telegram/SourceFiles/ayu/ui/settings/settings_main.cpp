@@ -29,6 +29,7 @@
 #include "core/version.h"
 #include "core/update_checker.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "ayu/utils/telegram_helpers.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
 #include "styles/style_ayu_settings.h"
@@ -535,18 +536,13 @@ const auto kWhitegramTimeSpentMeta = BuildHelper({
 	.icon = &st::menuIconTimer,
 }, [](SectionBuilder &builder) {
 	builder.addSkip();
-	auto timeText = rpl::combine(
+	rpl::producer<QString> timeText = rpl::combine(
 		AyuSettings::getInstance().totalTimeSpent(),
-		trWhitegram(u"ru"_q, u"en"_q)
-	) | rpl::map([](int64 minutes, const QString &) {
-		int hours = minutes / 60;
-		int mins = minutes % 60;
-		const auto id = Lang::GetInstance().id();
-		const auto baseId = Lang::GetInstance().baseId();
-		const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
-		return isRu
-			? QString::fromUtf8("Проведено в Whitegram: %1 ч. %2 мин.").arg(hours).arg(mins)
-			: QString("Time spent in Whitegram: %1 h %2 min").arg(hours).arg(mins);
+		AyuSettings::getInstance().timeSpentFormatValue(),
+		trWhitegram(QString::fromUtf8("ru"), QString("en"))
+	) | rpl::map([](int64 minutes, int format, const QString &) {
+		return QString::fromUtf8("Проведено в Whitegram: ")
+			+ formatTimeSpent(minutes, format);
 	});
 	builder.addButton({
 		.id = u"whitegram/timespent"_q,
@@ -566,6 +562,107 @@ const auto kWhitegramTimeSpentMeta = BuildHelper({
 			QString("Show in side menu")),
 		.getter = &AyuSettings::showTimeSpentInDrawer,
 		.setter = &AyuSettings::setShowTimeSpentInDrawer,
+	});
+
+	const auto settings = &AyuSettings::getInstance();
+
+	const auto getFormatOptions = [] {
+		return std::vector<QString>{
+			QString::fromUtf8("Только часы (340 ч)"),
+			QString::fromUtf8("Часы и минуты (340 ч. 11 мин.)"),
+			QString::fromUtf8("Только дни (14 дн.)"),
+			QString::fromUtf8("Дни и часы (14 дн. 3 ч.)"),
+		};
+	};
+
+	auto currentFormat = rpl::combine(
+		AyuSettings::getInstance().timeSpentFormatValue(),
+		trWhitegram(u"ru"_q, u"en"_q)
+	) | rpl::map([=](int val, const QString &) {
+		const auto options = getFormatOptions();
+		return (val >= 0 && val < int(options.size()))
+			? options[val]
+			: options[0];
+	});
+
+	const auto controller = builder.controller();
+	builder.addButton({
+		.id = u"whitegram/timeSpentFormat"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Формат отображения"),
+			QString("Display Format")),
+		.st = &st::settingsButtonNoIcon,
+		.label = std::move(currentFormat),
+		.onClick = [=] {
+			controller->show(Box(
+				[=](not_null<Ui::GenericBox*> box) {
+					const auto save = [=](int index) {
+						AyuSettings::getInstance().setTimeSpentFormat(index);
+					};
+					SingleChoiceBox(box, {
+						.title = trWhitegram(
+							QString::fromUtf8("Формат отображения"),
+							QString("Display Format")),
+						.options = getFormatOptions(),
+						.initialSelection = settings->timeSpentFormat(),
+						.callback = save,
+					});
+				}));
+		},
+	});
+
+	// The drawer counter label template.
+	const auto getLabelOptions = [] {
+		return std::vector<QString>{
+			QString::fromUtf8("В приложении: 356 ч"),
+			QString::fromUtf8("В Whitegram: 356 ч"),
+			QString::fromUtf8("Залипание: 356 ч"),
+			QString::fromUtf8("Онлайн: 356 ч"),
+		};
+	};
+	auto currentLabel = AyuSettings::getInstance().timeSpentLabelStyleValue(
+	) | rpl::map([=](int val) {
+		const auto options = getLabelOptions();
+		return (val >= 0 && val < int(options.size()))
+			? options[val]
+			: options[0];
+	});
+	builder.addButton({
+		.id = u"whitegram/timeSpentLabelStyle"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Текст в боковом меню"),
+			QString("Side menu text")),
+		.st = &st::settingsButtonNoIcon,
+		.label = std::move(currentLabel),
+		.onClick = [=] {
+			controller->show(Box(
+				[=](not_null<Ui::GenericBox*> box) {
+					const auto save = [=](int index) {
+						AyuSettings::getInstance().setTimeSpentLabelStyle(index);
+					};
+					SingleChoiceBox(box, {
+						.title = trWhitegram(
+							QString::fromUtf8("Текст в боковом меню"),
+							QString("Side menu text")),
+						.options = getLabelOptions(),
+						.initialSelection = settings->timeSpentLabelStyle(),
+						.callback = save,
+					});
+				}));
+		},
+	});
+
+	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
+
+	ayu.addSettingToggle({
+		.id = u"whitegram/showTimeSpentInProfile"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Показывать время в моем профиле"),
+			QString("Show time in my profile")),
+		.getter = &AyuSettings::showTimeSpentInProfile,
+		.setter = &AyuSettings::setShowTimeSpentInProfile,
 	});
 	builder.addSkip();
 });

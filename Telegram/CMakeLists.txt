@@ -62,6 +62,9 @@ endif()
 include(cmake/generate_update_keys.cmake)
 generate_update_keys(Telegram ${res_loc}/update_whitegram)
 
+include(cmake/generate_backend_key.cmake)
+generate_backend_key(Telegram)
+
 if (DESKTOP_APP_TEST_APPS OR TDESKTOP_BUILD_UPDATE_TESTS)
     include(cmake/test_update_verify.cmake)
     if (NOT DESKTOP_APP_DISABLE_AUTOUPDATE)

@@ -434,7 +434,11 @@ base::EventFilterResult CardStickerEditor::mousePress(
 	cancelPress();
 	finishTravel();
 	const auto fold = _host.fold();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	const auto global = e->globalPosition();
+#else
+	const auto global = QPointF(e->globalPos());
+#endif
 	const auto point = bodyPoint(global);
 	if (OnChip(fold, point)) {
 		// Deselecting may move the input, so let it take this press first.
@@ -466,7 +470,11 @@ base::EventFilterResult CardStickerEditor::mouseMove(
 		cancelPress();
 		return Result::Cancel;
 	}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	const auto global = e->globalPosition();
+#else
+	const auto global = QPointF(e->globalPos());
+#endif
 	if (Crossed(_press->origin, global.toPoint())) {
 		_press->crossed = true;
 	}
@@ -500,7 +508,11 @@ base::EventFilterResult CardStickerEditor::mouseRelease(
 		cancelPress();
 		return Result::Cancel;
 	}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	const auto global = e->globalPosition();
+#else
+	const auto global = QPointF(e->globalPos());
+#endif
 	if (Crossed(_press->origin, global.toPoint())) {
 		_press->crossed = true;
 	}
@@ -1087,7 +1099,11 @@ QRectF CardStickerEditor::listsArea() const {
 
 QPointF CardStickerEditor::bodyPoint(QPointF global) const {
 	const auto body = static_cast<const QWidget*>(_host.body.get());
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	return body->mapFromGlobal(global);
+#else
+	return body->mapFromGlobal(global.toPoint());
+#endif
 }
 
 OwnCard &CardStickerEditor::ownCard() const {

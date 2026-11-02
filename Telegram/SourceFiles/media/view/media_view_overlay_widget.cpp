@@ -6121,8 +6121,7 @@ void OverlayWidget::refreshScreenshotProtection() {
 	_screenshotProtected = contentNeedsScreenshotProtection();
 	Platform::SetWindowScreenshotProtection(
 		_window,
-		(_screenshotProtected
-			|| Core::App().screenshotProtection().active()));
+		_screenshotProtected);
 
 	const auto media = _message ? _message->media() : nullptr;
 	const auto isViewOnce = _message && (_message->isTtlCoveredMedia() || (media && media->ttlSeconds() > 0));

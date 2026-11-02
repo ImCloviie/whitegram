@@ -2160,7 +2160,7 @@ std::optional<FlightPose> CollectiblesGrid::squarePose(
 		return std::nullopt;
 	}
 	return FlightPose{
-		.center = mapTo(_host.body.get(), center),
+		.center = mapTo(_host.body.get(), center.toPoint()),
 		.side = side,
 	};
 }

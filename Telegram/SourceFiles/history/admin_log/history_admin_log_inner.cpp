@@ -53,6 +53,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "ui/image/image.h"
 #include "ui/text/text_utilities.h"
+#include <QtGui/QScreen>
 #include "ui/inactive_press.h"
 #include "ui/painter.h"
 #include "ui/vertical_list.h"
@@ -2477,7 +2478,12 @@ void InnerWidget::showUnbanMenu(
 			}
 			return base::EventFilterResult::Continue;
 		}
-		const auto global = mouse->globalPosition().toPoint();
+		#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+		const auto globalPosition = mouse->globalPosition();
+#else
+		const auto globalPosition = QPointF(mouse->globalPos());
+#endif
+		const auto global = globalPosition.toPoint();
 		const auto insideMenu = menu->geometry().contains(global);
 		const auto insideParent = weakParent
 			&& weakParent->geometry().contains(global);
@@ -2491,7 +2497,7 @@ void InnerWidget::showUnbanMenu(
 		}
 		if (weakParent) {
 			const auto menuWidget = weakParent->menu();
-			const auto globalPoint = mouse->globalPosition().toPoint();
+			const auto globalPoint = globalPosition.toPoint();
 			const auto local = menuWidget->mapFromGlobal(globalPoint);
 			const auto overItem = (menuWidget->childAt(local) != nullptr);
 			if (overItem || (e->type() == QEvent::MouseMove)) {
@@ -2499,7 +2505,7 @@ void InnerWidget::showUnbanMenu(
 					e->type(),
 					local,
 					menuWidget->window()->mapFromGlobal(globalPoint),
-					mouse->globalPosition(),
+					globalPosition,
 					mouse->button(),
 					mouse->buttons(),
 					mouse->modifiers());

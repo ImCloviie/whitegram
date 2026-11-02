@@ -328,7 +328,7 @@ CardLookTransition::Frame CardLookTransition::prepare(
 		.pixels = pixels,
 		.transform = p.deviceTransform()
 			* QTransform::fromTranslate(-pixels.x(), -pixels.y()),
-		.ratio = p.paintEngine()->paintDevice()->devicePixelRatio(),
+		.ratio = float64(p.paintEngine()->paintDevice()->devicePixelRatioF()),
 		.now = now,
 		.from = from,
 	};

@@ -85,6 +85,9 @@ public:
 
 	void setEntries(std::vector<ChartEntry> entries);
 	void setError(const QString &message);
+	// Shows "temporarily blocked by the API, N s" instead of a silent
+	// loader while the provider waits out the rate limit.
+	void setRateLimitSeconds(int seconds);
 	void setColor(const QColor &line);
 	void setPrecision(int precision);
 	void setPricePrefix(const QString &prefix);
@@ -104,6 +107,7 @@ private:
 
 	std::vector<ChartEntry> _entries;
 	QString _error;
+	int _rateLimitSeconds = 0;
 	QColor _line = QColor(0x8c, 0xa5, 0xd8);
 	int _precision = 2;
 	QString _prefix;

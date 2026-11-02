@@ -735,17 +735,40 @@ void AyuSettings::reset() {
 
 void AyuSettings::initTimeSpentTracker() {
 	auto &settings = getInstance();
+
+	// Migrate the legacy single counter: it belonged to whichever account is
+	// active right now (the main one in practice); other accounts start at 0.
+	if (const auto window = Core::App().activeWindow()) {
+		if (const auto session = window->maybeSession()) {
+			const auto userId = session->userId().bare;
+			if (settings._timeSpentByAccount.empty()
+				&& settings._totalTimeSpent.current() > 0) {
+				settings._timeSpentByAccount[userId] =
+					settings._totalTimeSpent.current();
+			}
+			// The single-value UIs mirror the active account's counter.
+			settings._totalTimeSpent = settings.getTimeSpentFor(userId);
+		}
+	}
+
 	if (!settings._timeSpentTimer) {
 		settings._timeSpentTimer = std::make_unique<base::Timer>([] {
 			auto &s = getInstance();
-			s.setTotalTimeSpent(s.getTotalTimeSpent() + 1);
-			if (const auto window = Core::App().activeWindow()) {
-				if (const auto session = window->maybeSession()) {
-					Whitegram::Backend::SyncTimeSpent(
-						session->userId().bare,
-						s.getTotalTimeSpent());
-				}
+			const auto window = Core::App().activeWindow();
+			if (!window) {
+				return;
 			}
+			const auto session = window->maybeSession();
+			if (!session) {
+				return;
+			}
+			// Only the account in the active window gains time.
+			const auto userId = session->userId().bare;
+			const auto value = s._timeSpentByAccount[userId] + 1;
+			s._timeSpentByAccount[userId] = value;
+			s._totalTimeSpent = value;
+			s.save();
+			Whitegram::Backend::SyncTimeSpent(userId, value);
 		});
 	}
 	if (!settings._timeSpentTimer->isActive()) {
@@ -753,9 +776,10 @@ void AyuSettings::initTimeSpentTracker() {
 	}
 	if (const auto window = Core::App().activeWindow()) {
 		if (const auto session = window->maybeSession()) {
+			const auto userId = session->userId().bare;
 			Whitegram::Backend::SyncTimeSpent(
-				session->userId().bare,
-				settings.getTotalTimeSpent());
+				userId,
+				settings.getTimeSpentFor(userId));
 		}
 	}
 }
@@ -1856,7 +1880,11 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"showCryptoChanges", s._showCryptoChanges.current()},
 		{"cryptoChartDays", s._cryptoChartDays.current()},
 		{"totalTimeSpent", s._totalTimeSpent.current()},
+		{"timeSpentByAccount", s._timeSpentByAccount},
 		{"showTimeSpentInDrawer", s._showTimeSpentInDrawer.current()},
+		{"timeSpentFormat", s._timeSpentFormat.current()},
+		{"showTimeSpentInProfile", s._showTimeSpentInProfile.current()},
+		{"timeSpentLabelStyle", s._timeSpentLabelStyle.current()},
 		{"whitegramAutoUpdate", s._whitegramAutoUpdate.current()},
 		{"selfDestructSalt", s._selfDestructSalt.toStdString()},
 		{"selfDestructHash", s._selfDestructHash.toStdString()},
@@ -2195,9 +2223,31 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._totalTimeSpent = j.value(
 		"totalTimeSpent",
 		defaults._totalTimeSpent.current());
+	if (j.contains("timeSpentByAccount") && j["timeSpentByAccount"].is_object()) {
+		for (const auto &[key, value] : j["timeSpentByAccount"].items()) {
+			if (!value.is_number()) {
+				continue;
+			}
+			try {
+				s._timeSpentByAccount[std::stoull(key)] = value.get<int64>();
+			} catch (...) {
+			}
+		}
+	}
 	s._showTimeSpentInDrawer = j.value(
 		"showTimeSpentInDrawer",
 		defaults._showTimeSpentInDrawer.current());
+	s._timeSpentFormat = std::clamp(
+		j.value("timeSpentFormat", defaults._timeSpentFormat.current()),
+		0,
+		3);
+	s._showTimeSpentInProfile = j.value(
+		"showTimeSpentInProfile",
+		defaults._showTimeSpentInProfile.current());
+	s._timeSpentLabelStyle = std::clamp(
+		j.value("timeSpentLabelStyle", defaults._timeSpentLabelStyle.current()),
+		0,
+		3);
 	s._whitegramAutoUpdate = j.value(
 		"whitegramAutoUpdate",
 		defaults._whitegramAutoUpdate.current());
@@ -2434,6 +2484,41 @@ void AyuSettings::setTotalTimeSpent(int64 val) {
 void AyuSettings::setShowTimeSpentInDrawer(bool val) {
 	if (_showTimeSpentInDrawer.current() == val) return;
 	_showTimeSpentInDrawer = val;
+	save();
+}
+
+void AyuSettings::setTimeSpentFormat(int val) {
+	const auto clamped = std::clamp(val, 0, 3);
+	if (_timeSpentFormat.current() == clamped) return;
+	_timeSpentFormat = clamped;
+	save();
+}
+
+void AyuSettings::mergeTimeSpentFromServer(uint64 userId, int64 serverMinutes) {
+	auto &current = _timeSpentByAccount[userId];
+	if (serverMinutes <= current) return;
+	current = serverMinutes;
+	// Keep the mirror in sync when the bumped account is the active one.
+	if (const auto window = Core::App().activeWindow()) {
+		if (const auto session = window->maybeSession()) {
+			if (session->userId().bare == userId) {
+				_totalTimeSpent = serverMinutes;
+			}
+		}
+	}
+	save();
+}
+
+void AyuSettings::setShowTimeSpentInProfile(bool val) {
+	if (_showTimeSpentInProfile.current() == val) return;
+	_showTimeSpentInProfile = val;
+	save();
+}
+
+void AyuSettings::setTimeSpentLabelStyle(int val) {
+	const auto clamped = std::clamp(val, 0, 3);
+	if (_timeSpentLabelStyle.current() == clamped) return;
+	_timeSpentLabelStyle = clamped;
 	save();
 }
 

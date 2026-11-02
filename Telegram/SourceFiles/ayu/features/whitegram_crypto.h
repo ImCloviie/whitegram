@@ -9,9 +9,11 @@
 #include "rpl/variable.h"
 
 #include <QtCore/QString>
+#include <QtCore/QDate>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -118,6 +120,12 @@ public:
 		std::vector<PriceHistory>> historiesValue() const;
 	[[nodiscard]] const std::vector<PriceHistory> &currentHistories() const;
 
+	// Rate-limit status for the UI: seconds left until the temporary
+	// API ban lifts, 0 when everything is fine. The chart box shows a
+	// "temporarily blocked" hint with this countdown instead of a
+	// forever-loading chart.
+	[[nodiscard]] rpl::producer<int> rateLimitSecondsLeftValue() const;
+
 private:
 	CryptoProvider();
 	~CryptoProvider();
@@ -135,17 +143,46 @@ private:
 		bool invert) const;
 	void refetchWantedHistories();
 	[[nodiscard]] static std::vector<ChartPoint> FlatHistory(int days);
+	// Throttles chart-history requests: rapid range switching fires a
+	// burst of API calls that trips the free CoinGecko rate limit; only
+	// the latest queued request is sent, at least kChartMinIntervalMs
+	// after the previous one.
+	void queueChartRequest(Fn<void()> request);
+	void sendQueuedChartRequest();
+	void chartRequestFinished();
+	void attemptCoinHistory(
+		const QString &coinId,
+		int days,
+		Fn<void(std::vector<ChartPoint>, bool)> done,
+		int attempt);
+	// Fetches the USD-per-1-unit rate of one fiat code for one date,
+	// trying the CDN hosts (and, for today, the "latest" tag) in order;
+	// calls back with nullopt when every attempt failed.
+	void fetchFiatDay(
+		const QString &lower,
+		const QDate &date,
+		int attempt,
+		Fn<void(std::optional<double>)> done);
+	void setRateLimitSecondsLeft(int seconds);
 
 	QNetworkAccessManager _manager;
 	base::Timer _timer;
 	base::Timer _historyTimer;
+	base::Timer _rateLimitTimer;
 	rpl::variable<std::vector<CoinPrice>> _prices;
 	rpl::variable<std::vector<PriceHistory>> _histories;
+	rpl::variable<int> _rateLimitSecondsLeft = 0;
 	bool _running = false;
 	bool _historiesRunning = false;
 
 	std::vector<std::pair<QString, bool>> _wantedHistory;
 	int _historyDays = 0;
+
+	// Chart request queue: only one request is in flight at a time, and
+	// a new one replaces whatever is queued (never queued >1).
+	Fn<void()> _queuedChartRequest;
+	bool _chartRequestInFlight = false;
+	base::Timer _chartCooldownTimer;
 
 };
 

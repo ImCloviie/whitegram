@@ -270,6 +270,7 @@ void FullChart::setEntries(std::vector<ChartEntry> entries) {
 	_entries = ChartMath::Downsample(std::move(entries), 200);
 	_hoverIndex = -1;
 	_error = QString();
+	_rateLimitSeconds = 0;
 	update();
 }
 
@@ -277,6 +278,16 @@ void FullChart::setError(const QString &message) {
 	_entries = {};
 	_hoverIndex = -1;
 	_error = message;
+	update();
+}
+
+void FullChart::setRateLimitSeconds(int seconds) {
+	_rateLimitSeconds = seconds;
+	if (seconds > 0) {
+		// While waiting out the ban the chart is not in an error state;
+		// the retry happens automatically, so clear a stale error.
+		_error = QString();
+	}
 	update();
 }
 
@@ -306,6 +317,18 @@ int FullChart::resizeGetHeight(int newWidth) {
 void FullChart::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
 	p.setRenderHint(QPainter::Antialiasing);
+
+	if (_rateLimitSeconds > 0) {
+		p.setFont(st::defaultTextStyle.font);
+		p.setPen(st::windowSubTextFg);
+		p.drawText(
+			rect(),
+			Qt::AlignCenter,
+			QString::fromUtf8(
+				"Запросы временно ограничены (анти-спам API)\n"
+				"Повтор через %1 сек...").arg(_rateLimitSeconds));
+		return;
+	}
 
 	if (!_error.isEmpty()) {
 		p.setFont(st::defaultTextStyle.font);

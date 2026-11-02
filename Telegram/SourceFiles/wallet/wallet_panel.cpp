@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_regex.h"
 #include "core/application.h"
 #include "core/shortcuts.h"
+#include "core/version.h"
 #include "data/data_user.h"
 #include "lang/lang_keys.h"
 #include "main/session/session_show.h"
@@ -80,6 +81,7 @@ not_null<Ui::SeparatePanel*> ShowWallet(not_null<Main::Session*> session) {
 	const auto palette = UseWindowPalette(panel);
 	const auto show = Main::MakeSessionShow(panel->uiShow(), session);
 	panel->setWindowFlag(Qt::WindowStaysOnTopHint, false);
+	panel->setWindowTitle(AppName.utf16());
 	Shortcuts::Listen(panel); // Main window may be hidden to tray.
 	panel->setInnerSize(st::walletPanelSize);
 	rpl::single(rpl::empty) | rpl::then(

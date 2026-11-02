@@ -62,11 +62,13 @@ void ThanosEffect::WarmUp() {
 ThanosEffect::ThanosEffect(not_null<QWidget*> parent)
 : _parent(parent)
 , _animation([=] {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0) && !defined DESKTOP_APP_DISABLE_PRIVATE_QT_API
 	if (_renderer && _renderer->failed()) {
 		ThanosEffectFailedOnce = true;
 		hideSurface();
 		return;
 	}
+#endif
 	if (const auto w = surfaceWidget()) {
 		w->update();
 	}

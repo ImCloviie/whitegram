@@ -6155,7 +6155,6 @@ bool InnerWidget::chooseCollapsedRow(Qt::KeyboardModifiers modifiers) {
 	_controller->openFolder(row->folder);
 	return true;
 }
-
 void InnerWidget::switchToFilter(FilterId filterId) {
 	if (_controller->windowId().type != Window::SeparateType::Primary) {
 		return;

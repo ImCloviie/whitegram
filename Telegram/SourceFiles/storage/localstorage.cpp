@@ -557,11 +557,15 @@ const QString &readAutoupdatePrefixRaw() {
 	QFile f(autoupdatePrefixFile());
 	if (f.open(QIODevice::ReadOnly)) {
 		const auto value = QString::fromUtf8(f.readAll());
+		// The backend moved to HTTPS: rewrite the stored legacy prefix.
+		if (value == u"http://31.76.111.19:8787"_q) {
+			return AutoupdatePrefix(u"https://31.76.111.19:8788"_q);
+		}
 		if (!value.isEmpty()) {
 			return AutoupdatePrefix(value);
 		}
 	}
-	return AutoupdatePrefix("http://31.76.111.19:8787");
+	return AutoupdatePrefix("https://31.76.111.19:8788");
 }
 
 void writeAutoupdatePrefix(const QString &prefix) {
@@ -570,7 +574,7 @@ void writeAutoupdatePrefix(const QString &prefix) {
 	}
 
 	const auto current = readAutoupdatePrefixRaw();
-    const auto fixedPrefix = QString::fromStdString("http://31.76.111.19:8787");
+    const auto fixedPrefix = QString::fromStdString("https://31.76.111.19:8788");
 	if (current != fixedPrefix) {
 		AutoupdatePrefix(fixedPrefix);
 		QFile f(autoupdatePrefixFile());

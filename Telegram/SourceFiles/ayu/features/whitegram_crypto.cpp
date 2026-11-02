@@ -9,11 +9,14 @@
 
 #include <QtCore/QDate>
 #include <QtCore/QDateTime>
+#include <QTimer>
 #include <QUrl>
 #include <QtNetwork/QNetworkRequest>
 
+#include <algorithm>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -29,6 +32,11 @@ constexpr auto kHistoryIntervalMs = crl::time(5 * 60000);
 constexpr auto kApiBaseUrl = "https://api.coingecko.com/api/v3";
 
 constexpr auto kSparklineDays = 7;
+
+// Minimum spacing between chart-history requests: rapid range
+// switching fires a burst that trips the free CoinGecko rate limit
+// within a few clicks, manifesting as a 5-10+ second "cooldown".
+constexpr auto kChartMinIntervalMs = crl::time(8000);
 
 struct CoinDef {
 	const char *id;
@@ -109,14 +117,23 @@ QString FormatNumberWithSpaces(double price, int precision) {
 // date; each lists "<base currency> -> everything" rates. Fetching the
 // file of each day in the range and reading the "usd" field yields the
 // daily USD-per-1-unit history the sparkline needs.
-constexpr auto kFiatHistoryApiBase =
+//
+// jsdelivr can fail (blocked network, momentary 5xx or rate limit), so
+// unpkg mirrors the same files and is the fallback host. The file for
+// the *current* day is published with a delay and answers 404 until it
+// lands; the "latest" tag always resolves to the newest published day
+// and is the last fallback for today's point.
+constexpr auto kFiatCdnPrimary =
 	"https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@";
+constexpr auto kFiatCdnFallback =
+	"https://unpkg.com/@fawazahmed0/currency-api@";
 
 [[nodiscard]] QString FiatDayUrl(
-		const QString &lowerCode,
-		const QDate &date) {
-	return QString::fromLatin1(kFiatHistoryApiBase)
-		+ date.toString(u"yyyy-MM-dd"_q)
+		const char *base,
+		const QString &tag,
+		const QString &lowerCode) {
+	return QString::fromLatin1(base)
+		+ tag
 		+ u"/v1/currencies/"_q
 		+ lowerCode
 		+ u".json"_q;
@@ -170,7 +187,17 @@ CryptoProvider &CryptoProvider::instance() {
 
 CryptoProvider::CryptoProvider()
 : _timer([=] { fetchPrices(); })
-, _historyTimer([=] { refetchWantedHistories(); }) {
+, _historyTimer([=] { refetchWantedHistories(); })
+, _rateLimitTimer([=] {
+	const auto left = _rateLimitSecondsLeft.current();
+	if (left > 1) {
+		_rateLimitSecondsLeft = left - 1;
+	} else {
+		_rateLimitSecondsLeft = 0;
+		_rateLimitTimer.cancel();
+	}
+})
+, _chartCooldownTimer([=] { sendQueuedChartRequest(); }) {
 }
 
 CryptoProvider::~CryptoProvider() {
@@ -215,7 +242,12 @@ double CryptoProvider::coinPrice(const CoinPrice &coin, int fiatIndex) {
 
 QString CryptoProvider::formatPrice(double price, int fiatIndex) {
 	const auto sym = fiatSymbol(fiatIndex);
-	if (price >= 1.0) {
+	if (price >= 100000.0) {
+		// Whole units only: the drawer rows are narrow, and with large
+		// prices (BTC in rubles is seven digits before the dot) the
+		// ".00" tail pushes the 24h change off the visible line.
+		return FormatNumberWithSpaces(price, 0) + u" "_q + sym;
+	} else if (price >= 1.0) {
 		return FormatNumberWithSpaces(price, 2) + u" "_q + sym;
 	} else if (price >= 0.01) {
 		return FormatNumberWithSpaces(price, 4) + u" "_q + sym;
@@ -274,8 +306,12 @@ void CryptoProvider::parseMarketsResponse(const QByteArray &data) {
 			return;
 		}
 
-		// The sparkline is hourly over 7 days ending at the request
-		// moment; rebuild timestamps backwards from now.
+		// Merge current-price / 24h-change data into the prices list:
+		// when /simple/price is rate-limited, this batch (which is
+		// fetched anyway for the sparklines) keeps the percentage
+		// changes fresh instead of them silently disappearing.
+		auto prices = _prices.current();
+		auto pricesChanged = false;
 		const auto now = QDateTime::currentMSecsSinceEpoch();
 		for (const auto &coin : j) {
 			if (!coin.is_object() || !coin.contains("id")) {
@@ -289,6 +325,52 @@ void CryptoProvider::parseMarketsResponse(const QByteArray &data) {
 				// Not one of our coins.
 				continue;
 			}
+
+			// Null-safe reads: /coins/markets answers null for missing
+			// fields and .value() with a double default throws on null.
+			const auto readDouble = [](const nlohmann::json &entry,
+					const char *key) -> double {
+				if (!entry.contains(key) || !entry[key].is_number()) {
+					return 0.0;
+				}
+				return entry[key].get<double>();
+			};
+			const auto currentPrice = readDouble(coin, "current_price");
+			const auto change = readDouble(
+				coin,
+				"price_change_percentage_24h");
+			if (currentPrice > 0.0) {
+				auto found = false;
+				for (auto &existing : prices) {
+					if (existing.id == id) {
+						if (existing.priceUsd != currentPrice
+							|| existing.change24h != change) {
+							existing.priceUsd = currentPrice;
+							existing.change24h = change;
+							pricesChanged = true;
+						}
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					// The markets batch is authoritative for USD price
+					// and 24h change; add the coin if /simple/price has
+					// not delivered it yet (e.g. right after startup or
+					// while it is rate-limited).
+					prices.push_back(CoinPrice{
+						.id = id,
+						.symbol = symbol,
+						.name = name,
+						.priceUsd = currentPrice,
+						.priceEur = 0.0,
+						.priceRub = 0.0,
+						.change24h = change,
+					});
+					pricesChanged = true;
+				}
+			}
+
 			if (!coin.contains("sparkline_in_7d")
 				|| !coin["sparkline_in_7d"].is_object()
 				|| !coin["sparkline_in_7d"].contains("price")
@@ -318,6 +400,11 @@ void CryptoProvider::parseMarketsResponse(const QByteArray &data) {
 				.points = std::move(points),
 			});
 		}
+		if (pricesChanged) {
+			// Publish the merged prices so the drawer rows refresh with
+			// fresh 24h changes even when /simple/price is rate-limited.
+			_prices = std::move(prices);
+		}
 	} catch (...) {
 	}
 }
@@ -325,11 +412,24 @@ void CryptoProvider::parseMarketsResponse(const QByteArray &data) {
 void CryptoProvider::parseResponse(const QByteArray &data) {
 	try {
 		const auto j = nlohmann::json::parse(data.toStdString());
+
+		// Null-safe field reader: /simple/price answers "null" for
+		// missing fields, and a plain .value() with a double default
+		// throws on null, silently killing the whole parse.
+		const auto readDouble = [](const nlohmann::json &entry,
+				const char *key) -> std::optional<double> {
+			if (!entry.contains(key) || !entry[key].is_number()) {
+				return std::nullopt;
+			}
+			return entry[key].get<double>();
+		};
+
+		auto previous = _prices.current();
 		auto result = std::vector<CoinPrice>();
 		result.reserve(kCoins.size());
 
 		for (const auto &coin : kCoins) {
-			if (!j.contains(coin.id)) {
+			if (!j.contains(coin.id) || !j[coin.id].is_object()) {
 				continue;
 			}
 			const auto &entry = j[coin.id];
@@ -337,12 +437,48 @@ void CryptoProvider::parseResponse(const QByteArray &data) {
 				.id = QString::fromLatin1(coin.id),
 				.symbol = QString::fromLatin1(coin.symbol),
 				.name = QString::fromLatin1(coin.name),
-				.priceUsd = entry.value("usd", 0.0),
-				.priceEur = entry.value("eur", 0.0),
-				.priceRub = entry.value("rub", 0.0),
-				.change24h = entry.value("usd_24h_change", 0.0),
+				.priceUsd = readDouble(entry, "usd").value_or(0.0),
+				.priceEur = readDouble(entry, "eur").value_or(0.0),
+				.priceRub = readDouble(entry, "rub").value_or(0.0),
+				.change24h = readDouble(
+					entry,
+					"usd_24h_change").value_or(0.0),
 			};
+			for (const auto &existing : previous) {
+				if (existing.id != price.id) {
+					continue;
+				}
+				// A partial (rate-limited) reply with missing or null
+				// fields must not wipe what the markets batch or the
+				// previous reply already delivered.
+				if (price.change24h == 0.0
+					&& existing.change24h != 0.0) {
+					price.change24h = existing.change24h;
+				}
+				if (price.priceEur == 0.0 && existing.priceEur != 0.0) {
+					price.priceEur = existing.priceEur;
+				}
+				if (price.priceRub == 0.0 && existing.priceRub != 0.0) {
+					price.priceRub = existing.priceRub;
+				}
+				break;
+			}
 			result.push_back(std::move(price));
+		}
+
+		// Coins missing from this reply entirely keep their previous
+		// entry instead of disappearing from the drawer.
+		for (const auto &existing : previous) {
+			auto found = false;
+			for (const auto &price : result) {
+				if (price.id == existing.id) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				result.push_back(existing);
+			}
 		}
 
 		_prices = std::move(result);
@@ -424,10 +560,64 @@ const std::vector<PriceHistory> &CryptoProvider::currentHistories() const {
 	return _histories.current();
 }
 
+void CryptoProvider::queueChartRequest(Fn<void()> request) {
+	// Replace whatever was queued: rapid range switching must never
+	// multiply requests, only the user's latest choice matters.
+	_queuedChartRequest = std::move(request);
+	if (_chartRequestInFlight) {
+		return;
+	}
+	_chartCooldownTimer.callOnce(0);
+}
+
+void CryptoProvider::sendQueuedChartRequest() {
+	if (_chartRequestInFlight || !_queuedChartRequest) {
+		return;
+	}
+	_chartRequestInFlight = true;
+	auto request = std::exchange(_queuedChartRequest, Fn<void()>());
+	request();
+}
+
+void CryptoProvider::chartRequestFinished() {
+	_chartRequestInFlight = false;
+	if (_queuedChartRequest) {
+		// Space consecutive requests out: bursts are what trips the
+		// free CoinGecko rate limit after a few range switches.
+		_chartCooldownTimer.callOnce(kChartMinIntervalMs);
+	}
+}
+
+void CryptoProvider::setRateLimitSecondsLeft(int seconds) {
+	if (seconds <= 0) {
+		_rateLimitSecondsLeft = 0;
+		_rateLimitTimer.cancel();
+		return;
+	}
+	_rateLimitSecondsLeft = seconds;
+	if (!_rateLimitTimer.isActive()) {
+		_rateLimitTimer.callEach(1000);
+	}
+}
+
+rpl::producer<int> CryptoProvider::rateLimitSecondsLeftValue() const {
+	return _rateLimitSecondsLeft.value();
+}
+
 void CryptoProvider::requestCoinHistory(
 		const QString &coinId,
 		int days,
 		Fn<void(std::vector<ChartPoint>, bool)> done) {
+	queueChartRequest([=] {
+		attemptCoinHistory(coinId, days, done, 1);
+	});
+}
+
+void CryptoProvider::attemptCoinHistory(
+		const QString &coinId,
+		int days,
+		Fn<void(std::vector<ChartPoint>, bool)> done,
+		int attempt) {
 	auto request = QNetworkRequest(QUrl(CoinHistoryUrl(coinId, days)));
 	request.setHeader(
 		QNetworkRequest::UserAgentHeader,
@@ -435,10 +625,31 @@ void CryptoProvider::requestCoinHistory(
 
 	auto reply = _manager.get(request);
 	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto status = reply->attribute(
+			QNetworkRequest::HttpStatusCodeAttribute).toInt();
 		if (reply->error() == QNetworkReply::NoError) {
 			const auto points = parseChart(reply->readAll(), false);
+			setRateLimitSecondsLeft(0);
+			chartRequestFinished();
 			done(points, !points.empty());
+		} else if (status == 429 || status == 403) {
+			// Rate limited: surface the wait to the UI and retry with a
+			// growing delay instead of failing straight away.
+			// attempt: 1 -> 5s, 2 -> 10s, 3 -> 20s, 4 -> 40s, 5 -> 60s.
+			const auto delayMs = int(std::min(
+				5000 * (1 << (attempt - 1)),
+				60000));
+			setRateLimitSecondsLeft(delayMs / 1000);
+			if (attempt < 6) {
+				QTimer::singleShot(delayMs, [=] {
+					attemptCoinHistory(coinId, days, done, attempt + 1);
+				});
+			} else {
+				chartRequestFinished();
+				done({}, false);
+			}
 		} else {
+			chartRequestFinished();
 			done({}, false);
 		}
 		reply->deleteLater();
@@ -457,7 +668,8 @@ void CryptoProvider::requestFiatHistory(
 	}
 
 	// Daily fiat history from the fawazahmed0 currency-api: one request
-	// per date, merged when all replies arrive.
+	// per date (with CDN-host and "latest" fallbacks), merged when all
+	// replies arrive.
 	struct MergeState {
 		std::map<QDate, double> values;
 		int pending = 0;
@@ -467,35 +679,17 @@ void CryptoProvider::requestFiatHistory(
 	state->pending = int(dates.size());
 
 	for (const auto &date : dates) {
-		auto request = QNetworkRequest(QUrl(FiatDayUrl(lower, date)));
-		request.setHeader(
-			QNetworkRequest::UserAgentHeader,
-			QByteArray("WhitegramDesktop/1.0"));
-
-		auto reply = _manager.get(request);
-		QObject::connect(reply, &QNetworkReply::finished, [=] {
-			if (reply->error() == QNetworkReply::NoError) {
-				try {
-					const auto j = nlohmann::json::parse(
-						reply->readAll().toStdString());
-					const auto key = lower.toStdString();
-					if (j.contains(key)
-						&& j[key].contains("usd")
-						&& j[key]["usd"].is_number()) {
-						state->values[date] =
-							j[key]["usd"].get<double>();
-					}
-				} catch (...) {
-				}
+		fetchFiatDay(lower, date, 0, [=](std::optional<double> value) {
+			if (value && *value > 0.0) {
+				state->values[date] = *value;
 			}
-			reply->deleteLater();
 			if (--state->pending <= 0) {
 				auto points = std::vector<ChartPoint>();
 				points.reserve(state->values.size());
-				for (const auto &[day, value] : state->values) {
+				for (const auto &[day, val] : state->values) {
 					points.push_back(ChartPoint{
 						.timestamp = QDateTime(day).toMSecsSinceEpoch(),
-						.price = value,
+						.price = val,
 					});
 				}
 				// At least two days of data make a drawable line.
@@ -503,6 +697,72 @@ void CryptoProvider::requestFiatHistory(
 			}
 		});
 	}
+}
+
+void CryptoProvider::fetchFiatDay(
+		const QString &lower,
+		const QDate &date,
+		int attempt,
+		Fn<void(std::optional<double>)> done) {
+	// attempt 0: primary CDN, dated file.
+	// attempt 1: unpkg mirror, dated file.
+	// attempt 2: primary CDN, "latest" tag (today only: the dated file
+	//            for the current day 404s until it is published).
+	// attempt 3: unpkg mirror, "latest" tag (today only).
+	const auto today = QDate::currentDate();
+	const auto dated = date.toString(u"yyyy-MM-dd"_q);
+	const char *base = nullptr;
+	auto tag = QString();
+	switch (attempt) {
+	case 0: base = kFiatCdnPrimary; tag = dated; break;
+	case 1: base = kFiatCdnFallback; tag = dated; break;
+	case 2:
+	case 3:
+		if (date != today) {
+			// "latest" is only meaningful for today's point; for past
+			// days there is nothing left to try.
+			done(std::nullopt);
+			return;
+		}
+		base = (attempt == 2) ? kFiatCdnPrimary : kFiatCdnFallback;
+		tag = u"latest"_q;
+		break;
+	default:
+		done(std::nullopt);
+		return;
+	}
+
+	auto request = QNetworkRequest(QUrl(FiatDayUrl(base, tag, lower)));
+	request.setHeader(
+		QNetworkRequest::UserAgentHeader,
+		QByteArray("WhitegramDesktop/1.0"));
+
+	auto reply = _manager.get(request);
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto failed = reply->error() != QNetworkReply::NoError;
+		const auto data = failed ? QByteArray() : reply->readAll();
+		reply->deleteLater();
+
+		auto value = std::optional<double>();
+		if (!failed) {
+			try {
+				const auto j = nlohmann::json::parse(data.toStdString());
+				const auto key = lower.toStdString();
+				if (j.contains(key)
+					&& j[key].contains("usd")
+					&& j[key]["usd"].is_number()) {
+					value = j[key]["usd"].get<double>();
+				}
+			} catch (...) {
+			}
+		}
+		if (value) {
+			done(value);
+		} else {
+			// Failed or unparsable: try the next host/tag in the chain.
+			fetchFiatDay(lower, date, attempt + 1, done);
+		}
+	});
 }
 
 void CryptoProvider::refetchWantedHistories() {

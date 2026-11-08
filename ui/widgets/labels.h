@@ -164,6 +164,8 @@ public:
 	[[nodiscard]] int textMaxWidth() const;
 	QMargins getMargins() const override;
 
+	void setSpoilerRevealed(bool revealed, anim::type animated);
+
 	void setLink(uint16 index, const ClickHandlerPtr &lnk);
 	void setLinksTrusted();
 

@@ -372,6 +372,10 @@ int FlatLabel::textMaxWidth() const {
 	return _text.maxWidth();
 }
 
+void FlatLabel::setSpoilerRevealed(bool revealed, anim::type animated) {
+	_text.setSpoilerRevealed(revealed, animated);
+}
+
 QMargins FlatLabel::getMargins() const {
 	return _st.margin;
 }

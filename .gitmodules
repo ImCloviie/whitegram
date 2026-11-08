@@ -21,7 +21,8 @@
 	url = https://github.com/AyuGram/codegen.git
 [submodule "Telegram/lib_ui"]
 	path = Telegram/lib_ui
-	url = https://github.com/AyuGram/lib_ui.git
+	url = https://github.com/ImCloviie/whitegram.git
+	branch = codex/deps-lib-ui-20261108
 [submodule "Telegram/lib_lottie"]
 	path = Telegram/lib_lottie
 	url = https://github.com/desktop-app/lib_lottie.git
@@ -36,7 +37,8 @@
 	url = https://github.com/desktop-app/lib_storage.git
 [submodule "cmake"]
 	path = cmake
-	url = https://github.com/desktop-app/cmake_helpers.git
+	url = https://github.com/ImCloviie/whitegram.git
+	branch = codex/deps-cmake-20261108
 [submodule "Telegram/ThirdParty/expected"]
 	path = Telegram/ThirdParty/expected
 	url = https://github.com/TartanLlama/expected
@@ -109,3 +111,9 @@
 [submodule "Telegram/ThirdParty/zxcvbn"]
 	path = Telegram/ThirdParty/zxcvbn
 	url = https://github.com/tsyrogit/zxcvbn-c.git
+[submodule "test/tg-ws-proxy"]
+	path = test/tg-ws-proxy
+	url = https://github.com/Flowseal/tg-ws-proxy.git
+[submodule "test/zapret-discord-youtube"]
+	path = test/zapret-discord-youtube
+	url = https://github.com/Flowseal/zapret-discord-youtube.git

@@ -112,6 +112,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_worker.h"
+#include "ayu/features/whitegram_plugins/whitegram_plugins.h"
 #include "ayu/utils/telegram_helpers.h"
 #include "ayu/features/forward/ayu_forward.h"
 #include "ayu/features/custom_archives/custom_archives.h"
@@ -4827,6 +4828,22 @@ void ApiWrap::sendRichMessage(
 void ApiWrap::sendMessage(
 		MessageToSend &&message,
 		std::optional<MsgId> localMessageId) {
+	if (!Whitegram::Plugins::Bypassing()
+		&& !message.textWithTags.text.isEmpty()) {
+		const auto hook = Whitegram::Plugins::OnSendMessage(
+			message.action.history,
+			message.textWithTags.text,
+			message.action.replyTo.messageId.msg);
+		if (hook.strategy == Whitegram::Plugins::SendStrategy::Cancel) {
+			return;
+		} else if (hook.strategy
+				== Whitegram::Plugins::SendStrategy::Modify) {
+			message.textWithTags = TextWithTags{
+				hook.text,
+				TextUtilities::ConvertEntitiesToTextTags(hook.entities),
+			};
+		}
+	}
 	applyGhostScheduling(_session, message.action.options);
 	const auto clearReplyTo = prependPseudoReply(message);
 

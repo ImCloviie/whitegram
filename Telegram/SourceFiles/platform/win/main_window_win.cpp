@@ -699,7 +699,10 @@ void MainWindow::updateTaskbarAndIconCounters() {
 			: std::wstring();
 		taskbarList->SetOverlayIcon(_hWnd, _iconOverlay, description.c_str());
 	}
-	SetWindowPos(_hWnd, 0, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+	// WHY: a frame change on a maximized window shifts its content by the border for one frame.
+	if (!IsZoomed(_hWnd)) {
+		SetWindowPos(_hWnd, 0, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+	}
 }
 
 void MainWindow::initHook() {

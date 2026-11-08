@@ -973,6 +973,8 @@ public:
 	[[nodiscard]] int musicIslandFreeY() const { return _musicIslandFreeY.current(); }
 	[[nodiscard]] bool musicIslandCustomBackgroundEnabled() const { return _musicIslandCustomBackgroundEnabled.current(); }
 	[[nodiscard]] const QString &musicIslandCustomBackgroundPath() const { return _musicIslandCustomBackgroundPath.current(); }
+	[[nodiscard]] const QString &musicKaraokeCoverPath() const { return _musicKaraokeCoverPath.current(); }
+	[[nodiscard]] const QString &musicWeatherCity() const { return _musicWeatherCity.current(); }
 	[[nodiscard]] int musicIslandCustomBackgroundOpacity() const { return _musicIslandCustomBackgroundOpacity.current(); }
 	[[nodiscard]] bool musicIslandCustomBackgroundBlur() const { return _musicIslandCustomBackgroundBlur.current(); }
 	[[nodiscard]] int musicIslandCustomBackgroundDim() const { return _musicIslandCustomBackgroundDim.current(); }
@@ -983,6 +985,10 @@ public:
 	[[nodiscard]] bool musicLyricsKaraokeButton() const { return _musicLyricsKaraokeButton.current(); }
 	[[nodiscard]] int musicLyricsAnimation() const { return _musicLyricsAnimation.current(); }
 	[[nodiscard]] bool musicLyricsArtScatter() const { return _musicLyricsArtScatter.current(); }
+	[[nodiscard]] bool musicLyricsKeyword() const { return _musicLyricsKeyword.current(); }
+	[[nodiscard]] bool musicLyricsBassPulse() const { return _musicLyricsBassPulse.current(); }
+	[[nodiscard]] bool musicLyricsChorus() const { return _musicLyricsChorus.current(); }
+	[[nodiscard]] bool musicLyricsTranslate() const { return _musicLyricsTranslate.current(); }
 	[[nodiscard]] bool musicLyricsBlur() const { return _musicLyricsBlur.current(); }
 	[[nodiscard]] int musicLyricsFontScale() const { return _musicLyricsFontScale.current(); }
 	[[nodiscard]] int profileBackgroundDim() const { return _profileBackgroundDim.current(); }
@@ -1096,6 +1102,8 @@ public:
 	void setMusicIslandFreeY(int val);
 	void setMusicIslandCustomBackgroundEnabled(bool val);
 	void setMusicIslandCustomBackgroundPath(const QString &val);
+	void setMusicKaraokeCoverPath(const QString &val);
+	void setMusicWeatherCity(const QString &val);
 	void setMusicIslandCustomBackgroundOpacity(int val);
 	void setMusicIslandCustomBackgroundBlur(bool val);
 	void setMusicIslandCustomBackgroundDim(int val);
@@ -1106,6 +1114,10 @@ public:
 	void setMusicLyricsKaraokeButton(bool val);
 	void setMusicLyricsAnimation(int val);
 	void setMusicLyricsArtScatter(bool val);
+	void setMusicLyricsKeyword(bool val);
+	void setMusicLyricsBassPulse(bool val);
+	void setMusicLyricsChorus(bool val);
+	void setMusicLyricsTranslate(bool val);
 	void setMusicLyricsBlur(bool val);
 	void setMusicLyricsFontScale(int val);
 	void setProfileBackgroundDim(int val);
@@ -1318,6 +1330,9 @@ public:
 	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundEnabledChanges() const { return _musicIslandCustomBackgroundEnabled.changes(); }
 	[[nodiscard]] rpl::producer<QString> musicIslandCustomBackgroundPathValue() const { return _musicIslandCustomBackgroundPath.value(); }
 	[[nodiscard]] rpl::producer<QString> musicIslandCustomBackgroundPathChanges() const { return _musicIslandCustomBackgroundPath.changes(); }
+	[[nodiscard]] rpl::producer<QString> musicKaraokeCoverPathValue() const { return _musicKaraokeCoverPath.value(); }
+	[[nodiscard]] rpl::producer<QString> musicWeatherCityValue() const { return _musicWeatherCity.value(); }
+	[[nodiscard]] rpl::producer<QString> musicWeatherCityChanges() const { return _musicWeatherCity.changes(); }
 	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundOpacityValue() const { return _musicIslandCustomBackgroundOpacity.value(); }
 	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundOpacityChanges() const { return _musicIslandCustomBackgroundOpacity.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundBlurValue() const { return _musicIslandCustomBackgroundBlur.value(); }
@@ -1331,6 +1346,10 @@ public:
 	[[nodiscard]] rpl::producer<bool> musicLyricsFloatingLineChanges() const { return _musicLyricsFloatingLine.changes(); }
 	[[nodiscard]] rpl::producer<int> musicLyricsAnimationChanges() const { return _musicLyricsAnimation.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsArtScatterChanges() const { return _musicLyricsArtScatter.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsKeywordChanges() const { return _musicLyricsKeyword.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsBassPulseChanges() const { return _musicLyricsBassPulse.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsChorusChanges() const { return _musicLyricsChorus.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsTranslateChanges() const { return _musicLyricsTranslate.changes(); }
 	[[nodiscard]] rpl::producer<int> musicLyricsFontScaleChanges() const { return _musicLyricsFontScale.changes(); }
 	[[nodiscard]] rpl::producer<int> profileBackgroundDimChanges() const { return _profileBackgroundDim.changes(); }
 	[[nodiscard]] rpl::producer<bool> musicLyricsKaraokeButtonChanges() const { return _musicLyricsKaraokeButton.changes(); }
@@ -1497,12 +1516,13 @@ public:
   void setTotalTimeSpent(int64 val);
 
   // Per-account counters: minutes tick only for the account whose window is
-  // active. _totalTimeSpent mirrors the active account's counter for the
-  // existing single-value UI (drawer label, settings page).
+  // active. UI subscriptions are tied to their own account, including in
+  // inactive windows.
   [[nodiscard]] int64 getTimeSpentFor(uint64 userId) const {
     const auto i = _timeSpentByAccount.find(userId);
     return (i == _timeSpentByAccount.end()) ? 0 : i->second;
   }
+  [[nodiscard]] rpl::producer<int64> timeSpentValue(uint64 userId) const;
   // Multi-device merge: a higher server value raises the account's counter.
   void mergeTimeSpentFromServer(uint64 userId, int64 serverMinutes);
 
@@ -1762,6 +1782,8 @@ private:
   rpl::variable<int> _musicIslandFreeY = 862;
   rpl::variable<bool> _musicIslandCustomBackgroundEnabled = false;
   rpl::variable<QString> _musicIslandCustomBackgroundPath;
+  rpl::variable<QString> _musicKaraokeCoverPath;
+  rpl::variable<QString> _musicWeatherCity;
   rpl::variable<int> _musicIslandCustomBackgroundOpacity = 100;
   rpl::variable<bool> _musicIslandCustomBackgroundBlur = false;
   rpl::variable<int> _musicIslandCustomBackgroundDim = 35;
@@ -1772,6 +1794,10 @@ private:
   rpl::variable<bool> _musicLyricsKaraokeButton = true;
   rpl::variable<int> _musicLyricsAnimation = 0;
   rpl::variable<bool> _musicLyricsArtScatter = true;
+  rpl::variable<bool> _musicLyricsKeyword = true;
+  rpl::variable<bool> _musicLyricsBassPulse = true;
+  rpl::variable<bool> _musicLyricsChorus = true;
+  rpl::variable<bool> _musicLyricsTranslate = true;
   rpl::variable<bool> _musicLyricsBlur = true;
   rpl::variable<int> _profileBackgroundDim = 100;
   rpl::variable<int> _musicLyricsFontScale = 100;
@@ -1815,6 +1841,7 @@ private:
 
   rpl::variable<int64> _totalTimeSpent = 0;
   std::map<uint64, int64> _timeSpentByAccount;
+  rpl::event_stream<uint64> _timeSpentUpdates;
   rpl::variable<bool> _showTimeSpentInDrawer = false;
   rpl::variable<int> _timeSpentFormat = 0;
   rpl::variable<bool> _showTimeSpentInProfile = true;

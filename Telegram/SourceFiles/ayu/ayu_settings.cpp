@@ -736,22 +736,27 @@ void AyuSettings::reset() {
 void AyuSettings::initTimeSpentTracker() {
 	auto &settings = getInstance();
 
-	// Migrate the legacy single counter: it belonged to whichever account is
-	// active right now (the main one in practice); other accounts start at 0.
-	if (const auto window = Core::App().activeWindow()) {
-		if (const auto session = window->maybeSession()) {
-			const auto userId = session->userId().bare;
-			if (settings._timeSpentByAccount.empty()
-				&& settings._totalTimeSpent.current() > 0) {
-				settings._timeSpentByAccount[userId] =
-					settings._totalTimeSpent.current();
-			}
-			// The single-value UIs mirror the active account's counter.
-			settings._totalTimeSpent = settings.getTimeSpentFor(userId);
-		}
-	}
-
 	if (!settings._timeSpentTimer) {
+		// Initialization may precede login/window creation. Subscribe to the
+		// session so startup and account switches sync without a minute's wait.
+		Core::App().domain().activeSessionValue(
+		) | rpl::on_next([](Main::Session *session) {
+			if (!session) {
+				return;
+			}
+			auto &s = getInstance();
+			const auto userId = session->userId().bare;
+			if (s._timeSpentByAccount.empty()
+				&& s._totalTimeSpent.current() > 0) {
+				// Only settings predating per-account counters need migration.
+				s._timeSpentByAccount[userId] = s._totalTimeSpent.current();
+				s.save();
+				s._timeSpentUpdates.fire_copy(userId);
+			}
+			s._totalTimeSpent = s.getTimeSpentFor(userId);
+			Whitegram::Backend::SyncTimeSpent(userId, s.getTimeSpentFor(userId));
+		}, lifetime);
+
 		settings._timeSpentTimer = std::make_unique<base::Timer>([] {
 			auto &s = getInstance();
 			const auto window = Core::App().activeWindow();
@@ -768,19 +773,12 @@ void AyuSettings::initTimeSpentTracker() {
 			s._timeSpentByAccount[userId] = value;
 			s._totalTimeSpent = value;
 			s.save();
+			s._timeSpentUpdates.fire_copy(userId);
 			Whitegram::Backend::SyncTimeSpent(userId, value);
 		});
 	}
 	if (!settings._timeSpentTimer->isActive()) {
 		settings._timeSpentTimer->callEach(60 * crl::time(1000));
-	}
-	if (const auto window = Core::App().activeWindow()) {
-		if (const auto session = window->maybeSession()) {
-			const auto userId = session->userId().bare;
-			Whitegram::Backend::SyncTimeSpent(
-				userId,
-				settings.getTimeSpentFor(userId));
-		}
 	}
 }
 
@@ -1542,6 +1540,18 @@ void AyuSettings::setMusicIslandCustomBackgroundEnabled(bool val) {
 	save();
 }
 
+void AyuSettings::setMusicWeatherCity(const QString &val) {
+	if (_musicWeatherCity.current() == val) return;
+	_musicWeatherCity = val;
+	save();
+}
+
+void AyuSettings::setMusicKaraokeCoverPath(const QString &val) {
+	if (_musicKaraokeCoverPath.current() == val) return;
+	_musicKaraokeCoverPath = val;
+	save();
+}
+
 void AyuSettings::setMusicIslandCustomBackgroundPath(const QString &val) {
 	if (_musicIslandCustomBackgroundPath.current() == val) return;
 	_musicIslandCustomBackgroundPath = val;
@@ -1609,6 +1619,30 @@ void AyuSettings::setMusicLyricsAnimation(int val) {
 void AyuSettings::setMusicLyricsArtScatter(bool val) {
 	if (_musicLyricsArtScatter.current() == val) return;
 	_musicLyricsArtScatter = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsKeyword(bool val) {
+	if (_musicLyricsKeyword.current() == val) return;
+	_musicLyricsKeyword = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsBassPulse(bool val) {
+	if (_musicLyricsBassPulse.current() == val) return;
+	_musicLyricsBassPulse = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsTranslate(bool val) {
+	if (_musicLyricsTranslate.current() == val) return;
+	_musicLyricsTranslate = val;
+	save();
+}
+
+void AyuSettings::setMusicLyricsChorus(bool val) {
+	if (_musicLyricsChorus.current() == val) return;
+	_musicLyricsChorus = val;
 	save();
 }
 
@@ -1716,6 +1750,11 @@ void AyuSettings::setBypassServerMirrorHosts(
 }
 
 void to_json(nlohmann::json &j, const AyuSettings &s) {
+	auto timeSpentByAccount = nlohmann::json::object();
+	for (const auto &[userId, minutes] : s._timeSpentByAccount) {
+		timeSpentByAccount[std::to_string(userId)] = minutes;
+	}
+
 	auto ghostAccounts = nlohmann::json::object();
 	for (const auto &[key, value] : s._ghostAccounts) {
 		ghostAccounts[std::to_string(key)] = *value;
@@ -1848,6 +1887,8 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"musicIslandFreeY", s._musicIslandFreeY.current()},
 		{"musicIslandCustomBackgroundEnabled", s._musicIslandCustomBackgroundEnabled.current()},
 		{"musicIslandCustomBackgroundPath", s._musicIslandCustomBackgroundPath.current().toStdString()},
+		{"musicKaraokeCoverPath", s._musicKaraokeCoverPath.current().toStdString()},
+		{"musicWeatherCity", s._musicWeatherCity.current().toStdString()},
 		{"musicIslandCustomBackgroundOpacity", s._musicIslandCustomBackgroundOpacity.current()},
 		{"musicIslandCustomBackgroundBlur", s._musicIslandCustomBackgroundBlur.current()},
 		{"musicIslandCustomBackgroundDim", s._musicIslandCustomBackgroundDim.current()},
@@ -1858,6 +1899,10 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"musicLyricsKaraokeButton", s._musicLyricsKaraokeButton.current()},
 		{"musicLyricsAnimation", s._musicLyricsAnimation.current()},
 		{"musicLyricsArtScatter", s._musicLyricsArtScatter.current()},
+		{"musicLyricsKeyword", s._musicLyricsKeyword.current()},
+		{"musicLyricsBassPulse", s._musicLyricsBassPulse.current()},
+		{"musicLyricsChorus", s._musicLyricsChorus.current()},
+		{"musicLyricsTranslate", s._musicLyricsTranslate.current()},
 		{"musicLyricsBlur", s._musicLyricsBlur.current()},
 		{"musicLyricsFontScale", s._musicLyricsFontScale.current()},
 		{"profileBackgroundDim", s._profileBackgroundDim.current()},
@@ -1880,7 +1925,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"showCryptoChanges", s._showCryptoChanges.current()},
 		{"cryptoChartDays", s._cryptoChartDays.current()},
 		{"totalTimeSpent", s._totalTimeSpent.current()},
-		{"timeSpentByAccount", s._timeSpentByAccount},
+		{"timeSpentByAccount", timeSpentByAccount},
 		{"showTimeSpentInDrawer", s._showTimeSpentInDrawer.current()},
 		{"timeSpentFormat", s._timeSpentFormat.current()},
 		{"showTimeSpentInProfile", s._showTimeSpentInProfile.current()},
@@ -2090,6 +2135,12 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._musicIslandCustomBackgroundEnabled = j.value(
 		"musicIslandCustomBackgroundEnabled",
 		defaults._musicIslandCustomBackgroundEnabled.current());
+	s._musicWeatherCity = QString::fromStdString(j.value(
+		"musicWeatherCity",
+		defaults._musicWeatherCity.current().toStdString()));
+	s._musicKaraokeCoverPath = QString::fromStdString(j.value(
+		"musicKaraokeCoverPath",
+		defaults._musicKaraokeCoverPath.current().toStdString()));
 	s._musicIslandCustomBackgroundPath = QString::fromStdString(j.value(
 		"musicIslandCustomBackgroundPath",
 		defaults._musicIslandCustomBackgroundPath.current().toStdString()));
@@ -2131,6 +2182,18 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._musicLyricsArtScatter = j.value(
 		"musicLyricsArtScatter",
 		defaults._musicLyricsArtScatter.current());
+	s._musicLyricsKeyword = j.value(
+		"musicLyricsKeyword",
+		defaults._musicLyricsKeyword.current());
+	s._musicLyricsBassPulse = j.value(
+		"musicLyricsBassPulse",
+		defaults._musicLyricsBassPulse.current());
+	s._musicLyricsTranslate = j.value(
+		"musicLyricsTranslate",
+		defaults._musicLyricsTranslate.current());
+	s._musicLyricsChorus = j.value(
+		"musicLyricsChorus",
+		defaults._musicLyricsChorus.current());
 	s._musicLyricsBlur = j.value(
 		"musicLyricsBlur",
 		defaults._musicLyricsBlur.current());
@@ -2223,14 +2286,28 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._totalTimeSpent = j.value(
 		"totalTimeSpent",
 		defaults._totalTimeSpent.current());
-	if (j.contains("timeSpentByAccount") && j["timeSpentByAccount"].is_object()) {
-		for (const auto &[key, value] : j["timeSpentByAccount"].items()) {
-			if (!value.is_number()) {
-				continue;
+	if (j.contains("timeSpentByAccount")) {
+		const auto &accounts = j["timeSpentByAccount"];
+		s._timeSpentByAccount.clear();
+		const auto readEntry = [&](uint64 userId, const nlohmann::json &value) {
+			if (userId && value.is_number_integer()) {
+				s._timeSpentByAccount[userId] = std::max(int64(0), value.get<int64>());
 			}
-			try {
-				s._timeSpentByAccount[std::stoull(key)] = value.get<int64>();
-			} catch (...) {
+		};
+		if (accounts.is_object()) {
+			for (const auto &[key, value] : accounts.items()) {
+				try {
+					readEntry(std::stoull(key), value);
+				} catch (...) {
+				}
+			}
+		} else if (accounts.is_array()) {
+			// Older versions serialized map<uint64, int64> as [[id, minutes]].
+			for (const auto &entry : accounts) {
+				if (entry.is_array() && entry.size() == 2
+					&& entry[0].is_number_unsigned()) {
+					readEntry(entry[0].get<uint64>(), entry[1]);
+				}
 			}
 		}
 	}
@@ -2494,7 +2571,17 @@ void AyuSettings::setTimeSpentFormat(int val) {
 	save();
 }
 
+rpl::producer<int64> AyuSettings::timeSpentValue(uint64 userId) const {
+	return _timeSpentUpdates.events_starting_with_copy(userId)
+		| rpl::filter([=](uint64 updatedId) {
+			return updatedId == userId;
+		}) | rpl::map([=, this] {
+			return getTimeSpentFor(userId);
+		});
+}
+
 void AyuSettings::mergeTimeSpentFromServer(uint64 userId, int64 serverMinutes) {
+	if (!userId || serverMinutes < 0) return;
 	auto &current = _timeSpentByAccount[userId];
 	if (serverMinutes <= current) return;
 	current = serverMinutes;
@@ -2507,6 +2594,7 @@ void AyuSettings::mergeTimeSpentFromServer(uint64 userId, int64 serverMinutes) {
 		}
 	}
 	save();
+	_timeSpentUpdates.fire_copy(userId);
 }
 
 void AyuSettings::setShowTimeSpentInProfile(bool val) {

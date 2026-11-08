@@ -104,6 +104,7 @@ api_response.json
 found_line.json
 matches.txt
 build-update.log
+/build-*.log
 changelog.txt
 release.bat
 

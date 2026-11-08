@@ -1,0 +1,24 @@
+# Example Whitegram plugin: intercepts outgoing messages.
+
+__id__ = "autocaps"
+__name__ = "Автозаглавная"
+__version__ = "1.0"
+__author__ = "Whitegram Team"
+__description__ = "Делает первую букву исходящего сообщения заглавной"
+__permissions__ = ["messages.send"]
+
+from whitegram import BasePlugin, HookResult, HookStrategy
+
+
+class AutoCapsPlugin(BasePlugin):
+    def on_send_message_hook(self, params):
+        text = params.text.strip()
+        if not text or not text[0].isascii() or not text[0].islower():
+            return None
+        if text[0] == "/" or len(text.split()) > 100:
+            return None  # Leave commands and huge texts alone.
+        modified = text[0].upper() + text[1:]
+        if modified == params.text:
+            return None
+        params.text = modified
+        return HookResult(HookStrategy.MODIFY, params)

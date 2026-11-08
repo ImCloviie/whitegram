@@ -90,3 +90,13 @@ musicIslandLyricsSubStyle: TextStyle(defaultTextStyle) {
 	font: font(12px);
 }
 musicIslandIconLyrics: icon{{ "chat/ai_letters", windowFg }};
+
+musicIslandModeSize: 30px;
+musicIslandModeSkip: 2px;
+musicIslandSpeedWidth: 40px;
+musicIslandSpeedHeight: 22px;
+musicIslandSpeedFont: font(11px semibold);
+musicIslandIconRepeat: icon{{ "player/player_repeat", windowFg }};
+musicIslandIconRepeatOne: icon{{ "player/player_repeat_single", windowFg }};
+musicIslandIconOrder: icon{{ "player/player_order", windowFg }};
+musicIslandIconShuffle: icon{{ "player/player_shuffle", windowFg }};

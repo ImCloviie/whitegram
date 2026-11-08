@@ -1896,6 +1896,8 @@ Section DetailsFiller::makeInfo() {
 			// and on every later change.
 			auto triggers = rpl::merge(
 				rpl::single(rpl::empty),
+				AyuSettings::getInstance().timeSpentValue(rowUserId)
+					| rpl::to_empty,
 				Whitegram::Backend::timeSpentUpdates(
 				) | rpl::filter([=](uint64 updatedId) {
 					return updatedId == rowUserId;

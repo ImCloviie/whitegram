@@ -185,11 +185,23 @@ private:
   void setupContent();
 };
 
+class WhitegramPlugins : public Section<WhitegramPlugins> {
+public:
+  WhitegramPlugins(QWidget *parent,
+                   not_null<Window::SessionController *> controller);
+
+  [[nodiscard]] rpl::producer<QString> title() override;
+
+private:
+  void setupContent();
+};
+
 [[nodiscard]] Type AyuMainId();
 [[nodiscard]] Type WhitegramMainId();
 [[nodiscard]] Type WhitegramGeneralId();
 [[nodiscard]] Type WhitegramUpdatesId();
 [[nodiscard]] Type WhitegramGhostModeId();
+[[nodiscard]] Type WhitegramPluginsId();
 [[nodiscard]] Type WhitegramCryptoId();
 [[nodiscard]] Type WhitegramTimeSpentId();
 [[nodiscard]] Type WhitegramStartupSoundId();
@@ -207,5 +219,7 @@ void ShowConnectionBypassBox(not_null<Ui::GenericBox*> box);
 void SetupConnectionBypass(
 	not_null<Window::Controller*> controller,
 	not_null<Ui::VerticalLayout*> container);
+
+QString RunWhitegramDraftPlugin(const QString &text);
 
 } // namespace Settings

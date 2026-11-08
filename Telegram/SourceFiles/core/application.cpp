@@ -118,6 +118,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/ayu_infra.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
+#include "ayu/features/whitegram_plugins/whitegram_plugins.h"
 
 namespace Core {
 namespace {
@@ -268,6 +269,7 @@ void Application::closeAdditionalWindows() {
 }
 
 Application::~Application() {
+	Whitegram::Plugins::Shutdown();
 	if (_savedWindows) {
 		_savedWindows->writeNow();
 	}
@@ -499,6 +501,17 @@ void Application::run() {
 	processCreatedWindow(_lastActivePrimaryWindow);
 
 	_savedWindows->startRestore();
+
+	Whitegram::Plugins::Start();
+	QObject::connect(
+		qApp,
+		&QGuiApplication::applicationStateChanged,
+		[](Qt::ApplicationState state) {
+			Whitegram::Plugins::NotifyAppEvent(
+				(state == Qt::ApplicationActive)
+					? u"app_resume"_q
+					: u"app_pause"_q);
+		});
 
 	Test::Fire(u"launch_finished"_q);
 	Test::Start();

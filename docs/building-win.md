@@ -44,8 +44,14 @@ Run both `Clone source code and prepare libraries` and `Build the project` secti
 
 In the initialized terminal, go to ***BuildPath*** and run
 
-    git clone --recursive https://github.com/AyuGram/AyuGramDesktop.git tdesktop
+    git clone --recursive https://github.com/ImCloviie/whitegram.git tdesktop
     tdesktop\Telegram\build\prepare\win.bat
+
+Whitegram pins its modified `Telegram/lib_ui` and `cmake` submodules to commits
+published in the `codex/deps-lib-ui-20261108` and `codex/deps-cmake-20261108`
+branches of the same repository. A recursive clone fetches them automatically.
+For an existing checkout, run `git submodule sync --recursive`, then
+`git submodule update --init --recursive` after pulling the sources.
 
 ## Build the project
 

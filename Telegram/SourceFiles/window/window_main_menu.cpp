@@ -1420,19 +1420,15 @@ void MainMenu::setupMenu() {
 			}
 		};
 
-		// The producer fires on every minute tick; the text is read for the
-		// account of THIS window, so two windows of two accounts each show
-		// their own counter instead of sharing the active one.
+		// Subscribe to this window's account, including server corrections
+		// received while another account is active.
 		auto timeText = rpl::combine(
-			AyuSettings::getInstance().totalTimeSpent(),
+			AyuSettings::getInstance().timeSpentValue(_controller->session().userId().bare),
 			AyuSettings::getInstance().timeSpentFormatValue(),
 			AyuSettings::getInstance().timeSpentLabelStyleValue()
-		) | rpl::map([controller = _controller, labelPrefix](int64, int format, int labelStyle) {
-			const auto userId = controller->session().userId().bare;
+		) | rpl::map([labelPrefix](int64 minutes, int format, int labelStyle) {
 			return labelPrefix(labelStyle)
-				+ formatTimeSpent(
-					AyuSettings::getInstance().getTimeSpentFor(userId),
-					format);
+				+ formatTimeSpent(minutes, format);
 		});
 
 		const auto timeLabel = Ui::CreateChild<Ui::FlatLabel>(

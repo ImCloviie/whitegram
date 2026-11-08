@@ -1,0 +1,131 @@
+# Testbench plugin: exercizes the whole Whitegram plugin API.
+# Install it and run /wgtest in any chat.
+
+__id__ = "testbench"
+__name__ = "Test Bench"
+__version__ = "1.0"
+__author__ = "Whitegram Team"
+__description__ = "Тестовый плагин: команды, хуки, меню, настройки, алерты"
+__permissions__ = ["ui", "messages.read", "messages.send"]
+
+from whitegram import (
+    BasePlugin,
+    Button,
+    HookResult,
+    HookStrategy,
+    Label,
+    MenuItemType,
+    Switch,
+)
+
+
+class TestBenchPlugin(BasePlugin):
+
+    def on_plugin_load(self):
+        self.received = 0
+        self.intercepted = 0
+        self.register_command("wgtest", self.run_test)
+        self.register_command("wgcount", self.show_counts)
+        self.add_menu_item(
+            MenuItemType.MESSAGE_CONTEXT_MENU,
+            "🧪 Залог в консоль",
+            on_click=self.log_message,
+            priority=20,
+        )
+        self.toast("Test Bench загружен")
+
+    # -- Commands ------------------------------------------------------------
+
+    def run_test(self, ctx):
+        results = []
+
+        results.append(("self_id", bool(self.self_id())))
+
+        info = self.peer_info(ctx.dialog_id)
+        results.append(("peer_info", isinstance(info, dict)
+                        and bool(info.get("name"))))
+
+        hist = self.history(ctx.dialog_id, limit=5)
+        results.append(("history", isinstance(hist, list)))
+
+        self.set_setting("last_run", str(ctx.dialog_id))
+        ok_store = self.get_setting("last_run") == str(ctx.dialog_id)
+        results.append(("settings", ok_store))
+
+        def on_answer(which):
+            self.toast(
+                "Ответ алерта: " + ("да" if which == 0 else "нет"))
+        self.show_alert(
+            "Test Bench",
+            "Системные алерты работают?",
+            ("Да", "Нет"),
+            on_click=on_answer,
+        )
+        results.append(("alert shown", True))
+
+        def delayed():
+            self.send_message(
+                "🧪 Отложенное сообщение от Test Bench", ctx.dialog_id)
+        self.run_later(delayed, 1000)
+        results.append(("run_later queued", True))
+
+        good = sum(1 for _, ok in results if ok)
+        report = "\n".join(
+            f"  {'OK' if ok else 'FAIL'}: {name}"
+            for name, ok in results)
+        self.logger.info(f"/wgtest results:\n{report}")
+        return (f"Test Bench: {good}/{len(results)} OK. "
+                f"Всего принято: {self.received}, перехвачено: {self.intercepted}")
+
+    def show_counts(self, ctx):
+        return (f"Принято сообщений: {self.received}, "
+                f"перехвачено при отправке: {self.intercepted}")
+
+    # -- Hooks ---------------------------------------------------------------
+
+    def on_update_hook(self, name, update):
+        if name == "updateNewMessage":
+            self.received += 1
+
+    def on_send_message_hook(self, params):
+        # Demo: ":text" becomes uppercase "!text!".
+        text = params.text
+        if text.startswith(":") and len(text) > 1:
+            self.intercepted += 1
+            params.text = "!" + text[1:].upper() + "!"
+            return HookResult(HookStrategy.MODIFY, params)
+        return None
+
+    def on_draft_transform(self, text):
+        # Ctrl+Alt+P: wrap the draft in markdown-style quotes.
+        if not text.strip():
+            return None
+        return "\n".join("> " + line for line in text.splitlines())
+
+    # -- Menu ----------------------------------------------------------------
+
+    def log_message(self, context):
+        self.logger.info(
+            f"menu click: msg {context.get('message_id')} "
+            f"in dialog {context.get('dialog_id')}: "
+            f"{(context.get('text') or '')[:40]!r}")
+        self.toast("Сообщение залогиано (см. лог)")
+
+    # -- Settings UI ----------------------------------------------------------
+
+    def create_settings(self):
+        return [
+            Label(f"Привет, {self.name}!"),
+            Switch(
+                "Тостить при загрузке",
+                key="toast_on_load",
+                default=True,
+                description="Покажет тост при следующем запуске клиента",
+            ),
+            Button(
+                "Показать счётчики",
+                on_click=lambda: self.toast(
+                    f"Принято: {self.received}, "
+                    f"перехвачено: {self.intercepted}"),
+            ),
+        ]

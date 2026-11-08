@@ -1,0 +1,60 @@
+# Example Whitegram plugin: commands, menu items and message events.
+#
+# Metadata is parsed statically from the module-level constants below.
+
+__id__ = "hello"
+__name__ = "Hello, Whitegram!"
+__version__ = "1.0"
+__author__ = "Whitegram Team"
+__description__ = "Демонстрирует команды, пункты меню и события"
+__permissions__ = ["ui", "messages.send", "messages.read"]
+
+from whitegram import BasePlugin, MenuItemType
+
+
+class HelloPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.logger.info("loaded")
+
+        # /ping [text] -> "Pong! ..."
+        self.register_command("ping", self.on_ping)
+
+        # A context menu item on every received message.
+        self.add_menu_item(
+            MenuItemType.MESSAGE_CONTEXT_MENU,
+            "👍 Реакция",
+            on_click=self.reply_like,
+            priority=10,
+        )
+
+    def on_ping(self, ctx):
+        answer = "Pong!"
+        if ctx.args:
+            answer += " " + " ".join(ctx.args)
+        self.toast(f"/ping в диалоге {ctx.dialog_id}")
+        return answer  # Returning a string sends it to the chat.
+
+    def reply_like(self, context):
+        self.send_message("👍", context.get("dialog_id"),
+                          reply_to=context.get("message_id", 0))
+
+    def on_update_hook(self, name, update):
+        if name != "updateNewMessage" or update.get("out"):
+            return
+        text = update.get("text") or ""
+        if text.startswith("!"):
+            self.logger.debug(f"message of note: {text!r}")
+
+    def create_settings(self):
+        from whitegram import Switch, Label
+
+        return [
+            Label("Настройки плагина Hello"),
+            Switch(
+                "Тост при входящих!",
+                key="toast_incoming",
+                default=False,
+                on_change=lambda value: self.toast(
+                    "Тосты включены" if value else "Тосты выключены"),
+            ),
+        ]

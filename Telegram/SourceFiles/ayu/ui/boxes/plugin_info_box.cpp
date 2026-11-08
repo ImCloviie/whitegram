@@ -16,7 +16,10 @@
 #include "data/stickers/data_stickers_set.h"
 #include "lang/lang_keys.h"
 #include "chat_helpers/stickers_lottie.h"
+#include "ayu/features/whitegram_plugins/whitegram_plugins.h"
+#include "ayu/features/whitegram_plugins/whitegram_plugins_ui.h"
 #include "history/view/media/history_view_sticker_player.h"
+#include "lang/lang_instance.h"
 #include "main/main_session.h"
 #include "styles/style_ayu_styles.h"
 #include "styles/style_boxes.h"
@@ -35,8 +38,11 @@
 #include "ui/widgets/scroll_area.h"
 #include "window/window_session_controller.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QPainterPath>
 #include <QRegularExpression>
+#include <array>
 
 
 namespace Ui {
@@ -139,8 +145,26 @@ void FillPluginInfoBox(
 	DocumentData *stickerDoc) {
 	box->setStyle(st::giveawayGiftCodeBox);
 	box->setNoContentMargin(true);
-	box->setWidth(st::aboutWidth);
+	box->setWidth(st::wgPluginInstallWidth);
 	box->verticalLayout()->resizeToWidth(box->width());
+	const auto isRu = Lang::GetInstance().id().startsWith(u"ru"_q)
+		|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+	const auto engineReady = Whitegram::Plugins::Started();
+	const auto sourceInfo = Whitegram::Plugins::Call(u"metadata"_q, QJsonObject{
+		{ u"path"_q, pluginPath },
+	}).toObject();
+	const auto trusted = sourceInfo.value(u"trusted"_q).toBool();
+	auto installedVersion = QString();
+	auto installed = false;
+	for (const auto &value : Whitegram::Plugins::Call(u"list"_q).toArray()) {
+		const auto info = value.toObject();
+		if (info.value(u"id"_q).toString() == metadata.id) {
+			installed = true;
+			installedVersion = info.value(u"version"_q).toString();
+			break;
+		}
+	}
+
 
 	box->addTopButton(st::pluginShowInFolder,
 					  [=]
@@ -153,7 +177,7 @@ void FillPluginInfoBox(
 	Ui::AddSkip(box->verticalLayout());
 
 	if (stickerDoc) {
-		const auto stickerSize = st::maxStickerSize / 3;
+		const auto stickerSize = st::wgPluginInstallIconSize;
 		const auto radius = stickerSize / 5;
 		const auto widget = box->verticalLayout()->add(
 			object_ptr<Ui::RpWidget>(box->verticalLayout()));
@@ -233,11 +257,40 @@ void FillPluginInfoBox(
 		Ui::AddSkip(box->verticalLayout());
 	}
 
+	if (!stickerDoc) {
+		const auto size = st::wgPluginInstallIconSize;
+		static const auto colors = std::array {
+			&st::historyPeer1UserpicBg,
+			&st::historyPeer2UserpicBg,
+			&st::historyPeer3UserpicBg,
+			&st::historyPeer4UserpicBg,
+			&st::historyPeer5UserpicBg,
+			&st::historyPeer6UserpicBg,
+		};
+		const auto colorIndex = qHash(metadata.id) % colors.size();
+		const auto icon = box->addRow(object_ptr<Ui::FixedHeightWidget>(box, size));
+		icon->paintRequest() | rpl::on_next([=] {
+			auto p = QPainter(icon);
+			PainterHighQualityEnabler hq(p);
+			const auto rect = QRect((icon->width() - size) / 2, 0, size, size);
+			p.setPen(Qt::NoPen);
+			p.setBrush((*colors[colorIndex])->c);
+			p.drawRoundedRect(rect, size / 4., size / 4.);
+			auto font = QFont(st::normalFont);
+			font.setPixelSize(size / 2);
+			font.setBold(true);
+			p.setFont(font);
+			p.setPen(Qt::white);
+			p.drawText(rect, Qt::AlignCenter, metadata.name.left(1).toUpper());
+		}, icon->lifetime());
+		Ui::AddSkip(box->verticalLayout(), st::wgPluginCardPadding);
+	}
+
 	box->verticalLayout()->add(
 		object_ptr<Ui::FlatLabel>(
 			box->verticalLayout(),
 			rpl::single(metadata.name),
-			st::boxTitle),
+			st::wgPluginInstallTitle),
 		st::boxRowPadding,
 		style::al_top);
 
@@ -245,12 +298,14 @@ void FillPluginInfoBox(
 		const auto versionLabel = box->verticalLayout()->add(
 			object_ptr<Ui::FlatLabel>(
 				box->verticalLayout(),
-				st::pluginVersionAuthorLabel),
+				st::wgPluginInstallMeta),
 			st::boxRowPadding,
 			style::al_justify);
 
 		const auto versionPrefix = tr::ayu_PluginVersion(tr::now)
 			+ u" "_q
+			+ (installed && !installedVersion.isEmpty()
+				? installedVersion + u" → "_q : QString())
 			+ metadata.version;
 
 		if (metadata.author.isEmpty()) {
@@ -286,9 +341,6 @@ void FillPluginInfoBox(
 					author.mid(lastEnd)
 				});
 			}
-			if (lastEnd == 0) {
-				text.append(TextWithEntities{author});
-			}
 			versionLabel->setMarkedText(
 				text,
 				Core::TextContext({
@@ -297,59 +349,47 @@ void FillPluginInfoBox(
 		}
 	}
 
-	Ui::AddSkip(box->verticalLayout());
-	Ui::AddSkip(box->verticalLayout());
+	Ui::AddSkip(box->verticalLayout(), st::wgPluginIconGap);
+	const auto sourceText = trusted
+		? (isRu ? u"Доверенный плагин"_q : u"Trusted plugin"_q)
+		: (isRu ? u"Источник не проверен"_q : u"Unverified source"_q);
+	const auto pill = box->addRow(object_ptr<Ui::FixedHeightWidget>(box, st::wgPluginAction.height));
+	pill->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(pill);
+		PainterHighQualityEnabler hq(p);
+		const auto color = trusted ? st::boxTextFgGood->c : st::windowSubTextFg->c;
+		auto background = color;
+		background.setAlphaF(0.14);
+		const auto width = st::normalFont->width(sourceText) + 2 * st::wgPluginCardPadding;
+		const auto rect = QRect((pill->width() - width) / 2, 0, width, pill->height());
+		p.setPen(Qt::NoPen);
+		p.setBrush(background);
+		p.drawRoundedRect(rect, rect.height() / 2., rect.height() / 2.);
+		p.setFont(st::normalFont);
+		p.setPen(color);
+		p.drawText(rect, Qt::AlignCenter, sourceText);
+	}, pill->lifetime());
+	Ui::AddSkip(box->verticalLayout(), st::wgPluginCardPadding);
 
-	{
-		const auto hasDescription = !metadata.description.isEmpty();
-		const auto descText = hasDescription
-			? ParsePluginDescription(metadata.description)
-			: TextWithEntities{tr::ayu_PluginNoDescription(tr::now)};
-
-		const auto availableWidth = box->width()
-			- st::boxRowPadding.left()
-			- st::boxRowPadding.right();
-
-		const auto container = box->verticalLayout()->add(
-			object_ptr<Ui::RpWidget>(box->verticalLayout()),
-			st::boxRowPadding);
-
-		const auto scroll = Ui::CreateChild<Ui::ScrollArea>(
-			container,
-			st::boxScroll);
-		const auto descLabel = scroll->setOwnedWidget(
-			object_ptr<Ui::FlatLabel>(scroll, st::boxLabel));
-		descLabel->setMarkedText(
-			descText,
-			Core::TextContext({
-				.session = &controller->session(),
-			}));
-		descLabel->resizeToWidth(availableWidth);
-
-		const auto needsScroll =
-			descLabel->height() > st::maxPluginDescriptionHeight;
-		const auto scrollPad = needsScroll
-								   ? (st::boxScroll.width + st::lineWidth)
-								   : 0;
-		if (needsScroll) {
-			descLabel->resizeToWidth(availableWidth - scrollPad);
-		}
-
-		const auto containerHeight = std::min(
-			descLabel->height(),
-			st::maxPluginDescriptionHeight);
-		container->resize(availableWidth, containerHeight);
-
-		container->sizeValue(
-		) | rpl::on_next([=](QSize size)
-						 {
-							 scroll->setGeometry(0, 0, size.width(), size.height());
-							 descLabel->resizeToWidth(size.width() - scrollPad);
-						 },
-						 container->lifetime());
-
-		Ui::AddSkip(box->verticalLayout());
-	}
+	const auto descriptionCard = box->addRow(
+		object_ptr<Ui::VerticalLayout>(box), st::boxRowPadding);
+	descriptionCard->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(descriptionCard);
+		PainterHighQualityEnabler hq(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(st::windowBgOver->c);
+		p.drawRoundedRect(descriptionCard->rect(), st::wgPluginCardRadius, st::wgPluginCardRadius);
+	}, descriptionCard->lifetime());
+	const auto description = descriptionCard->add(
+		object_ptr<Ui::FlatLabel>(descriptionCard, st::boxLabel),
+		style::margins(st::wgPluginCardPadding, st::wgPluginCardPadding,
+			st::wgPluginCardPadding, st::wgPluginCardPadding));
+	description->setMarkedText(metadata.description.isEmpty()
+		? TextWithEntities{tr::ayu_PluginNoDescription(tr::now)}
+		: ParsePluginDescription(metadata.description),
+		Core::TextContext({ .session = &controller->session() }));
+	description->setSelectable(true);
+	Ui::AddSkip(box->verticalLayout(), st::wgPluginIconGap);
 
 	if (!metadata.requirements.isEmpty()) {
 		const auto chipsContainer = box->verticalLayout()->add(
@@ -409,28 +449,35 @@ void FillPluginInfoBox(
 
 	Ui::AddSkip(box->verticalLayout());
 
-	box->verticalLayout()->add(
-		object_ptr<Ui::FlatLabel>(
-			box->verticalLayout(),
-			tr::ayu_PluginsNotAvailable(),
-			st::boxDividerLabel),
-		st::boxRowPadding);
+	if (!engineReady) {
+		box->addRow(object_ptr<Ui::FlatLabel>(box,
+			rpl::single(isRu ? u"Включите движок в настройках плагинов, чтобы продолжить установку."_q
+				: u"Enable the plugin engine in settings to continue installing."_q),
+			st::boxDividerLabel));
+	}
+	const auto footer = box->setPinnedToBottomContent(object_ptr<Ui::VerticalLayout>(box));
+	const auto addAction = [&](QString text, const style::RoundButton &style, Fn<void()> callback) {
+		const auto button = footer->add(object_ptr<Ui::RoundButton>(footer,
+			rpl::single(std::move(text)), style), st::boxRowPadding);
+		button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
+		button->setClickedCallback(std::move(callback));
+		footer->widthValue() | rpl::on_next([=](int width) {
+			button->setFullWidth(width - st::boxRowPadding.left() - st::boxRowPadding.right());
+		}, button->lifetime());
+	};
+	Ui::AddSkip(footer, st::wgPluginIconGap);
+	if (engineReady) {
+		addAction(installed ? (isRu ? u"Обновить"_q : u"Update"_q)
+			: (isRu ? u"Установить"_q : u"Install"_q), st::wgPluginInstallButton, [=] {
+			Whitegram::Plugins::InstallPluginFromPath(controller, pluginPath);
+			box->closeBox();
+		});
+	}
+	addAction(isRu ? u"Отмена"_q : u"Cancel"_q, st::wgPluginCancelButton, [=] {
+		box->closeBox();
+	});
+	Ui::AddSkip(footer, st::wgPluginIconGap);
 
-	Ui::AddSkip(box->verticalLayout());
-
-	const auto closeButton = box->addButton(
-		tr::lng_close(),
-		[=] { box->closeBox(); });
-	const auto buttonWidth = box->width()
-		- rect::m::sum::h(st::starrefFooterBox.buttonPadding);
-	closeButton->widthValue() | rpl::filter([=]
-	{
-		return (closeButton->widthNoMargins() != buttonWidth);
-	}) | rpl::on_next([=]
-					  {
-						  closeButton->resizeToWidth(buttonWidth);
-					  },
-					  closeButton->lifetime());
 }
 
 }

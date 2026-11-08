@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "ayu/features/whitegram_plugins/whitegram_plugins.h"
 #include "data/data_peer.h"
 #include <QBuffer>
 
@@ -3708,6 +3709,9 @@ HistoryItem *Session::addNewMessage(
 		data,
 		localFlags,
 		type);
+	if (result) {
+		Whitegram::Plugins::NotifyNewMessage(result);
+	}
 	if (type == NewMessageType::Unread) {
 		CheckForSwitchInlineButton(result);
 	}

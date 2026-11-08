@@ -124,6 +124,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/features/forward/ayu_forward.h"
+#include "ayu/features/whitegram_plugins/whitegram_plugins_ui.h"
 #include "ayu/ui/context_menu/context_menu.h"
 
 
@@ -624,6 +625,7 @@ bool AddForwardMessageAction(
 					: MessageIdsList{ 1, itemId }));
 		}
 	}, &st::menuIconForward);
+	Whitegram::Plugins::AddMessageMenuItems(menu, item, list->controller());
 	return true;
 }
 

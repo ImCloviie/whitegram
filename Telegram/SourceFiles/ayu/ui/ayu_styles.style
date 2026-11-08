@@ -126,3 +126,48 @@ ayuServiceTimeBadgeVerticalPadding: 2px;
 ayuServiceTimeBadgeGap: 8px;
 ayuServiceTimeBadgeTrailingInset: 3px;
 ayuServiceTimeBadgeLastLineWidthAdd: 9px;
+
+wgPluginAction: IconButton(defaultIconButton) {
+	width: 40px;
+	height: 40px;
+	rippleAreaSize: 40px;
+	rippleAreaPosition: point(0px, 0px);
+}
+
+wgPluginNameButton: SettingsButton(settingsButtonNoIcon) {
+	style: semiboldTextStyle;
+	height: 24px;
+	padding: margins(16px, 0px, 16px, 0px);
+	textBg: transparent;
+	textBgOver: transparent;
+	ripple: RippleAnimation(defaultRippleAnimation) { color: transparent; }
+}
+wgPluginInstallTitle: FlatLabel(boxTitle) {
+	style: TextStyle(semiboldTextStyle) { font: font(22px semibold); }
+	align: align(center);
+}
+wgPluginMeta: FlatLabel(boxDividerLabel) {
+	align: align(left);
+}
+wgPluginInstallMeta: FlatLabel(boxDividerLabel) {
+	align: align(center);
+}
+wgPluginCardInset: 12px;
+wgPluginCardPadding: 16px;
+wgPluginCardRadius: 16px;
+wgPluginIconSize: 48px;
+wgPluginIconGap: 12px;
+wgPluginInstallWidth: 420px;
+wgPluginInstallIconSize: 88px;
+wgPluginInstallButton: RoundButton(defaultActiveButton) {
+	height: 48px;
+	textTop: 14px;
+	fullRadius: true;
+}
+wgPluginCancelButton: RoundButton(wgPluginInstallButton) {
+	textFg: windowFg;
+	textFgOver: windowFg;
+	textBg: transparent;
+	textBgOver: windowBgOver;
+	ripple: defaultRippleAnimation;
+}

@@ -1951,7 +1951,11 @@ void SyncTimeSpent(uint64 userId, int64 localMinutes) {
 		} catch (...) {
 			return;
 		}
-		const auto merged = std::max(localMinutes, remote);
+		// Publish the GET immediately; a slow/failed PUT must not leave the
+		// own profile showing the old local value.
+		auto &settings = AyuSettings::getInstance();
+		settings.mergeTimeSpentFromServer(userId, remote);
+		const auto merged = std::max(localMinutes, settings.getTimeSpentFor(userId));
 		const auto body = QByteArray("{\"totalMinutes\":")
 			+ QByteArray::number(merged)
 			+ QByteArray("}");
@@ -2014,6 +2018,17 @@ void FetchTimeSpent(uint64 userId) {
 				.minutes = json.value("totalMinutes", int64(0)),
 				.visible = json.value("visible", true),
 			};
+			// Own profiles use the local counter. Hydrate it from this read
+			// too, without importing other users' counters into our settings.
+			for (const auto &account : Core::App().domain().accounts()) {
+				const auto session = account.account->maybeSession();
+				if (session && session->userId().bare == userId) {
+					AyuSettings::getInstance().mergeTimeSpentFromServer(
+						userId,
+						entry.minutes);
+					break;
+				}
+			}
 			auto &cache = TimeSpentCache();
 			const auto i = cache.find(userId);
 			const auto changed = (i == cache.end())

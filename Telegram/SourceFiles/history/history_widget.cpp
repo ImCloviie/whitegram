@@ -5,6 +5,10 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
+#include "ayu/ui/settings/settings_main.h"
+#include <QPointer>
+#include <QShortcut>
+
 #include "history/history_widget.h"
 
 #include "api/api_compose_with_ai.h"
@@ -684,6 +688,19 @@ HistoryWidget::HistoryWidget(
 	setupFastButtonMode();
 	initAiButton();
 	initSendAsFileButton();
+	const auto pluginShortcut = new QShortcut(QKeySequence(QStringLiteral("Ctrl+Alt+P")), _field.data());
+	pluginShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+	connect(pluginShortcut, &QShortcut::activated, this, [=] {
+		const auto guard = QPointer<HistoryWidget>(this);
+		const auto history = _history;
+		const auto original = _field->getTextWithTags();
+		if (!history || !original.tags.empty()) return;
+		const auto result = Settings::RunWhitegramDraftPlugin(original.text);
+		if (guard && !result.isNull() && _history == history
+			&& _field->getTextWithTags() == original) {
+			setFieldText({ result, {} });
+		}
+	});
 	initExpandButton();
 	initDiscardRichDraftButton();
 

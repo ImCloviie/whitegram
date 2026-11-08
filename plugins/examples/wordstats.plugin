@@ -1,0 +1,23 @@
+# Example Whitegram plugin: drafts transform (Ctrl+Alt+P in the input field).
+
+__id__ = "wordstats"
+__name__ = "Статистика текста"
+__version__ = "1.0"
+__author__ = "Whitegram Team"
+__description__ = "Заменяет черновик статистикой слов (Ctrl+Alt+P)"
+__permissions__ = ["ui"]
+
+from whitegram import BasePlugin
+
+
+class WordStatsPlugin(BasePlugin):
+    def on_draft_transform(self, text):
+        if not text.strip():
+            return None
+        words = len(text.split())
+        symbols = len(text)
+        lines = len(text.splitlines())
+        return (
+            f"{words} слов · {symbols} символов · {lines} строк\n\n"
+            f"{text}"
+        )

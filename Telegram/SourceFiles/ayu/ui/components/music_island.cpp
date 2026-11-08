@@ -10,6 +10,8 @@
 #include "ayu/ui/utils/lyrics_engine.h"
 
 #include "ayu/ayu_settings.h"
+#include "logs.h"
+#include "ayu/ui/utils/lyrics_align.h"
 #include "ayu/ui/utils/color_utils.h"
 #include "ayu/ui/utils/itunes_search.h"
 #include "ayu/ui/utils/palette.h"
@@ -25,6 +27,8 @@
 #include "history/history_item.h"
 #include "main/main_session.h"
 #include "media/audio/media_audio.h"
+#include "media/media_common.h"
+#include "media/player/media_player_dropdown.h"
 #include "media/player/media_player_instance.h"
 #include "media/view/media_view_playback_progress.h"
 #include "styles/palette.h"
@@ -33,6 +37,9 @@
 #include "styles/style_menu_icons.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_music_island.h"
+#include "styles/style_basic.h"
+#include "styles/style_media_player.h"
+#include "styles/style_widgets.h"
 #include "ui/image/image.h"
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
@@ -41,7 +48,11 @@
 #include "ui/text/text_options.h"
 #include "ui/toast/toast.h"
 #include "ui/ui_utility.h"
+#include "ui/widgets/menu/menu_action.h"
+#include "ui/widgets/menu/menu_common.h"
+#include "ui/widgets/popup_menu.h"
 #include "window/window_session_controller.h"
+#include "mainwindow.h"
 
 #include <QPainterPath>
 #include <QSvgRenderer>
@@ -101,6 +112,11 @@ constexpr auto kMarqueeSpeed = 40; // pixels per second
 			+ st::musicIslandTimeTop
 			+ TimeStyle().font->height
 			+ st::musicIslandExpandedPaddingBottom);
+}
+
+[[nodiscard]] QSize CollapsedOuterSize() {
+	const auto shadow = int(st::musicIslandShadow);
+	return CollapsedSize() + QSize(2 * shadow, 2 * shadow);
 }
 
 [[nodiscard]] QColor AdjustLightness(QColor color, float64 factor) {
@@ -272,6 +288,10 @@ MusicIsland::MusicIsland(
 	hide();
 
 	_liveAnimation.init([=] {
+		if (_lyricsWindow && _lyricsWindow->shown()) {
+			return _shown;
+		}
+		updateLyricsPosition();
 		update();
 		return _shown
 			&& (_playing || _expanded || _expandAnimation.animating());
@@ -309,7 +329,11 @@ MusicIsland::MusicIsland(
 	checkVisibility();
 }
 
-MusicIsland::~MusicIsland() = default;
+MusicIsland::~MusicIsland() {
+	if (_lyricsWindow) {
+		delete _lyricsWindow.data();
+	}
+}
 
 bool MusicIsland::replacesTopBar(AudioMsgId::Type type) const {
 	if (type != AudioMsgId::Type::Song) {
@@ -411,6 +435,14 @@ void MusicIsland::setupSettings() {
 	}, lifetime());
 
 	rpl::merge(
+		Core::App().settings().playerRepeatModeChanges() | rpl::to_empty,
+		Core::App().settings().playerOrderModeChanges() | rpl::to_empty,
+		Core::App().settings().audioPlaybackSpeedChanges() | rpl::to_empty
+	) | rpl::on_next([=] {
+		update();
+	}, lifetime());
+
+	rpl::merge(
 		settings->adaptiveCoverColorChanges(),
 		settings->musicIslandCoverColorsChanges(),
 		settings->musicIslandBlurCoverChanges(),
@@ -426,11 +458,9 @@ void MusicIsland::setupSettings() {
 		settings->musicLyricsEnabledChanges() | rpl::to_empty,
 		settings->musicLyricsShowInIslandChanges() | rpl::to_empty,
 		settings->musicLyricsFloatingLineChanges() | rpl::to_empty,
-		settings->musicLyricsAnimationChanges() | rpl::to_empty,
-		settings->musicLyricsArtScatterChanges() | rpl::to_empty,
+		settings->musicLyricsKeywordChanges() | rpl::to_empty,
 		settings->musicLyricsFontScaleChanges() | rpl::to_empty,
-		settings->musicLyricsKaraokeButtonChanges() | rpl::to_empty,
-		settings->musicLyricsBlurChanges() | rpl::to_empty
+		settings->musicLyricsKaraokeButtonChanges() | rpl::to_empty
 	) | rpl::on_next([=] {
 		if (AyuSettings::getInstance().musicLyricsEnabled()
 			&& !hasLyrics()
@@ -440,10 +470,16 @@ void MusicIsland::setupSettings() {
 		}
 		updatePosition();
 		update();
-		if (_lyricsWindow && _lyricsWindow->isVisible()) {
-			_lyricsWindow->setLyrics(_lyrics);
-			_lyricsWindow->update();
-		}
+		maybeStartAnalysis();
+	}, lifetime());
+
+	rpl::merge(
+		settings->musicLyricsChorusChanges(),
+		settings->musicLyricsBassPulseChanges()
+	) | rpl::on_next([=](bool) {
+		resetAnalysis();
+		maybeStartAnalysis();
+		update();
 	}, lifetime());
 
 	rpl::merge(
@@ -464,7 +500,8 @@ void MusicIsland::handleTrackChanged() {
 	if (!document) {
 		checkVisibility();
 		return;
-	} else if (_songId == id) {
+	} else if (_songId.audio() == document && _songId.contextId() == id.contextId()) {
+		_songId = id;
 		checkVisibility();
 		return;
 	}
@@ -480,6 +517,7 @@ void MusicIsland::handleTrackChanged() {
 	_marqueeStart = crl::now();
 
 	loadCover();
+	resetAnalysis();
 	requestLyrics();
 	checkVisibility();
 	update();
@@ -508,13 +546,16 @@ void MusicIsland::handleStateUpdate(const Media::Player::TrackState &state) {
 	}
 	_durationText = Ui::FormatDurationText(_durationSeconds);
 
+	const auto reported = int64(state.position * 1000 / frequency);
+	const auto predicted = playbackPositionMs();
+	_positionBaseMs = (_playing
+		&& _positionAt
+		&& std::abs(reported - predicted) < 250)
+		? (predicted + (reported - predicted) / 4)
+		: reported;
+	_positionAt = crl::now();
 	updateLyricsPosition();
-	if (_lyricsWindow) {
-		_lyricsWindow->setPosition(
-			_lyricsPositionMs,
-			_lyricsActive,
-			_lyricsProgress);
-	}
+	pushPlaybackToWindow();
 	checkVisibility();
 	update();
 }
@@ -567,6 +608,7 @@ void MusicIsland::toggleShown(bool shown) {
 			releaseMouse();
 		}
 		_hoverPoll.stop();
+		_menu = nullptr;
 	}
 	_shownAnimation.start([=] {
 		update();
@@ -579,7 +621,7 @@ void MusicIsland::toggleShown(bool shown) {
 }
 
 bool MusicIsland::desiredExpanded() const {
-	if (_seeking || _volumeDragging || _keepExpandedAfterSeek) {
+	if (_seeking || _volumeDragging || _keepExpandedAfterSeek || _menu) {
 		return true;
 	}
 	const auto mode = AyuSettings::getInstance().musicIslandExpandMode();
@@ -704,19 +746,29 @@ QPoint MusicIsland::freeTopLeft(QSize outer) const {
 		return QPoint();
 	}
 	const auto margin = std::max(0, int(st::musicIslandShadow / 2));
-	const auto placementWidth = std::max(1, parent->width() - 2 * margin);
-	const auto placementHeight = std::max(1, parent->height() - 2 * margin);
+	const auto collapsed = CollapsedOuterSize();
 	const auto &settings = AyuSettings::getInstance();
-	const auto normX = std::clamp(settings.musicIslandFreeX(), 0, 1000) / 1000.;
-	const auto normY = std::clamp(settings.musicIslandFreeY(), 0, 1000) / 1000.;
-	// The stored point is the island's center (see saveFreePosition), so
-	// offset by half the current size: the island then stays visually in
-	// place when it grows or shrinks by expanding or collapsing.
+	const auto place = [&](int stored, int full, int pill, int size) {
+		const auto span = std::max(1, full - 2 * margin);
+		const auto norm = std::clamp(stored, 0, 1000) / 1000.;
+		const auto center = std::clamp(
+			margin + int(base::SafeRound(norm * span)),
+			margin + pill / 2,
+			std::max(margin + pill / 2, full - margin - pill + pill / 2));
+		const auto start = center - pill / 2;
+		return (center < full / 2) ? start : (start + pill - size);
+	};
 	return QPoint(
-		margin + int(base::SafeRound(normX * placementWidth))
-			- outer.width() / 2,
-		margin + int(base::SafeRound(normY * placementHeight))
-			- outer.height() / 2);
+		place(
+			settings.musicIslandFreeX(),
+			parent->width(),
+			collapsed.width(),
+			outer.width()),
+		place(
+			settings.musicIslandFreeY(),
+			parent->height(),
+			collapsed.height(),
+			outer.height()));
 }
 
 void MusicIsland::saveFreePosition() {
@@ -724,20 +776,30 @@ void MusicIsland::saveFreePosition() {
 	if (!parent) {
 		return;
 	}
+	// WHY: the stored point is the collapsed pill's center; the card grows
+	// from the nearest window edge, so drop spot == collapsed spot.
 	const auto margin = std::max(0, int(st::musicIslandShadow / 2));
-	const auto placementWidth = std::max(1, parent->width() - 2 * margin - width());
-	const auto placementHeight = std::max(1, parent->height() - 2 * margin - height());
+	const auto collapsed = CollapsedOuterSize();
+	const auto stored = [&](int start, int size, int full, int pill) {
+		const auto fromStart = start + pill / 2;
+		const auto fromEnd = start + size - pill + pill / 2;
+		const auto startValid = (fromStart < full / 2);
+		const auto endValid = (fromEnd >= full / 2);
+		const auto center = (startValid && endValid)
+			? ((start + size / 2 < full / 2) ? fromStart : fromEnd)
+			: startValid
+			? fromStart
+			: fromEnd;
+		return PercentNominal(
+			center - margin,
+			std::max(1, full - 2 * margin));
+	};
+	const auto x = stored(pos().x(), width(), parent->width(), collapsed.width());
+	const auto y = stored(pos().y(), height(), parent->height(), collapsed.height());
 	auto &islandSettings = AyuSettings::getInstance();
 	islandSettings.setMusicIslandPosition(4);
-	// Store the island's center, not its top-left: the widget grows from the
-	// top-left when it expands, so a corner-anchored position visibly jumps
-	// while animating. The center is what the user actually placed.
-	islandSettings.setMusicIslandFreeX(PercentNominal(
-		pos().x() - margin + width() / 2,
-		placementWidth));
-	islandSettings.setMusicIslandFreeY(PercentNominal(
-		pos().y() - margin + height() / 2,
-		placementHeight));
+	islandSettings.setMusicIslandFreeX(x);
+	islandSettings.setMusicIslandFreeY(y);
 }
 
 MusicIsland::Layout MusicIsland::computeLayout(float64 expand) const {
@@ -829,17 +891,38 @@ MusicIsland::Layout MusicIsland::computeLayout(float64 expand) const {
 		sideY,
 		controlSize,
 		controlSize).translated(origin);
+	{
+		// Playback modes, flush right: [order] [repeat] [speed?].
+		const auto modeSize = float64(st::musicIslandModeSize);
+		const auto modeSkip = float64(st::musicIslandModeSkip);
+		const auto modeY = playY + (playSize - modeSize) / 2.;
+		auto right = islandWidth - padding;
+		if (hasSpeedControl()) {
+			const auto speedWidth = float64(st::musicIslandSpeedWidth);
+			const auto speedHeight = float64(st::musicIslandSpeedHeight);
+			result.speed = QRectF(
+				right - speedWidth,
+				playY + (playSize - speedHeight) / 2.,
+				speedWidth,
+				speedHeight).translated(origin);
+			right -= speedWidth + modeSkip;
+		}
+		result.repeat = QRectF(right - modeSize, modeY, modeSize, modeSize)
+			.translated(origin);
+		right -= modeSize + modeSkip;
+		result.order = QRectF(right - modeSize, modeY, modeSize, modeSize)
+			.translated(origin);
+	}
 	const auto headerButtonY = st::musicIslandCloseSkip;
 	const auto closeSize = float64(st::musicIslandCloseSize);
 	const auto saveSize = float64(st::musicIslandSaveSize);
 	const auto controlGap = float64(st::musicIslandControlSkip);
-	const auto canSave = canSaveToProfile();
+	const auto canSave = (profileMusicState() >= 0);
 
 	// Right-aligned top rail packed flush-right: [lyrics?] [save?] [close].
 	const auto lyricsSize = float64(st::musicIslandLyricsButtonSize);
 	const auto showLyricsBtn = AyuSettings::getInstance().musicLyricsEnabled()
-		&& AyuSettings::getInstance().musicLyricsKaraokeButton()
-		&& hasLyrics();
+		&& AyuSettings::getInstance().musicLyricsKaraokeButton();
 	auto railRight = islandWidth - float64(st::musicIslandCloseSkip);
 	result.close = QRectF(
 		railRight - closeSize,
@@ -970,7 +1053,6 @@ bool MusicIsland::artMode() const {
 	const auto &settings = AyuSettings::getInstance();
 	return _cover.hasArt
 		&& _cover.accent.isValid()
-		&& settings.adaptiveCoverColor()
 		&& settings.musicIslandCoverColors();
 }
 
@@ -1079,6 +1161,9 @@ void MusicIsland::applyCover(CoverData cover, int generation) {
 		return;
 	}
 	_cover = std::move(cover);
+	if (_lyricsWindow) {
+		_lyricsWindow->setCover(_cover.art, _cover.blurred, _cover.accent);
+	}
 	update();
 }
 
@@ -1125,11 +1210,20 @@ void MusicIsland::activate(Part part, QPoint onPoint) {
 		player->stopAndClose();
 		break;
 	case Part::SaveProfile:
-		saveToProfile();
+		toggleProfileMusic();
 		break;
 	case Part::LyricsButton:
 	case Part::LyricsZone:
 		openLyricsWindow();
+		break;
+	case Part::Repeat:
+		toggleRepeat();
+		break;
+	case Part::Order:
+		showOrderMenu();
+		break;
+	case Part::Speed:
+		showSpeedMenu();
 		break;
 	case Part::VolumeToggle: {
 		const auto current = songVolume();
@@ -1204,6 +1298,43 @@ bool MusicIsland::canSaveToProfile() const {
 	return !_controller->session().data().savedMusic().has(document);
 }
 
+int MusicIsland::profileMusicState() const {
+	const auto document = _songId.audio();
+	if (!document || !document->isMusicForProfile()) {
+		return -1;
+	}
+	return _controller->session().data().savedMusic().has(document) ? 1 : 0;
+}
+
+void MusicIsland::toggleProfileMusic() {
+	const auto document = _songId.audio();
+	if (!document || !document->isMusicForProfile()) {
+		return;
+	}
+	auto &saved = _controller->session().data().savedMusic();
+	const auto silent = _lyricsWindow && _lyricsWindow->shown();
+	if (!saved.has(document)) {
+		if (silent) {
+			saved.save(document, _contextId);
+			update();
+		} else {
+			saveToProfile();
+		}
+		return;
+	}
+	saved.remove(document);
+	if (silent) {
+		update();
+		return;
+	}
+	const auto ru = Lang::GetInstance().id().startsWith(u"ru"_q)
+		|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+	_controller->uiShow()->showToast(ru
+		? QString::fromUtf8("Трек убран из профиля")
+		: QString("Removed from your profile music"));
+	update();
+}
+
 void MusicIsland::saveToProfile() {
 	const auto document = _songId.audio();
 	if (!document || !canSaveToProfile()) {
@@ -1268,7 +1399,7 @@ MusicIsland::Part MusicIsland::partAt(QPoint point) const {
 	if (expand > 0.5) {
 		if (layout.close.contains(QPointF(point))) {
 			return Part::Close;
-		} else if (canSaveToProfile()
+		} else if (profileMusicState() >= 0
 			&& layout.saveProfile.contains(QPointF(point))) {
 			return Part::SaveProfile;
 		} else if (!layout.lyricsButton.isNull()
@@ -1290,6 +1421,13 @@ MusicIsland::Part MusicIsland::partAt(QPoint point) const {
 			return Part::Previous;
 		} else if (layout.next.contains(QPointF(point))) {
 			return Part::Next;
+		} else if (!layout.speed.isEmpty()
+			&& layout.speed.contains(QPointF(point))) {
+			return Part::Speed;
+		} else if (layout.repeat.contains(QPointF(point))) {
+			return Part::Repeat;
+		} else if (layout.order.contains(QPointF(point))) {
+			return Part::Order;
 		}
 		const auto extend = float64(st::musicIslandSeekKnob);
 		const auto seekArea = layout.seek.marginsAdded(
@@ -1347,6 +1485,7 @@ void MusicIsland::paintEvent(QPaintEvent *e) {
 	paintTexts(p, layout, expand);
 	if (expand > 0.) {
 		paintControls(p, layout, expand);
+		paintModes(p, layout, std::clamp((expand - 0.4) / 0.6, 0., 1.));
 		paintVolume(p, layout, expand);
 		paintSeek(p, layout, expand);
 		paintTimes(p, layout, expand);
@@ -1632,24 +1771,294 @@ void MusicIsland::paintControls(
 		Part::Close,
 		true,
 		false);
-	if (canSaveToProfile()) {
-		paintButton(
-			layout.saveProfile,
-			st::musicIslandIconSaveProfile,
-			Part::SaveProfile,
-			true,
-			false);
+	const auto hoverDisc = [&](const QRectF &rect, Part part) {
+		const auto alpha = (_pressedPart == part) ? 40 : (_hoveredPart == part) ? 26 : 0;
+		if (alpha > 0) {
+			auto background = art ? QColor(255, 255, 255) : st::windowBoldFg->c;
+			background.setAlpha(alpha);
+			p.setPen(Qt::NoPen);
+			p.setBrush(background);
+			p.drawEllipse(rect);
+		}
+	};
+	const auto stroke = std::max(1.4, float64(st::lineWidth) * 1.6);
+	const auto profile = profileMusicState();
+	if (profile >= 0) {
+		const auto &rect = layout.saveProfile;
+		hoverDisc(rect, Part::SaveProfile);
+		auto star = QPainterPath();
+		const auto center = rect.center();
+		const auto outer = rect.width() * 0.34;
+		const auto inner = outer * 0.46;
+		for (auto i = 0; i != 10; ++i) {
+			const auto angle = -1.5707963267948966 + i * 0.6283185307179586;
+			const auto r = (i % 2) ? inner : outer;
+			const auto point = center + QPointF(std::cos(angle) * r, std::sin(angle) * r);
+			if (i) {
+				star.lineTo(point);
+			} else {
+				star.moveTo(point);
+			}
+		}
+		star.closeSubpath();
+		if (profile > 0) {
+			p.setPen(Qt::NoPen);
+			p.setBrush(QColor(255, 200, 70));
+		} else {
+			p.setPen(QPen(iconFg(), stroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+			p.setBrush(Qt::NoBrush);
+		}
+		p.drawPath(star);
 	}
 	if (!layout.lyricsButton.isNull()) {
-		paintButton(
-			layout.lyricsButton,
-			st::musicIslandIconLyrics,
-			Part::LyricsButton,
-			true,
-			false);
+		const auto &rect = layout.lyricsButton;
+		hoverDisc(rect, Part::LyricsButton);
+		const auto c = rect.center();
+		const auto w = rect.width();
+		const auto body = QRectF(c.x() - w * 0.28, c.y() - w * 0.25, w * 0.56, w * 0.4);
+		const auto radius = w * 0.12;
+		auto bubble = QPainterPath();
+		bubble.moveTo(body.left() + radius, body.top());
+		bubble.lineTo(body.right() - radius, body.top());
+		bubble.quadTo(body.topRight(), QPointF(body.right(), body.top() + radius));
+		bubble.lineTo(body.right(), body.bottom() - radius);
+		bubble.quadTo(body.bottomRight(), QPointF(body.right() - radius, body.bottom()));
+		bubble.lineTo(c.x() - w * 0.04, body.bottom());
+		bubble.lineTo(c.x() - w * 0.17, body.bottom() + w * 0.13);
+		bubble.lineTo(c.x() - w * 0.14, body.bottom());
+		bubble.lineTo(body.left() + radius, body.bottom());
+		bubble.quadTo(body.bottomLeft(), QPointF(body.left(), body.bottom() - radius));
+		bubble.lineTo(body.left(), body.top() + radius);
+		bubble.quadTo(body.topLeft(), QPointF(body.left() + radius, body.top()));
+		bubble.closeSubpath();
+		p.setPen(QPen(iconFg(), stroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+		p.setBrush(Qt::NoBrush);
+		p.drawPath(bubble);
+		p.setPen(Qt::NoPen);
+		p.setBrush(iconFg());
+		for (const auto dx : { -0.075, 0.075 }) {
+			const auto dot = QPointF(body.center().x() + w * dx, body.center().y() - w * 0.02);
+			p.drawEllipse(dot, w * 0.045, w * 0.045);
+			auto tail = QPainterPath();
+			tail.moveTo(dot + QPointF(w * 0.045, 0.));
+			tail.quadTo(dot + QPointF(w * 0.05, w * 0.09), dot + QPointF(-w * 0.03, w * 0.12));
+			tail.lineTo(dot + QPointF(-w * 0.01, w * 0.03));
+			tail.closeSubpath();
+			p.drawPath(tail);
+		}
 	}
 
 	p.setOpacity(base);
+}
+
+void MusicIsland::paintModes(
+		QPainter &p,
+		const Layout &layout,
+		float64 opacity) const {
+	if (opacity <= 0.) {
+		return;
+	}
+	const auto base = p.opacity();
+	p.setOpacity(base * opacity);
+
+	const auto art = artMode();
+	const auto &settings = Core::App().settings();
+	const auto activeColor = art
+		? QColor(255, 255, 255)
+		: st::windowBgActive->c;
+	const auto hoverBackground = [&](Part part) {
+		const auto over = (_hoveredPart == part);
+		const auto pressed = (_pressedPart == part);
+		auto background = art ? QColor(255, 255, 255) : st::windowBoldFg->c;
+		background.setAlpha(pressed ? 40 : over ? 26 : 0);
+		return background;
+	};
+	const auto paintMode = [&](
+			const QRectF &rect,
+			const style::icon &icon,
+			Part part,
+			bool active) {
+		const auto background = hoverBackground(part);
+		if (background.alpha() > 0) {
+			p.setPen(Qt::NoPen);
+			p.setBrush(background);
+			p.drawEllipse(rect);
+		}
+		auto color = active ? activeColor : iconFg();
+		if (!active) {
+			color.setAlpha((_hoveredPart == part) ? 190 : 110);
+		}
+		icon.paintInCenter(p, rect.toRect(), color);
+		if (active) {
+			const auto dot = 3.;
+			p.setPen(Qt::NoPen);
+			p.setBrush(color);
+			p.drawEllipse(QRectF(
+				rect.center().x() - dot / 2.,
+				rect.bottom() - dot - 1.,
+				dot,
+				dot));
+		}
+	};
+
+	const auto repeat = settings.playerRepeatMode();
+	paintMode(
+		layout.repeat,
+		(repeat == Media::RepeatMode::One)
+			? st::musicIslandIconRepeatOne
+			: st::musicIslandIconRepeat,
+		Part::Repeat,
+		repeat != Media::RepeatMode::None);
+
+	const auto order = settings.playerOrderMode();
+	paintMode(
+		layout.order,
+		(order == Media::OrderMode::Shuffle)
+			? st::musicIslandIconShuffle
+			: st::musicIslandIconOrder,
+		Part::Order,
+		order != Media::OrderMode::Default);
+
+	if (!layout.speed.isEmpty()) {
+		const auto speed = currentSpeed();
+		const auto changed = !Media::EqualSpeeds(speed, 1.);
+		const auto rect = layout.speed;
+		const auto radius = rect.height() / 2.;
+		auto fill = hoverBackground(Part::Speed);
+		if (changed) {
+			auto tint = activeColor;
+			tint.setAlpha((art ? 56 : 40) + fill.alpha() / 2);
+			fill = tint;
+		}
+		auto border = changed ? activeColor : iconFg();
+		border.setAlpha(changed ? 150 : 70);
+		p.setPen(QPen(border, float64(st::lineWidth)));
+		if (fill.alpha() > 0) {
+			p.setBrush(fill);
+		} else {
+			p.setBrush(Qt::NoBrush);
+		}
+		p.drawRoundedRect(
+			rect.marginsRemoved(QMarginsF(0.5, 0.5, 0.5, 0.5)),
+			radius,
+			radius);
+		auto color = changed ? activeColor : iconFg();
+		if (!changed) {
+			color.setAlpha((_hoveredPart == Part::Speed) ? 220 : 170);
+		}
+		p.setPen(color);
+		p.setFont(st::musicIslandSpeedFont);
+		p.drawText(
+			rect,
+			Qt::AlignCenter,
+			QString::number(speed, 'g', 3) + QChar('x'));
+	}
+
+	p.setOpacity(base);
+}
+
+bool MusicIsland::hasSpeedControl() const {
+	return _songId.changeablePlaybackSpeed()
+		&& Media::Audio::SupportsSpeedControl();
+}
+
+float64 MusicIsland::currentSpeed() const {
+	return Core::App().settings().audioPlaybackSpeed();
+}
+
+void MusicIsland::applySpeed(float64 speed) {
+	Core::App().settings().setAudioPlaybackSpeed(speed);
+	Core::App().saveSettingsDelayed();
+	Media::Player::instance()->updatePlaybackSpeed();
+	update();
+}
+
+void MusicIsland::toggleRepeat() {
+	auto &settings = Core::App().settings();
+	settings.setPlayerRepeatMode([&] {
+		switch (settings.playerRepeatMode()) {
+		case Media::RepeatMode::None: return Media::RepeatMode::One;
+		case Media::RepeatMode::One: return Media::RepeatMode::All;
+		case Media::RepeatMode::All: return Media::RepeatMode::None;
+		}
+		return Media::RepeatMode::None;
+	}());
+	Core::App().saveSettingsDelayed();
+	update();
+}
+
+void MusicIsland::showMenuBelow(const QRectF &anchor) {
+	_menu->setDestroyedCallback(crl::guard(this, [=] {
+		crl::on_main(this, [=] {
+			updateExpanded();
+			update();
+		});
+	}));
+	_menu->setForcedOrigin(Ui::PanelAnimation::Origin::TopRight);
+	_menu->popup(mapToGlobal(QPoint(
+		int(base::SafeRound(anchor.right())),
+		int(base::SafeRound(anchor.bottom())) + st::musicIslandModeSkip)));
+	updateExpanded();
+	update();
+}
+
+void MusicIsland::showOrderMenu() {
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
+	const auto current = Core::App().settings().playerOrderMode();
+	const auto menu = _menu->menu();
+	const auto add = [&](Media::OrderMode mode) {
+		const auto active = (current == mode);
+		const auto reverse = (mode == Media::OrderMode::Reverse);
+		const auto label = reverse
+			? tr::lng_audio_player_reverse(tr::now)
+			: tr::lng_audio_player_shuffle(tr::now);
+		const auto icon = reverse
+			? (active
+				? &st::mediaPlayerOrderIconReverseActive
+				: &st::mediaPlayerOrderIconReverse)
+			: (active
+				? &st::mediaPlayerOrderIconShuffleActive
+				: &st::mediaPlayerOrderIconShuffle);
+		const auto callback = [=] {
+			Core::App().settings().setPlayerOrderMode(active
+				? Media::OrderMode::Default
+				: mode);
+			Core::App().saveSettingsDelayed();
+		};
+		_menu->addAction(base::make_unique_q<Ui::Menu::Action>(
+			menu.get(),
+			active ? st::mediaPlayerOrderMenuActive : st::mediaPlayerOrderMenu,
+			Ui::Menu::CreateAction(menu.get(), label, callback),
+			icon,
+			icon));
+	};
+	add(Media::OrderMode::Reverse);
+	add(Media::OrderMode::Shuffle);
+	showMenuBelow(computeLayout(expandProgress()).order);
+}
+
+void MusicIsland::showSpeedMenu() {
+	if (!hasSpeedControl()) {
+		return;
+	}
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
+	Media::Player::FillSpeedMenu(
+		_menu->menu(),
+		st::mediaPlayerSpeedMenu,
+		rpl::single(
+			currentSpeed()
+		) | rpl::then(
+			Core::App().settings().audioPlaybackSpeedChanges(
+			) | rpl::map([] {
+				return Core::App().settings().audioPlaybackSpeed();
+			})
+		),
+		crl::guard(this, [=](float64 speed) { applySpeed(speed); }));
+	showMenuBelow(computeLayout(expandProgress()).speed);
 }
 
 void MusicIsland::paintVolume(
@@ -1975,8 +2384,10 @@ void MusicIsland::requestLyrics() {
 		_lyrics = Ayu::Ui::Lyrics::Data();
 		_lyricsActive = -1;
 		_lyricsLoading = false;
+		pushLyricsToWindow();
 		return;
 	}
+	_lyrics = Ayu::Ui::Lyrics::Data();
 	_lyricsLoading = true;
 	_lyricsActive = -1;
 	const auto generation = ++_lyricsGeneration;
@@ -1984,17 +2395,15 @@ void MusicIsland::requestLyrics() {
 	const auto title = _titleRaw;
 	const auto duration = int(_durationSeconds);
 	const auto weak = base::make_weak(this);
-	crl::async([=]() mutable {
-		const auto data = Ayu::Ui::Lyrics::FetchCachedSync(
-			performer,
-			title,
-			duration);
-		crl::on_main([=]() mutable {
+	crl::async([=] {
+		auto data = Ayu::Ui::Lyrics::FetchCachedSync(performer, title, duration);
+		crl::on_main([=, data = std::move(data)]() mutable {
 			if (const auto strong = weak.get()) {
 				strong->applyLyrics(std::move(data), generation);
 			}
 		});
 	});
+	pushLyricsToWindow();
 	updatePosition();
 }
 
@@ -2004,21 +2413,66 @@ void MusicIsland::applyLyrics(Ayu::Ui::Lyrics::Data data, int generation) {
 	}
 	_lyricsLoading = false;
 	_lyrics = std::move(data);
+	_lyricsAligned = false;
 	_lyricsActive = -1;
 	_lyricsProgress = -1.;
 	_lyricsLineChangedAt = crl::now();
 	_lyricsFade.start([=] { update(); }, 0., 1., 280, anim::easeOutCubic);
 	updateLyricsPosition();
 	updatePosition();
-	if (_lyricsWindow) {
-		_lyricsWindow->setTrack(_performerRaw, _titleRaw);
-		_lyricsWindow->setLyrics(_lyrics);
-		_lyricsWindow->setPosition(
-			_lyricsPositionMs,
-			_lyricsActive,
-			_lyricsProgress);
+	if (_lyrics.hasData
+		&& AyuSettings::getInstance().musicLyricsKaraokeButton()) {
+		ensureLyricsWindow();
 	}
+	pushLyricsToWindow();
+	maybeStartAnalysis();
+	alignLyrics();
 	update();
+}
+
+void MusicIsland::alignLyrics() {
+	if (_lyricsAligned || !_lyrics.hasData || !_analysis || !_analysis->ok) {
+		return;
+	}
+	_lyricsAligned = true;
+	const auto analysis = _analysis;
+	const auto generation = _lyricsGeneration;
+	const auto weak = base::make_weak(this);
+	crl::async([=, data = _lyrics]() mutable {
+		const auto report = Ayu::Ui::Lyrics::Align(data, *analysis);
+		crl::on_main([=, data = std::move(data)]() mutable {
+			const auto strong = weak.get();
+			if (!strong || generation != strong->_lyricsGeneration || !report.changed) {
+				return;
+			}
+			LOG(("Karaoke sync: %1, offset %2 ms, %3 lines placed by voice").arg(
+				report.autoSynced ? u"built from audio"_q : u"fitted to audio"_q,
+				QString::number(report.offsetMs),
+				QString::number(report.refinedLines)));
+			strong->_lyrics = std::move(data);
+			strong->_lyricsActive = -1;
+			strong->updateLyricsPosition();
+			strong->pushLyricsToWindow();
+			strong->update();
+		});
+	});
+}
+
+int64 MusicIsland::playbackPositionMs() const {
+	if (!_playing || !_positionAt) {
+		return _positionBaseMs;
+	}
+	const auto elapsed = std::min<crl::time>(crl::now() - _positionAt, 2000);
+	return _positionBaseMs + int64(elapsed * currentSpeed());
+}
+
+float64 MusicIsland::lyricsPulse(int64 position) const {
+	if (!_analysis
+		|| !_analysis->ok
+		|| !AyuSettings::getInstance().musicLyricsBassPulse()) {
+		return 0.;
+	}
+	return _analysis->pulseAt(position) * (_analysis->inChorus(position) ? 1. : 0.5);
 }
 
 void MusicIsland::updateLyricsPosition() {
@@ -2027,115 +2481,209 @@ void MusicIsland::updateLyricsPosition() {
 		_lyricsProgress = -1.;
 		return;
 	}
-	const auto freq = _trackState.frequency
-		? _trackState.frequency
-		: Media::Player::kDefaultFrequency;
-	_lyricsPositionMs = (freq > 0)
-		? int64(_trackState.position * 1000 / freq)
-		: 0;
+	_lyricsPositionMs = playbackPositionMs();
 	auto active = -1;
-	auto progress = -1.;
 	if (_lyrics.synced) {
-		active = Ayu::Ui::Lyrics::ActiveLineIndex(_lyrics, _lyricsPositionMs);
-		if (active >= 0) {
-			progress = Ayu::Ui::Lyrics::LineProgress(
-				_lyrics,
-				active,
-				_lyricsPositionMs);
-		}
+		active = Ayu::Ui::Lyrics::ActiveLineIndex(_lyrics, _lyricsPositionMs + 120);
 	} else {
-		// No timestamps: spread lines evenly across track progress.
 		const auto n = int(_lyrics.lines.size());
-		if (n > 0) {
-			const auto p = std::clamp(displayedProgress(), 0., 1.);
-			active = std::clamp(int(p * n), 0, n - 1);
-		}
+		active = std::clamp(int(std::clamp(displayedProgress(), 0., 1.) * n), 0, n - 1);
 	}
 	if (active != _lyricsActive) {
-		if (active > _lyricsActive) {
-			_lyricsDirection = 1;
-		} else if (active < _lyricsActive) {
-			_lyricsDirection = -1;
-		}
+		_lyricsDirection = (active < _lyricsActive) ? -1 : 1;
 		_lyricsActive = active;
 		_lyricsLineChangedAt = crl::now();
 		_lyricsFade.start([=] { update(); }, 0., 1., 340, anim::easeOutCubic);
 	}
-	_lyricsProgress = progress;
+	_lyricsProgress = (_lyrics.synced && active >= 0)
+		? Ayu::Ui::Lyrics::LineProgress(_lyrics, active, _lyricsPositionMs)
+		: -1.;
+}
+
+void MusicIsland::pushPlaybackToWindow() {
+	if (!_lyricsWindow) {
+		return;
+	}
+	_lyricsWindow->setPlayback(
+		playbackPositionMs(),
+		_durationSeconds * 1000,
+		_playing,
+		currentSpeed());
+}
+
+void MusicIsland::pushLyricsToWindow() {
+	if (!_lyricsWindow) {
+		return;
+	}
+	_lyricsWindow->setTrack(_performerRaw, _titleRaw);
+	_lyricsWindow->setCover(_cover.art, _cover.blurred, _cover.accent);
+	_lyricsWindow->setLyrics(_lyrics, _lyricsLoading);
+	_lyricsWindow->setAnalysis(_analysis);
+	pushPlaybackToWindow();
+}
+
+void MusicIsland::resetAnalysis() {
+	++_analysisGeneration;
+	_analysis = nullptr;
+	_analysisStarted = false;
+	_analysisWaiting = false;
+	_analysisLifetime.destroy();
+	if (_lyricsWindow) {
+		_lyricsWindow->setAnalysis(nullptr);
+	}
+}
+
+void MusicIsland::maybeStartAnalysis() {
+	const auto &s = AyuSettings::getInstance();
+	const auto wanted = s.musicLyricsEnabled();
+	const auto document = _songId.audio();
+	if (_analysisStarted || !wanted || _lyricsLoading || !document || !_mediaView) {
+		return;
+	}
+	if (!_mediaView->loaded()) {
+		if (!_analysisWaiting) {
+			_analysisWaiting = true;
+			document->save(Data::FileOrigin(_contextId), QString());
+			document->session().downloaderTaskFinished(
+			) | rpl::filter([=] {
+				return _mediaView && _mediaView->loaded();
+			}) | rpl::take(1) | rpl::on_next([=] {
+				_analysisWaiting = false;
+				maybeStartAnalysis();
+			}, _analysisLifetime);
+		}
+		return;
+	}
+	_analysisStarted = true;
+	const auto location = document->location(true);
+	const auto bytes = _mediaView->bytes();
+	auto repeats = std::vector<Ayu::Ui::Analysis::Section>();
+	if (s.musicLyricsChorus()) {
+		for (const auto &[start, end] : Ayu::Ui::Lyrics::RepeatedBlocks(_lyrics)) {
+			repeats.push_back({ start, end });
+		}
+	}
+	const auto generation = _analysisGeneration;
+	const auto weak = base::make_weak(this);
+	crl::async([=] {
+		auto result = std::make_shared<Ayu::Ui::Analysis::Result>(
+			Ayu::Ui::Analysis::Analyze(location, bytes, repeats));
+		if (!AyuSettings::getInstance().musicLyricsChorus()) {
+			result->chorus.clear();
+		}
+		crl::on_main([=, result = std::move(result)]() mutable {
+			const auto strong = weak.get();
+			if (!strong || strong->_analysisGeneration != generation) {
+				return;
+			}
+			strong->_analysis = std::move(result);
+			if (strong->_lyricsWindow) {
+				strong->_lyricsWindow->setAnalysis(strong->_analysis);
+			}
+			strong->alignLyrics();
+			strong->update();
+		});
+	});
+}
+
+void MusicIsland::seekToMs(int64 ms) {
+	const auto frequency = _trackState.frequency
+		? _trackState.frequency
+		: Media::Player::kDefaultFrequency;
+	const auto lengthMs = (_trackState.length > 0)
+		? (_trackState.length * 1000 / frequency)
+		: (_durationSeconds * 1000);
+	if (lengthMs <= 0) {
+		return;
+	}
+	const auto type = AudioMsgId::Type::Song;
+	Media::Player::instance()->startSeeking(type);
+	Media::Player::instance()->finishSeeking(
+		type,
+		std::clamp(float64(ms) / lengthMs, 0., 1.));
+	_positionBaseMs = ms;
+	_positionAt = crl::now();
+	updateLyricsPosition();
+	pushPlaybackToWindow();
 }
 
 QString MusicIsland::floatingLineText() const {
 	if (!hasLyrics()) {
 		return QString();
 	}
-	if (_lyrics.synced) {
-		if (_lyricsActive >= 0 && _lyricsActive < int(_lyrics.lines.size())) {
-			return _lyrics.lines[_lyricsActive].text;
-		}
-		// Before the first line: show it dimmed as a teaser.
-		if (!_lyrics.lines.empty() && _lyricsPositionMs < _lyrics.lines.front().ms) {
-			return _lyrics.lines.front().text;
-		}
-		return QString();
-	}
 	if (_lyricsActive >= 0 && _lyricsActive < int(_lyrics.lines.size())) {
 		return _lyrics.lines[_lyricsActive].text;
+	}
+	if (_lyrics.synced
+		&& !_lyrics.lines.empty()
+		&& _lyricsPositionMs < _lyrics.lines.front().ms) {
+		return _lyrics.lines.front().text;
 	}
 	return QString();
 }
 
 void MusicIsland::openLyricsWindow() {
+	ensureLyricsWindow();
 	if (!_lyricsWindow) {
-		_lyricsWindow = new LyricsWindow(window());
-		_lyricsWindow->setWindowFlags(
-			_lyricsWindow->windowFlags() | Qt::Window);
-		_lyricsWindow->resize(400, 520);
+		return;
 	}
-	_lyricsWindow->setTrack(_performerRaw, _titleRaw);
-	_lyricsWindow->setLyrics(_lyrics);
-	_lyricsWindow->setPosition(
-		_lyricsPositionMs,
-		_lyricsActive,
-		_lyricsProgress);
-	_lyricsWindow->show();
-	_lyricsWindow->raise();
-	_lyricsWindow->activateWindow();
+	pushLyricsToWindow();
+	_lyricsWindow->toggle(true);
+}
+
+void MusicIsland::ensureLyricsWindow() {
+	if (!_lyricsWindow) {
+		const auto body = _controller->widget()->bodyWidget();
+		if (!body) {
+			return;
+		}
+		_lyricsWindow = Ui::CreateChild<LyricsWindow>(body);
+		const auto weak = base::make_weak(this);
+		_lyricsWindow->setSeekCallback([=](std::int64_t ms) {
+			if (const auto strong = weak.get()) {
+				strong->seekToMs(ms);
+			}
+		});
+		_lyricsWindow->setSaveCallbacks([=] {
+			const auto strong = weak.get();
+			return strong ? strong->profileMusicState() : -1;
+		}, [=] {
+			if (const auto strong = weak.get()) {
+				strong->toggleProfileMusic();
+			}
+		});
+	}
 }
 
 void MusicIsland::paintFloatingLine(QPainter &p, const Layout &layout) const {
-	// Floating collapsed line is painted inside paintTexts() by replacing
-	// the performer row — kept as a no-op for layout symmetry.
 	Q_UNUSED(p);
 	Q_UNUSED(layout);
 }
 
 namespace {
 
-float64 LyricsHash01(int seed, int salt) {
-	auto h = uint32(seed * 2654435761u + salt * 40503u + 0x9e3779b9u);
-	h ^= h >> 15;
-	h *= 0x85ebca6bu;
-	h ^= h >> 13;
-	return (h % 1000) / 1000.;
-}
-
 void PaintReadableText(
 		QPainter &p,
 		const QRectF &rect,
 		const QString &text,
 		const QFont &font,
-		const QBrush &color,
-		Qt::Alignment align = Qt::AlignCenter) {
-	p.save();
+		const QColor &color) {
 	p.setFont(font);
-	// Soft shadow first for readability on any cover.
-	p.setPen(QColor(0, 0, 0, int(color.color().alpha() * 0.6)));
-	for (const auto &off : { QPointF(0, 1), QPointF(1, 0) }) {
-		p.drawText(rect.translated(off), align | Qt::TextWordWrap, text);
-	}
-	p.setPen(QPen(color, 1.));
-	p.drawText(rect, align | Qt::TextWordWrap, text);
-	p.restore();
+	const auto elided = QFontMetrics(font).elidedText(
+		text,
+		Qt::ElideRight,
+		int(rect.width()));
+	p.setPen(QColor(0, 0, 0, int(color.alpha() * 0.6)));
+	p.drawText(rect.translated(0., 1.), Qt::AlignCenter, elided);
+	p.setPen(color);
+	p.drawText(rect, Qt::AlignCenter, elided);
+}
+
+[[nodiscard]] QColor IslandWordColor(bool keyword, float64 lit) {
+	auto result = keyword ? QColor(255, 46, 66) : QColor(255, 255, 255);
+	const auto dim = keyword ? 0.45 : 0.38;
+	result.setAlphaF(std::clamp(dim + (1. - dim) * lit, 0., 1.));
+	return result;
 }
 
 } // namespace
@@ -2144,229 +2692,138 @@ void MusicIsland::paintLyrics(
 		QPainter &p,
 		const Layout &layout,
 		float64 opacity) const {
-	const auto base = p.opacity();
-	p.setOpacity(base * opacity);
 	const auto box = layout.lyricsBox;
 	if (box.isEmpty() || !hasLyrics()) {
-		p.setOpacity(base);
 		return;
 	}
+	const auto base = p.opacity();
+	p.setOpacity(base * opacity);
 	const auto &s = AyuSettings::getInstance();
-	const auto mode = s.musicLyricsAnimation();
-	const auto scatter = s.musicLyricsArtScatter();
 	const auto fontScale = s.musicLyricsFontScale() / 100.;
+	const auto keywordOn = s.musicLyricsKeyword();
+	const auto position = playbackPositionMs();
+	const auto beat = lyricsPulse(position);
 
-	// Readable dark pill regardless of the island theme.
 	const auto radius = float64(st::musicIslandLyricsRadius);
-	auto bg = QColor(8, 8, 12, s.musicLyricsBlur() ? 168 : 132);
+	auto path = QPainterPath();
+	path.addRoundedRect(box, radius, radius);
+	p.setPen(Qt::NoPen);
+	p.setBrush(QColor(8, 8, 12, 150));
+	p.drawPath(path);
+	if (beat > 0.01) {
+		auto glow = QRadialGradient(
+			QPointF(box.center().x(), box.bottom() + box.height() * 0.3),
+			box.width() * 0.7);
+		glow.setColorAt(0., QColor(205, 22, 40, int(150 * beat)));
+		glow.setColorAt(1., QColor(205, 22, 40, 0));
+		p.save();
+		p.setClipPath(path);
+		p.fillRect(box, glow);
+		p.restore();
+	}
+	p.setBrush(Qt::NoBrush);
 	p.setPen(QPen(QColor(255, 255, 255, 28), float64(st::lineWidth)));
-	p.setBrush(bg);
-	p.drawRoundedRect(box, radius, radius);
+	p.drawPath(path);
 
-	const auto now = crl::now();
-	// Eased fade-in for the newly active line: a plain linear ramp reads as
-	// a blink, cubic-out melts the line in.
 	const auto fade = anim::easeOutCubic(1., std::clamp(
-		float64(now - _lyricsLineChangedAt) / 340.,
+		float64(crl::now() - _lyricsLineChangedAt) / 340.,
 		0.,
 		1.));
-	// The line slides in from the direction the lyrics are moving in, so
-	// backward seeks slide up instead of down.
-	const auto slide = (1. - fade) * 10. * _lyricsDirection;
+	const auto slide = (1. - fade) * 8. * _lyricsDirection;
 	const auto n = int(_lyrics.lines.size());
 	const auto active = _lyricsActive;
-
-	auto lineText = [&](int i) -> QString {
+	const auto lineText = [&](int i) {
 		return (i >= 0 && i < n) ? _lyrics.lines[i].text : QString();
 	};
 
-	// Three-row karaoke: prev / active / next.
-	const auto cx = box.center().x();
-	auto sub = QFont();
+	auto sub = st::normalFont->f;
 	sub.setPixelSize(int(12 * fontScale));
-	auto act = QFont();
-	act.setPixelSize(int(15 * fontScale));
-	act.setBold(true);
-
-	const auto prevRect = QRectF(
-		box.left() + 12, box.top() + 6, box.width() - 24, 18);
-	const auto nextRect = QRectF(
-		box.left() + 12, box.bottom() - 24, box.width() - 24, 18);
-	const auto activeRect = QRectF(
-		box.left() + 10,
-		box.top() + 24 + slide,
-		box.width() - 20,
-		box.height() - 48);
-
+	const auto prevRect = QRectF(box.left() + 12, box.top() + 6, box.width() - 24, 18);
+	const auto nextRect = QRectF(box.left() + 12, box.bottom() - 24, box.width() - 24, 18);
 	p.save();
 	p.setOpacity(p.opacity() * (0.55 + 0.45 * fade));
-	if (active > 0) {
-		PaintReadableText(
-			p, prevRect, lineText(active - 1), sub,
-			QColor(200, 200, 208, 170));
-	} else if (active == -1 && n > 0) {
-		PaintReadableText(p, prevRect, lineText(0), sub, QColor(200, 200, 208, 150));
-	}
-	if (active >= 0 && active + 1 < n) {
-		PaintReadableText(
-			p, nextRect, lineText(active + 1), sub,
-			QColor(200, 200, 208, 170));
-	} else if (active == -1 && n > 1) {
-		PaintReadableText(p, nextRect, lineText(1), sub, QColor(200, 200, 208, 150));
-	}
+	PaintReadableText(p, prevRect, lineText(active - 1), sub, QColor(200, 200, 208, 150));
+	PaintReadableText(
+		p,
+		nextRect,
+		lineText((active >= 0) ? (active + 1) : 1),
+		sub,
+		QColor(200, 200, 208, 170));
 	p.restore();
 
-	const auto activeText = (active >= 0) ? lineText(active) : lineText(0);
-	if (activeText.isEmpty()) {
+	const auto index = (active >= 0) ? active : 0;
+	if (index >= n) {
 		p.setOpacity(base);
 		return;
 	}
-
-	if (!scatter) {
-		// Clean centered modes without per-word rotation.
-		if (mode == 0 && _lyricsProgress >= 0. && active >= 0) {
-			// Karaoke fill with a soft gradient edge instead of a hard clip:
-			// the fill "melts" over the line instead of a razor step.
-			PaintReadableText(p, activeRect, activeText, act, QColor(190, 190, 198, int(255 * fade)));
-			const auto fm = QFontMetrics(act);
-			const auto w = fm.horizontalAdvance(
-				fm.elidedText(activeText, Qt::ElideRight, int(activeRect.width())));
-			const auto left = activeRect.left() + (activeRect.width() - w) / 2.;
-			const auto filled = w * std::clamp(_lyricsProgress, 0., 1.);
-			const auto feather = std::min(24., w / 4.);
-			auto fill = QLinearGradient(
-				QPointF(left, 0.),
-				QPointF(left + filled, 0.));
-			fill.setColorAt(0., QColor(255, 255, 255, int(255 * fade)));
-			if (filled > feather) {
-				fill.setColorAt((filled - feather) / filled, QColor(255, 255, 255, int(255 * fade)));
-			}
-			fill.setColorAt(1., QColor(255, 255, 255, 0));
-			p.save();
-			p.setClipRect(QRectF(left, activeRect.top(), filled + feather, activeRect.height()), Qt::IntersectClip);
-			PaintReadableText(p, activeRect, activeText, act, fill);
-			p.restore();
-		} else if (mode == 1) {
-			// Soft bloom that breathes with the fade rather than static
-			// offset copies: the glow swells in as the line appears.
-			const auto glow = 0.5 + 0.5 * std::sin(now / 900. + 1.2);
-			const auto glowAlpha = int((18. + 14. * glow) * fade);
-			for (auto i = 0; i < 3; ++i) {
-				PaintReadableText(
-					p,
-					activeRect.translated((i - 1) * 1.4, (i % 2) * 1.4),
-					activeText,
-					act,
-					QColor(120, 180, 255, glowAlpha));
-			}
-			PaintReadableText(p, activeRect, activeText, act, QColor(255, 255, 255, int(255 * fade)));
-		} else if (mode == 2) {
-			// Beat pulse: eased scale driven by the line fade, so the line
-			// springs in on change and keeps a gentle breathing.
-			const auto t = now / 1000.;
-			const auto intro = 0.02 * (1. - fade);
-			const auto sc = 1.
-				+ intro
-				+ 0.022 * std::sin(t * 3.4)
-				+ 0.008 * std::sin(t * 8.1);
-			p.save();
-			p.translate(cx, activeRect.center().y());
-			p.scale(sc, sc);
-			p.translate(-cx, -activeRect.center().y());
-			PaintReadableText(p, activeRect, activeText, act, QColor(255, 236, 175, int(255 * fade)));
-			p.restore();
+	const auto &line = _lyrics.lines[index];
+	auto words = line.words;
+	if (words.empty()) {
+		const auto parts = line.text.split(QChar(u' '), Qt::SkipEmptyParts);
+		for (auto i = 0; i != parts.size(); ++i) {
+			auto word = Ayu::Ui::Lyrics::Word();
+			word.text = parts[i] + ((i + 1 < parts.size()) ? u" "_q : QString());
+			words.push_back(std::move(word));
+		}
+	}
+	auto font = st::normalFont->f;
+	font.setPixelSize(int(15 * fontScale));
+	font.setWeight(QFont::Bold);
+	const auto available = box.width() - 24.;
+	auto total = 0.;
+	for (const auto &word : words) {
+		total += QFontMetricsF(font).horizontalAdvance(word.text);
+	}
+	if (total > available && total > 0.) {
+		font.setPixelSize(std::max(11, int(font.pixelSize() * available / total)));
+		total = 0.;
+		for (const auto &word : words) {
+			total += QFontMetricsF(font).horizontalAdvance(word.text);
+		}
+	}
+	const auto metrics = QFontMetricsF(font);
+	const auto lit = (active >= 0) ? 1. : 0.;
+	auto x = box.left() + std::max(12., (box.width() - total) / 2.);
+	const auto baselineY = box.center().y() + metrics.ascent() / 2. - 1. + slide;
+	p.save();
+	p.setClipRect(box.adjusted(8, 0, -8, 0), Qt::IntersectClip);
+	p.setOpacity(p.opacity() * fade);
+	p.setFont(font);
+	for (const auto &word : words) {
+		const auto text = word.text.trimmed();
+		const auto width = metrics.horizontalAdvance(text);
+		const auto keyword = word.keyword && keywordOn;
+		const auto progress = (_lyrics.synced && active >= 0)
+			? Ayu::Ui::Lyrics::WordProgress(word, position)
+			: lit;
+		const auto baseline = QPointF(x, baselineY - 1.5 * progress * lit);
+		if (keyword && progress > 0.) {
+			const auto shift = 1. + 1.5 * beat;
+			p.setPen(QColor(0, 230, 255, int(90 * (0.4 + beat))));
+			p.drawText(baseline + QPointF(-shift, 0.), text);
+			p.setPen(QColor(255, 0, 70, int(110 * (0.4 + beat))));
+			p.drawText(baseline + QPointF(shift, 0.), text);
+		}
+		if (progress > 0. && progress < 1.) {
+			auto gradient = QLinearGradient(QPointF(x, 0.), QPointF(x + width, 0.));
+			gradient.setColorAt(0., IslandWordColor(keyword, 1.));
+			gradient.setColorAt(std::max(0., progress - 0.2), IslandWordColor(keyword, 1.));
+			gradient.setColorAt(std::min(1., progress + 0.2), IslandWordColor(keyword, 0.));
+			gradient.setColorAt(1., IslandWordColor(keyword, 0.));
+			p.setPen(QPen(QBrush(gradient), 1.));
 		} else {
-			PaintReadableText(p, activeRect, activeText, act, QColor(255, 255, 255, int(255 * fade)));
+			p.setPen(IslandWordColor(keyword, progress * lit));
 		}
-		p.setOpacity(base);
-		return;
+		p.drawText(baseline, text);
+		x += metrics.horizontalAdvance(word.text);
 	}
-
-	// Art-scatter: words slightly separated, each with own angle/offset.
-	const auto words = activeText.split(u' ', Qt::SkipEmptyParts);
-	if (words.isEmpty()) {
-		p.setOpacity(base);
-		return;
-	}
-	const auto fm = QFontMetrics(act);
-	const auto spaceW = fm.horizontalAdvance(QChar(u' ')) + 4;
-	auto totalW = 0.;
-	auto widths = std::vector<int>();
-	widths.reserve(words.size());
-	for (const auto &w : words) {
-		const auto ww = fm.horizontalAdvance(w);
-		widths.push_back(ww);
-		totalW += ww;
-	}
-	totalW += spaceW * std::max(0, int(words.size()) - 1);
-	auto x = cx - totalW / 2.;
-	const auto cy = activeRect.center().y();
-	const auto seedBase = (active >= 0 ? active : 0) * 131 + 7;
-
-	auto drawScatter = [&](const QBrush &color, const QRectF *clip) {
-		p.save();
-		if (clip) p.setClipRect(*clip, Qt::IntersectClip);
-		p.setFont(act);
-		auto xx = x;
-		for (auto i = 0; i < int(words.size()); ++i) {
-			const auto a = (LyricsHash01(seedBase, i * 2 + 1) - 0.5) * 10.;
-			const auto dy = (LyricsHash01(seedBase, i * 2 + 2) - 0.5) * 6.;
-			p.save();
-			p.translate(xx + widths[i] / 2., cy + dy);
-			if (a != 0.) p.rotate(a);
-			p.setPen(QColor(0, 0, 0, int(color.color().alpha() * 0.6)));
-			p.drawText(QRectF(-widths[i] / 2. + 1, -12, widths[i], 26), Qt::AlignCenter, words[i]);
-			p.setPen(QPen(color, 1.));
-			p.drawText(QRectF(-widths[i] / 2., -12, widths[i], 26), Qt::AlignCenter, words[i]);
-			p.restore();
-			xx += widths[i] + spaceW;
-		}
-		p.restore();
-	};
-
-	if (mode == 0 && _lyricsProgress >= 0. && active >= 0) {
-		drawScatter(QColor(185, 185, 193, int(255 * fade)), nullptr);
-		// Soft gradient edge on the fill, same as the clean mode.
-		const auto filled = totalW * std::clamp(_lyricsProgress, 0., 1.);
-		const auto feather = std::min(24., totalW / 4.);
-		auto fill = QLinearGradient(QPointF(x, 0.), QPointF(x + filled, 0.));
-		fill.setColorAt(0., QColor(255, 255, 255, int(255 * fade)));
-		if (filled > feather) {
-			fill.setColorAt((filled - feather) / filled, QColor(255, 255, 255, int(255 * fade)));
-		}
-		fill.setColorAt(1., QColor(255, 255, 255, 0));
-		auto clip = QRectF(x, activeRect.top(), filled + feather, activeRect.height());
-		drawScatter(fill, &clip);
-	} else if (mode == 1) {
-		const auto glow = 0.5 + 0.5 * std::sin(now / 900. + 1.2);
-		const auto glowAlpha = int((16. + 12. * glow) * fade);
-		for (auto k = 0; k < 3; ++k) {
-			p.save();
-			p.translate((k - 1) * 1.4, (k % 2) * 1.4);
-			drawScatter(QColor(120, 180, 255, glowAlpha), nullptr);
-			p.restore();
-		}
-		drawScatter(QColor(255, 255, 255, int(255 * fade)), nullptr);
-	} else if (mode == 2) {
-		const auto t = now / 1000.;
-		const auto sc = 1.
-			+ 0.02 * (1. - fade)
-			+ 0.022 * std::sin(t * 3.4)
-			+ 0.008 * std::sin(t * 8.1);
-		p.save();
-		p.translate(cx, cy);
-		p.scale(sc, sc);
-		p.translate(-cx, -cy);
-		drawScatter(QColor(255, 236, 175, int(255 * fade)), nullptr);
-		p.restore();
-	} else {
-		drawScatter(QColor(255, 255, 255, int(255 * fade)), nullptr);
-	}
+	p.restore();
 	p.setOpacity(base);
 }
 
 void MusicIsland::pollHover() {
-	if (!_shown || _seeking || _volumeDragging || _drag) {
+	if (!_shown || _seeking || _volumeDragging || _drag || _menu
+		|| (_lyricsWindow && _lyricsWindow->shown())) {
 		return;
 	}
 	// A periodic pointer check with hysteresis. Native enter events can be

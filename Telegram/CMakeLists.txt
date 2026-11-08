@@ -168,8 +168,20 @@ set(ayugram_files
         ayu/ui/utils/palette.h
         ayu/ui/utils/itunes_search.cpp
         ayu/ui/utils/itunes_search.h
+        ayu/ui/utils/lyrics_align.cpp
+        ayu/ui/utils/lyrics_align.h
         ayu/ui/utils/lyrics_engine.cpp
         ayu/ui/utils/lyrics_engine.h
+        ayu/ui/utils/lyrics_translate.cpp
+        ayu/ui/utils/lyrics_translate.h
+        ayu/ui/utils/track_analysis.cpp
+        ayu/ui/utils/track_analysis.h
+        ayu/ui/utils/weather_engine.cpp
+        ayu/ui/utils/net_fetch.cpp
+        ayu/ui/utils/net_fetch.h
+        ayu/ui/utils/thread_cpu.cpp
+        ayu/ui/utils/thread_cpu.h
+        ayu/ui/utils/weather_engine.h
         ayu/ui/settings/account_profiles_box.cpp
         ayu/ui/settings/account_profiles_box.h
         ayu/ui/settings/custom_archives_box.cpp
@@ -240,6 +252,8 @@ set(ayugram_files
         ayu/ui/components/message_preview.h
         ayu/ui/components/music_island.cpp
         ayu/ui/components/music_island.h
+        ayu/ui/components/lyrics_pictograms.cpp
+        ayu/ui/components/lyrics_pictograms.h
         ayu/ui/components/lyrics_window.cpp
         ayu/ui/components/lyrics_window.h
         ayu/ui/components/saved_music.cpp
@@ -310,6 +324,10 @@ set(ayugram_files
         ayu/features/whitegram_e2ee/whitegram_view_once_box.h
         ayu/features/whitegram_e2ee/whitegram_one_time_view.cpp
         ayu/features/whitegram_e2ee/whitegram_one_time_view.h
+        ayu/features/whitegram_plugins/whitegram_plugins.cpp
+        ayu/features/whitegram_plugins/whitegram_plugins.h
+        ayu/features/whitegram_plugins/whitegram_plugins_ui.cpp
+        ayu/features/whitegram_plugins/whitegram_plugins_ui.h
         ayu/data/messages_storage.cpp
         ayu/data/messages_storage.h
         ayu/data/entities.h
@@ -2931,6 +2949,68 @@ if (CMAKE_GENERATOR STREQUAL Xcode)
     set(bundle_identifier_plist "$(PRODUCT_BUNDLE_IDENTIFIER)")
 else()
     set(bundle_identifier_plist ${bundle_identifier})
+endif()
+
+# Whitegram: embedded Python plugin engine (see ayu/features/whitegram_plugins).
+option(WG_PYTHON_PLUGINS "Build the Whitegram Python plugin engine" ON)
+set(WG_PYTHON_FOUND FALSE)
+if (WG_PYTHON_PLUGINS)
+    find_package(Python3 COMPONENTS Interpreter Development QUIET)
+    if (Python3_Development_FOUND)
+        set(WG_PYTHON_FOUND TRUE)
+    endif()
+endif()
+if (WG_PYTHON_FOUND)
+    message(STATUS "Whitegram: Python plugin engine with Python ${Python3_VERSION}")
+    set(WG_PY_ABI "${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR}")
+    target_compile_definitions(Telegram PRIVATE
+        WG_WITH_PYTHON
+        WG_PYTHON_DLL_NAME="python${WG_PY_ABI}.dll"
+        WG_PYTHON_VERSION_STR="${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}"
+    )
+    target_include_directories(Telegram PRIVATE ${Python3_INCLUDE_DIRS})
+    target_link_libraries(Telegram PRIVATE Python3::Python)
+    if (MSVC)
+        target_link_options(Telegram PRIVATE
+            /DELAYLOAD:python${WG_PY_ABI}.dll
+        )
+    endif()
+    set(WG_PY_SDK ${CMAKE_CURRENT_SOURCE_DIR}/SourceFiles/ayu/features/whitegram_plugins/python)
+    set(WG_PY_DEST $<TARGET_FILE_DIR:Telegram>/python)
+    if (WIN32)
+        # Python3_EXECUTABLE may be a venv shim; ask the interpreter for
+        # the real base directory (with the runtime DLL) and the stdlib.
+        execute_process(COMMAND ${Python3_EXECUTABLE} -c
+            "import sysconfig;print(sysconfig.get_config_var('installed_base'));print(sysconfig.get_paths()['stdlib'])"
+            OUTPUT_VARIABLE WG_PY_QUERY
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        string(REGEX REPLACE "\r?\n" ";" WG_PY_QUERY_LIST "${WG_PY_QUERY}")
+        list(GET WG_PY_QUERY_LIST 0 WG_PY_HOME)
+        list(GET WG_PY_QUERY_LIST 1 WG_PY_STDLIB)
+        if (NOT EXISTS "${WG_PY_HOME}/python${WG_PY_ABI}.dll")
+            # Fall back to the executable directory.
+            get_filename_component(WG_PY_HOME ${Python3_EXECUTABLE} DIRECTORY)
+        endif()
+        message(STATUS "Whitegram: bundling Python runtime from ${WG_PY_HOME}")
+        add_custom_command(TARGET Telegram POST_BUILD
+            COMMAND ${CMAKE_COMMAND}
+                -DWG_PY_HOME=${WG_PY_HOME}
+                -DWG_PY_ABI=${WG_PY_ABI}
+                -DWG_PY_STDLIB=${WG_PY_STDLIB}
+                -DWG_PY_DEST=${WG_PY_DEST}
+                -DWG_PY_SDK=${WG_PY_SDK}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/whitegram_copy_python.cmake
+            VERBATIM
+        )
+    else()
+        add_custom_command(TARGET Telegram POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${WG_PY_SDK} ${WG_PY_DEST}/whitegram
+            VERBATIM
+        )
+    endif()
+else()
+    message(STATUS "Whitegram: Python development not found, plugin engine disabled.")
 endif()
 
 set_target_properties(Telegram PROPERTIES

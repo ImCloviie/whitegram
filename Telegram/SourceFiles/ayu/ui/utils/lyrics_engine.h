@@ -5,49 +5,68 @@
 
 #include <QtCore/QString>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace Ayu::Ui::Lyrics {
 
+struct Word {
+	std::int64_t startMs = 0;
+	std::int64_t endMs = 0;
+	QString text; // includes its trailing whitespace
+	bool keyword = false;
+	int accent = 0;
+};
+
 struct Line {
-	std::int64_t ms = 0; // start time in milliseconds
+	std::int64_t ms = 0; // start time in milliseconds, -1 when untimed
+	std::int64_t endMs = 0;
 	QString text;
+	std::vector<Word> words;
+	bool repeated = false;
 };
 
 struct Data {
-	bool hasData = false; // anything found (synced or plain)
-	bool synced = false; // has timestamps
+	bool hasData = false;
+	bool synced = false;
+	bool wordSynced = false;
 	QString artist;
 	QString title;
 	std::vector<Line> lines;
-	QString plain; // fallback when no timestamps
-	QString source; // e.g. "lrclib"
+	QString plain;
+	QString source;
+	QString keyword;
+	bool autoSynced = false;
+	int revision = 0;
 };
 
-// Parse [mm:ss.xx] LRC content into lines. Supports multiple tags per line.
 [[nodiscard]] std::vector<Line> ParseLrc(const QString &lrc);
 
-// Synchronous network fetch (blocking, call from worker thread).
-// Uses https://lrclib.net (free, no key, synced + plain lyrics).
 [[nodiscard]] Data FetchSync(
 	const QString &artist,
 	const QString &title,
 	int durationSec = 0,
 	int timeoutMs = 6000);
 
-// Cached variant: memory cache first, then network.
 [[nodiscard]] Data FetchCachedSync(
 	const QString &artist,
 	const QString &title,
 	int durationSec = 0);
 
-// Active line index for positionMs. Returns -1 when nothing to show yet.
 [[nodiscard]] int ActiveLineIndex(const Data &data, std::int64_t positionMs);
 
-// Progress 0..1 inside the active line (to next line start). -1 if unknown.
 [[nodiscard]] double LineProgress(
 	const Data &data,
 	int index,
 	std::int64_t positionMs);
+
+[[nodiscard]] double WordProgress(const Word &word, std::int64_t positionMs);
+
+[[nodiscard]] std::vector<std::pair<std::int64_t, std::int64_t>> RepeatedBlocks(
+	const Data &data);
+
+[[nodiscard]] QString NormalizedWord(const QString &word);
+
+[[nodiscard]] int Syllables(const QString &word);
 
 } // namespace Ayu::Ui::Lyrics

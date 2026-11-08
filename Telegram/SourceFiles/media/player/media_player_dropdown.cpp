@@ -173,6 +173,8 @@ SpeedSliderItem::SpeedSliderItem(
 	});
 }
 
+} // namespace
+
 void FillSpeedMenu(
 		not_null<Ui::Menu::Menu*> menu,
 		const style::MediaSpeedMenu &st,
@@ -282,6 +284,8 @@ void FillSpeedMenu(
 		menu->addAction(std::move(action));
 	}
 }
+
+namespace {
 
 void SpeedSliderItem::setExternalValue(float64 speed) {
 	if (!_slider->isChanging()) {

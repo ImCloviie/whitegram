@@ -31,7 +31,7 @@ if (MSVC)
         # /Qspectre
         /utf-8
         /W4
-        /MP4    # Limit parallel compilations to prevent PCH heap exhaustion.
+        /MP2    # Limit parallel compilations to prevent PCH heap exhaustion.
         /Zm500  # Increase MSVC PCH internal heap limit to prevent C1076/C3859 errors.
         /EHsc   # Catch C++ exceptions only, extern C functions never throw a C++ exception.
         /w15038 # wrong initialization order
@@ -66,7 +66,7 @@ if (MSVC)
     INTERFACE
         $<$<CONFIG:Debug>:/NODEFAULTLIB:LIBCMT>
         $<$<AND:$<CONFIG:Debug>,$<OR:$<BOOL:${build_win64}>,$<BOOL:${build_winarm}>>>:/DEBUG:FASTLINK>
-        $<$<NOT:$<AND:$<CONFIG:Debug>,$<OR:$<BOOL:${build_win64}>,$<BOOL:${build_winarm}>>>>:$<IF:$<BOOL:$<GENEX_EVAL:$<TARGET_PROPERTY:MSVC_DEBUG_INFORMATION_FORMAT>>>,/DEBUG,/DEBUG:NONE>>
+        $<$<NOT:$<CONFIG:Debug>>:/DEBUG:NONE>
         $<$<NOT:$<CONFIG:Debug>>:/OPT:REF>
         /INCREMENTAL:NO
         /DEPENDENTLOADFLAG:0x800

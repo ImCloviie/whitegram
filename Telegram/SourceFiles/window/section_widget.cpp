@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/section_widget.h"
 
+#include "ayu/features/glass_effect/glass_effect.h"
+
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "ui/ui_utility.h"
@@ -382,6 +384,7 @@ void SectionWidget::PaintBackground(
 		QRect clip,
 		bool paused) {
 	auto p = QPainter(widget);
+	p.setOpacity(AyuFeatures::GlassEffect::BackgroundOpacity());
 	if (fromy) {
 		p.translate(0, fromy);
 		clip = clip.translated(0, -fromy);

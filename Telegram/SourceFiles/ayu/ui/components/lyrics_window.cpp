@@ -58,8 +58,8 @@ using namespace Ayu::Ui;
 
 constexpr auto kShowDuration = crl::time(650);
 constexpr auto kHideDuration = crl::time(380);
-constexpr auto kScrollLeadMs = 280;
-constexpr auto kWordLeadMs = 40;
+constexpr auto kScrollLeadMs = 0;
+constexpr auto kWordLeadMs = 0;
 constexpr auto kSpring = 150.;
 constexpr auto kDamping = 24.5;
 constexpr auto kEmphasisTime = 0.12;
@@ -325,6 +325,13 @@ enum FxKind {
 
 const std::vector<std::pair<int, std::vector<const char*>>> &FxStems() {
 	static const auto result = std::vector<std::pair<int, std::vector<const char*>>>{
+		{ kFxShine, { "сия", "свет=", "света=", "солнц", "рассвет", "искр", "звезд", "shine", "shining", "sunlight", "sunrise", "starlight" } },
+		{ kFxImpact, { "огонь", "огня", "плам", "горим", "горю", "сгор", "гром", "молни", "fire=", "flame", "burning", "thunder", "lightning" } },
+		{ kFxTears, { "груст", "печал", "тоск", "рыда", "одинок", "разлук", "broken", "lonely", "sorrow", "sadness", "heartbreak" } },
+		{ kFxDissolve, { "исчез", "раствор", "призрак", "тень=", "тени=", "пустот", "ghost", "shadow", "vanish", "fade=" } },
+		{ kFxRun, { "летим", "лети=", "взлет", "крыл", "скорост", "танц", "dance", "dancing", "flying", "fly=", "wings" } },
+		{ kFxCircle, { "орбит", "планет", "вселен", "космос", "orbit", "planet", "universe", "galaxy" } },
+		{ kFxGlitch, { "слом", "разбит", "трещ", "оскол", "помех", "shatter", "fracture", "static=" } },
 		{ kFxDissolve, { "умру", "умрем", "умрет", "умер", "умир", "смерт", "пепел", "прах", "die=", "died", "dead", "death", "dying" } },
 		{ kFxSink, { "могил", "grave", "утон", "drown", "похорон", "гроб", "coffin", "bury", "buried" } },
 		{ kFxHang, { "повес", "вешал", "вешай", "висел", "виселиц", "петля", "петлю", "петле", "hang=", "hanging", "hanged", "noose" } },
@@ -567,6 +574,7 @@ void LyricsWindow::setTrack(const QString &artist, const QString &title) {
 	_title = title;
 	if (changed) {
 		_lyricsOffset = std::int64_t(Offsets().value(OffsetKey(artist, title)).toDouble());
+		_moodEnergy = _moodRain = _moodDark = 0.;
 	}
 	if (changed && _shown && !title.isEmpty()) {
 		showToast(
@@ -647,12 +655,19 @@ void LyricsWindow::setSeekCallback(Fn<void(std::int64_t)> callback) {
 	_seek = std::move(callback);
 }
 
+void LyricsWindow::setPositionCallback(Fn<std::int64_t()> callback) {
+	_positionCallback = std::move(callback);
+}
+
 void LyricsWindow::setSaveCallbacks(Fn<int()> state, Fn<void()> toggle) {
 	_profileState = std::move(state);
 	_toggleProfile = std::move(toggle);
 }
 
 std::int64_t LyricsWindow::position() const {
+	if (_positionCallback) {
+		return _positionCallback();
+	}
 	if (!_playing || !_baseAt) {
 		return _basePosition;
 	}
@@ -853,6 +868,13 @@ void LyricsWindow::relayout() {
 			auto number = 0;
 			const auto normalized = Lyrics::NormalizedWord(line.words[k].text);
 			line.fx[k] = wordFx(normalized, number);
+			// Negation changes the meaning: "not crying" must not trigger tears.
+			if (k > 0) {
+				const auto previous = Lyrics::NormalizedWord(line.words[k - 1].text);
+				if (previous == u"не"_q || previous == u"без"_q
+					|| previous == u"not"_q || previous == u"never"_q
+					|| previous == u"no"_q) line.fx[k] = kFxNone;
+			}
 			line.numbers[k] = number;
 			if (line.fx[k] == kFxDetect) {
 				line.numbers[k] = ++detected[normalized];
@@ -1233,7 +1255,8 @@ void LyricsWindow::tickHeart(double dt, std::int64_t position) {
 }
 
 void LyricsWindow::tickParticles(double dt, std::int64_t position) {
-	const auto boost = (1. + 1.6 * pulse(position)) * ((_theme == Theme::Rain) ? 9. : 1.);
+	const auto rain = (_theme == Theme::Rain) ? 1. : _moodRain;
+	const auto boost = (1. + 1.6 * pulse(position)) * (1. + 8. * rain);
 	const auto seconds = crl::now() / 1000.;
 	for (auto &particle : _particles) {
 		particle.y += particle.speed * dt * boost;
@@ -1257,6 +1280,20 @@ void LyricsWindow::tick(crl::time now) {
 		relayout();
 	}
 	const auto current = position();
+	const auto moodLine = activeIndex(current + _lyricsOffset);
+	const auto mood = (moodLine >= 0 && moodLine < int(_lineMoods.size())) ? _lineMoods[moodLine] : 0;
+	auto energy = 0.;
+	if (_analysis && _analysis->ok) {
+		// Two seconds of audio, then a slow envelope: no frame-to-frame flashing.
+		for (auto delta = -1000; delta <= 1000; delta += 100) energy += _analysis->energyAt(std::max<std::int64_t>(0, current + delta));
+		energy /= 21.;
+	}
+	const auto moodBlend = _playing ? (1. - std::exp(-dt / 1.8)) : 0.;
+	_moodEnergy += (energy - _moodEnergy) * moodBlend;
+	const auto rain = ((mood & 1) || _theme == Theme::Rain) ? 1. - 0.65 * energy : 0.;
+	const auto dark = (mood & 2) ? 1. : 0.;
+	_moodRain += (rain - _moodRain) * moodBlend;
+	_moodDark += (dark - _moodDark) * moodBlend;
 	_active = activeIndex(current + _lyricsOffset + kScrollLeadMs);
 	if (!_lines.empty()) {
 		const auto from = std::max(0, _active - 3);
@@ -1291,7 +1328,7 @@ void LyricsWindow::tick(crl::time now) {
 		&& _active < int(_lines.size())
 		&& AyuSettings::getInstance().musicLyricsKeyword()) {
 		for (const auto &word : _lines[_active].words) {
-			if (word.keyword && current >= word.startMs && current < word.endMs + 600) {
+			if (word.keyword && current + _lyricsOffset >= word.startMs && current + _lyricsOffset < word.endMs + 600) {
 				keyword = true;
 				break;
 			}
@@ -1379,7 +1416,7 @@ void LyricsWindow::tick(crl::time now) {
 		}
 	}
 	_wasChorus = chorus;
-	updateScene(now, current);
+	updateScene(now, current + _lyricsOffset);
 	if (_theme == Theme::Health) {
 		const auto taken = pillsTaken(current);
 		if (_lastPillsTaken >= 0 && taken == 3 && _lastPillsTaken < 3 && _playing) {
@@ -1517,6 +1554,32 @@ void LyricsWindow::paintContent(QPainter &p) {
 
 void LyricsWindow::paintBackground(QPainter &p, std::int64_t position) {
 	p.drawPixmap(0, 0, _backgroundCache);
+	p.save();
+	if (_moodEnergy > 0.35) {
+		auto light = QRadialGradient(QPointF(width() * 0.3, height()), double(std::max(width(), height())));
+		light.setColorAt(0., QColor(255, 120, 35, int(70 * (_moodEnergy - 0.35) / 0.65)));
+		light.setColorAt(1., QColor(120, 45, 220, 0));
+		p.fillRect(rect(), light);
+	}
+	if (_moodRain > 0.02) p.fillRect(rect(), QColor(15, 35, 65, int(55 * _moodRain)));
+	if (_moodDark > 0.02) {
+		p.fillRect(rect(), QColor(15, 5, 25, int(110 * _moodDark)));
+		if (!_lowQuality) {
+			p.setPen(QPen(QColor(150, 100, 180, int(32 * _moodDark)), 2. * _geometry.unit));
+			p.setBrush(Qt::NoBrush);
+			for (auto i = 0; i != 4; ++i) {
+				const auto x = width() * (i + 0.5) / 4.;
+				const auto half = width() * 0.095;
+				auto arch = QPainterPath(QPointF(x - half, height()));
+				arch.lineTo(x - half, height() * 0.5);
+				arch.quadTo(x - half, height() * 0.3, x, height() * 0.17);
+				arch.quadTo(x + half, height() * 0.3, x + half, height() * 0.5);
+				arch.lineTo(x + half, height());
+				p.drawPath(arch);
+			}
+		}
+	}
+	p.restore();
 	const auto strength = std::min(1., std::max(double(pulse(position)) * 0.8, _redBoost * 0.9)
 		+ (inChorus(position) ? 0.12 : 0.)
 		+ (alarm() ? 0.2 : 0.));
@@ -1543,7 +1606,7 @@ void LyricsWindow::paintParticles(QPainter &p, bool front) {
 		p.setBrush(QColor(255, 255, 255, int(255 * particle.alpha * twinkle * (front ? 0.7 : 1.))));
 		const auto r = particle.radius * u;
 		const auto center = QPointF(particle.x * width(), particle.y * height());
-		if (_theme == Theme::Rain && particle.radius < 4.) {
+		if ((_theme == Theme::Rain || _moodRain > 0.3) && particle.radius < 4.) {
 			p.setPen(QPen(QColor(200, 215, 255, int(255 * particle.alpha * 0.6)), std::max(1., r * 0.7)));
 			p.drawLine(center, center + QPointF(-3. * u, 16. * u * (0.6 + particle.speed * 20.)));
 			p.setPen(Qt::NoPen);
@@ -3508,9 +3571,14 @@ int LyricsWindow::pillsTaken(std::int64_t position) const {
 
 void LyricsWindow::buildScenes() {
 	_lineCategory.assign(_data.lines.size(), kNoCategory);
+	_lineMoods.assign(_data.lines.size(), 0);
 	auto counts = std::array<int, kCategoryCount>{};
 	for (auto i = 0; i != int(_data.lines.size()); ++i) {
 		auto &line = _data.lines[i];
+		const auto moodText = line.text.toLower();
+		static const auto sad = QRegularExpression(uR"(\b(груст\w*|печал\w*|сл[её]з\w*|плач\w*|одинок\w*|тоск\w*|дожд\w*|sorrow\w*|lonely|crying|tears|rain\w*|sad)\b)"_q, QRegularExpression::UseUnicodePropertiesOption);
+		static const auto gothic = QRegularExpression(uR"(\b(готик\w*|мрак\w*|тьм\w*|склеп\w*|собор\w*|ворон\w*|вампир\w*|призрак\w*|gothic|darkness|crypt\w*|cathedral\w*|raven\w*|vampire\w*|ghost\w*)\b)"_q, QRegularExpression::UseUnicodePropertiesOption);
+		_lineMoods[i] = (sad.match(moodText).hasMatch() ? 1 : 0) | (gothic.match(moodText).hasMatch() ? 2 : 0);
 		auto best = int(Categories().size());
 		for (auto &word : line.words) {
 			const auto category = WordCategory(Lyrics::NormalizedWord(word.text));
@@ -3565,16 +3633,25 @@ void LyricsWindow::buildScenes() {
 }
 
 void LyricsWindow::updateScene(crl::time now, std::int64_t position) {
-	const auto line = _data.synced ? Lyrics::ActiveLineIndex(_data, position + 150) : -1;
-	if (line != _sceneLine) {
-		_sceneLine = line;
-		auto category = int(kNoCategory);
-		for (auto i = line; i >= 0 && i > line - 3 && i < int(_lineCategory.size()); --i) {
-			if (_lineCategory[i]) {
-				category = _lineCategory[i];
-				break;
+	const auto line = _data.synced ? Lyrics::ActiveLineIndex(_data, position) : -1;
+	auto category = int(kNoCategory);
+	// React to words already reached by the lyric clock, not the whole line.
+	for (auto i = std::max(0, line - 2); i <= line && i < int(_data.lines.size()); ++i) {
+		const auto &words = _data.lines[i].words;
+		for (auto k = 0; k < int(words.size()); ++k) {
+			const auto &word = words[k];
+			if (position < word.startMs || position > word.endMs + 3000) continue;
+			if (k > 0) {
+				const auto previous = Lyrics::NormalizedWord(words[k - 1].text);
+				if (previous == u"не"_q || previous == u"без"_q || previous == u"not"_q
+					|| previous == u"never"_q || previous == u"no"_q) continue;
 			}
+			const auto candidate = WordCategory(Lyrics::NormalizedWord(word.text));
+			if (candidate) category = candidate;
 		}
+	}
+	if (line != _sceneLine || category != _sceneCategory) {
+		_sceneLine = line;
 		if (category != _sceneCategory) {
 			_sceneCategory = category;
 			_sceneStartMs = position;

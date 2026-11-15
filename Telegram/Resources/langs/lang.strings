@@ -9756,6 +9756,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "wg_SponsorPopup" = "**{item}** поддержал(а) разработку **Whitegram** и получил(а) уникальный значок.";
 "wg_UserPopup" = "**{item}** пользуется **Whitegram**.";
 "wg_DeveloperPopup" = "**{item}** является членом команды разработчиков **Whitegram**.";
+"wg_TeamPopup" = "**{item}** является жопой команды разработчиков **Whitegram**.";
 "wg_CustomPopup" = "У **{item}** особый значок **Whitegram**.";
 "ayu_OfficialResourcePopup" = "**{item}** is the official resource of **exteraGram** or **AyuGram**.";
 "ayu_MutualContactInfo" = "This contact is mutual.";

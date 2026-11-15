@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/main_window.h"
 
+#include "ayu/features/glass_effect/glass_effect.h"
+
 #include "api/api_updates.h"
 #include "storage/localstorage.h"
 #include "platform/platform_specific.h"
@@ -414,7 +416,8 @@ QImage WithSmallCounter(QImage image, CounterLayerArgs &&args) {
 }
 
 MainWindow::MainWindow(not_null<Controller*> controller)
-: _controller(controller)
+: Ui::RpWindow(AyuFeatures::GlassEffect::CreateTranslucent())
+, _controller(controller)
 , _positionUpdatedTimer([=] { savePosition(); })
 , _outdated(Ui::CreateOutdatedBar(body(), cWorkingDir()))
 , _screenReaderBar(Ui::CreateScreenReaderBar(body(), [=] {

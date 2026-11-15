@@ -32,6 +32,8 @@ public:
 		bool playing,
 		double speed);
 	void setSeekCallback(Fn<void(std::int64_t)> callback);
+	void setPositionCallback(Fn<std::int64_t()> callback);
+	[[nodiscard]] std::int64_t lyricsOffset() const { return _lyricsOffset; }
 	void setSaveCallbacks(Fn<int()> state, Fn<void()> toggle);
 
 	void toggle(bool shown);
@@ -362,6 +364,10 @@ private:
 	std::vector<std::pair<QRectF, QPixmap>> _glassCache;
 
 	std::int64_t _basePosition = 0;
+	Fn<std::int64_t()> _positionCallback;
+	double _moodEnergy = 0.;
+	double _moodRain = 0.;
+	double _moodDark = 0.;
 	crl::time _baseAt = 0;
 	std::int64_t _duration = 0;
 	bool _playing = false;
@@ -435,6 +441,7 @@ private:
 	crl::time _themeToastAt = 0;
 	int _lastPillsTaken = -1;
 	std::vector<int> _lineCategory;
+	std::vector<int> _lineMoods;
 	std::vector<int> _categoryCounts;
 	int _sceneCategory = 0;
 	int _sceneLine = -1;

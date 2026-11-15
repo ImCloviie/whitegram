@@ -14,6 +14,7 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/features/self_destruct/self_destruct.h"
 #include "ayu/features/self_destruct/self_destruct_box.h"
 #include "ayu/features/custom_archives/custom_archives.h"
@@ -41,6 +42,7 @@
 #include "ui/text/format_values.h"
 #include "styles/style_boxes.h"
 #include "ayu/ui/settings/ayu_builder.h"
+#include "ayu/ui/components/typing_animation_picker.h"
 #include "ui/toast/toast.h"
 #include "ui/painter.h"
 #include "ui/boxes/single_choice_box.h"
@@ -2315,10 +2317,106 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 			"Tap an icon to apply it to the app, the taskbar and the tray.")));
 	builder.addSkip();
 
+	auto ayu = AyuSectionBuilder(builder);
+	{
+		using namespace AyuFeatures::GlassEffect;
+		constexpr auto kStep = 5;
+
+		builder.addSubsectionTitle(trWhitegram(
+			QString::fromUtf8("Стекло и прозрачность"),
+			QString("Glass & transparency")));
+		ayu.addSettingToggle({
+			.id = u"whitegram/glassEffect"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Эффект стекла"),
+				QString("Glass effect")),
+			.getter = &AyuSettings::glassEffect,
+			.setter = &AyuSettings::setGlassEffect,
+			.icon = { &st::menuIconChangeColors },
+			.keywords = {
+				u"glass"_q,
+				u"blur"_q,
+				u"transparent"_q,
+				u"opacity"_q,
+				QString::fromUtf8("стекло"),
+				QString::fromUtf8("прозрачность"),
+				QString::fromUtf8("размытие"),
+			},
+		});
+		ayu.addSettingToggle({
+			.id = u"whitegram/glassBlur"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Размытие фона"),
+				QString("Background blur")),
+			.getter = &AyuSettings::glassBlur,
+			.setter = &AyuSettings::setGlassBlur,
+			.icon = { &st::menuIconPhoto },
+			.keywords = { u"blur"_q, QString::fromUtf8("размытие") },
+		});
+		ayu.addSlider({
+			.id = u"whitegram/glassBlurStrength"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Сила размытия"),
+				QString("Blur strength")),
+			.steps = 21,
+			.current = AyuSettings::getInstance().glassBlurStrength(),
+			.indexToValue = [](int index) { return index * 5; },
+			.onChanged = [](int value) {
+				AyuSettings::getInstance().setGlassBlurStrength(value);
+			},
+			.onFinalChanged = [](int value) {
+				AyuSettings::getInstance().setGlassBlurStrength(value);
+			},
+			.formatLabel = [](int value) {
+				return QString::number(value) + '%';
+			},
+		});
+		ayu.addSlider({
+			.id = u"whitegram/glassOpacity"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Непрозрачность фона"),
+				QString("Background opacity")),
+			.steps = (kMaxOpacity - kMinOpacity) / kStep + 1,
+			// setPseudoDiscrete takes the value, not the step index.
+			.current = AyuSettings::getInstance().glassOpacity(),
+			.indexToValue = [=](int index) {
+				return kMinOpacity + index * kStep;
+			},
+			.onChanged = [](int value) {
+				AyuSettings::getInstance().setGlassOpacity(value);
+			},
+			.onFinalChanged = [](int value) {
+				AyuSettings::getInstance().setGlassOpacity(value);
+			},
+			.formatLabel = [](int value) {
+				return QString::number(value) + '%';
+			},
+		});
+		builder.addSkip();
+		builder.addDividerText(trWhitegram(
+			QString::fromUtf8(
+				"Прозрачным становится только фон: текст, иконки и сообщения "
+				"остаются чёткими. Боковое меню и окна остаются почти "
+				"непрозрачными. Первое включение требует перезапуска."),
+			QString(
+				"Only the background turns translucent: text, icons and "
+				"messages stay crisp. The side menu and boxes stay almost "
+				"opaque. The first enable needs a restart.")));
+		builder.addSkip();
+	}
+
 	builder.addSubsectionTitle(trWhitegram(
 		QString::fromUtf8("Боковое меню"),
 		QString("Side menu")));
-	auto ayu = AyuSectionBuilder(builder);
+	ayu.addSettingToggle({
+		.id = u"whitegram/showGlassToggleInDrawer"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Эффект стекла"),
+			QString("Glass effect")),
+		.getter = &AyuSettings::showGlassToggleInDrawer,
+		.setter = &AyuSettings::setShowGlassToggleInDrawer,
+		.icon = { &st::menuIconChangeColors },
+	});
 	ayu.addSettingToggle({
 		.id = u"whitegram/showSendBotInDrawer"_q,
 		.title = trWhitegram(
@@ -2330,11 +2428,55 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 	});
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Добавляет кнопку CryptoBot (@send) в боковое меню "
-			"(t.me/send). Это не Telegram Wallet (@wallet)."),
+			"Добавляет в боковое меню переключатель эффекта стекла и "
+			"кнопку CryptoBot (@send) (t.me/send). Это не Telegram "
+			"Wallet (@wallet)."),
 		QString(
-			"Adds the CryptoBot (@send) button to the side menu "
-			"(t.me/send). This is not Telegram Wallet (@wallet).")));
+			"Adds the glass effect switch and the CryptoBot (@send) "
+			"button (t.me/send) to the side menu. This is not Telegram "
+			"Wallet (@wallet).")));
+	builder.addSkip();
+
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Ввод текста"),
+		QString("Text input")));
+	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		const auto name = [](const char *ru, const char *en) {
+			return trWhitegram(QString::fromUtf8(ru), QString(en));
+		};
+		auto names = std::vector<rpl::producer<QString>>();
+		names.push_back(name("Выключена", "Off"));
+		names.push_back(name("Проявление", "Fade"));
+		names.push_back(name("Всплытие", "Rise"));
+		names.push_back(name("Падение", "Drop"));
+		names.push_back(name("Пружина", "Pop"));
+		names.push_back(name("Свечение", "Glow"));
+		return {
+			.widget = object_ptr<TypingAnimationPicker>(
+				ctx.container,
+				TypingAnimationPicker::Args{
+					.names = std::move(names),
+					.sample = name("Привет", "Hello"),
+					.current = AyuSettings::getInstance().typingAnimation(),
+					.chosen = [](int index) {
+						AyuSettings::getInstance().setTypingAnimation(index);
+					},
+				}),
+			.margin = QMargins(
+				st::settingsButtonNoIcon.padding.left(),
+				style::ConvertScale(4),
+				st::settingsButtonNoIcon.padding.right(),
+				style::ConvertScale(4)),
+		};
+	});
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Плавно анимирует символы, которые вы набираете в поле "
+			"ввода. Видно только вам."),
+		QString(
+			"Smoothly animates the characters you type in input fields. "
+			"Only visible to you.")));
 	builder.addSkip();
 
 	builder.addSectionButton({

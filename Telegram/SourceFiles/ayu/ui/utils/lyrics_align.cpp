@@ -2,17 +2,23 @@
 #include "ayu/ui/utils/lyrics_align.h"
 
 #include <QtCore/QStringList>
+#include <QtCore/QCoreApplication>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
+#include <QtCore/QProcess>
+#include <QtCore/QTemporaryDir>
 
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <mutex>
 
 namespace Ayu::Ui::Lyrics {
 namespace {
 
 constexpr auto kMinWordMs = std::int64_t(70);
 constexpr auto kFastSyllableMs = 110.;
-constexpr auto kOffsetRangeMs = 3000.;
+
 
 struct Curves {
 	const std::vector<std::uint8_t> *voice = nullptr;
@@ -70,74 +76,13 @@ float Percentile(std::vector<float> values, double fraction) {
 	return values[index];
 }
 
-std::int64_t EstimateOffset(const Data &data, const Curves &c) {
-	auto anchors = std::vector<std::pair<std::int64_t, double>>();
-	for (const auto &line : data.lines) {
-		if (line.ms < 0) {
-			continue;
-		}
-		anchors.emplace_back(line.ms, 1.);
-		if (data.wordSynced) {
-			for (auto k = 1; k < int(line.words.size()); ++k) {
-				anchors.emplace_back(line.words[k].startMs, 0.25);
-			}
-		}
-	}
-	if (anchors.size() < 6) {
-		return 0;
-	}
-	const auto before = std::max(1, int(250. / c.frameMs));
-	const auto after = std::max(1, int(150. / c.frameMs));
-	const auto range = int(kOffsetRangeMs / c.frameMs);
-	auto scores = std::vector<double>(2 * range + 1, 0.);
-	for (auto o = -range; o <= range; ++o) {
-		auto sum = 0.;
-		for (const auto &[ms, weight] : anchors) {
-			const auto f = int(std::lround(ms / c.frameMs)) + o;
-			if (f < before || f >= c.count - after) {
-				continue;
-			}
-			const auto onset = std::max({ c.syllableAt(f - 1), c.syllableAt(f), c.syllableAt(f + 1) });
-			const auto rise = std::max(0.f, c.voiceAt(f + after) - c.voiceAt(f - before));
-			sum += weight * (onset + 0.8 * rise);
-		}
-		// WHY: rhythmic music repeats onsets every beat, so a small prior keeps the fit
-		// near the published timing unless a shift is clearly better.
-		scores[o + range] = sum * (1. - 0.06 * std::abs(o) * c.frameMs / 1000.);
-	}
-	const auto zero = scores[range];
-	const auto best = std::max_element(scores.begin(), scores.end());
-	auto sorted = scores;
-	std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());
-	const auto median = sorted[sorted.size() / 2];
-	if (*best < zero * 1.18 || *best < median * 1.35) {
-		return 0;
-	}
-	const auto offset = std::int64_t(std::lround((best - scores.begin() - range) * c.frameMs));
-	return (std::abs(offset) < 60) ? 0 : offset;
-}
-
-void Shift(Data &data, std::int64_t offset) {
-	for (auto &line : data.lines) {
-		if (line.ms < 0) {
-			continue;
-		}
-		line.ms = std::max<std::int64_t>(0, line.ms + offset);
-		line.endMs = std::max<std::int64_t>(line.ms, line.endMs + offset);
-		for (auto &word : line.words) {
-			word.startMs = std::max<std::int64_t>(0, word.startMs + offset);
-			word.endMs = std::max<std::int64_t>(word.startMs, word.endMs + offset);
-		}
-	}
-}
-
 void PlaceWords(Line &line, std::int64_t limit, const Curves &c) {
 	const auto texts = WordTexts(line);
 	if (texts.isEmpty() || line.ms < 0) {
 		return;
 	}
 	const auto start = line.ms;
-	limit = std::max(limit, start + 400);
+	if (limit <= start) return;
 	auto weights = std::vector<double>();
 	auto total = 0.;
 	for (const auto &text : texts) {
@@ -162,6 +107,7 @@ void PlaceWords(Line &line, std::int64_t limit, const Curves &c) {
 	end = std::clamp(end, std::min(limit, fastest), limit);
 
 	const auto count = int(texts.size());
+	const auto minWordMs = std::min(kMinWordMs, (end - start) / count);
 	auto bounds = std::vector<std::int64_t>(count + 1);
 	auto cumulative = 0.;
 	for (auto j = 0; j <= count; ++j) {
@@ -189,10 +135,10 @@ void PlaceWords(Line &line, std::int64_t limit, const Curves &c) {
 		}
 		bounds[j] = std::clamp(
 			bounds[j],
-			bounds[j - 1] + kMinWordMs,
-			std::max(bounds[j - 1] + kMinWordMs, end - (count - j) * kMinWordMs));
+			bounds[j - 1] + minWordMs,
+			end - (count - j) * minWordMs);
 	}
-	bounds[count] = std::max(bounds[count - 1] + kMinWordMs, end);
+	bounds[count] = end;
 
 	auto words = std::vector<Word>();
 	words.reserve(count);
@@ -384,6 +330,7 @@ bool AutoSync(Data &data, const Curves &c) {
 AlignReport Align(Data &data, const Analysis::Result &analysis) {
 	auto report = AlignReport();
 	if (!data.hasData
+		|| data.synced
 		|| data.lines.empty()
 		|| !analysis.ok
 		|| analysis.frameMs <= 0.
@@ -397,27 +344,7 @@ AlignReport Align(Data &data, const Analysis::Result &analysis) {
 		.frameMs = analysis.frameMs,
 		.count = int(analysis.voice.size()),
 	};
-	if (!data.synced) {
-		report.autoSynced = report.changed = AutoSync(data, c);
-	} else {
-		report.offsetMs = EstimateOffset(data, c);
-		if (report.offsetMs) {
-			Shift(data, report.offsetMs);
-			report.changed = true;
-		}
-		if (!data.wordSynced) {
-			for (auto i = 0; i != int(data.lines.size()); ++i) {
-				auto &line = data.lines[i];
-				if (line.ms < 0) {
-					continue;
-				}
-				const auto next = (i + 1 < int(data.lines.size())) ? data.lines[i + 1].ms : (line.ms + 6000);
-				PlaceWords(line, std::max(next, line.ms + 400), c);
-				++report.refinedLines;
-			}
-			report.changed = report.changed || (report.refinedLines > 0);
-		}
-	}
+	report.autoSynced = report.changed = AutoSync(data, c);
 	if (report.changed) {
 		for (auto &line : data.lines) {
 			for (auto &word : line.words) {
@@ -427,6 +354,62 @@ AlignReport Align(Data &data, const Analysis::Result &analysis) {
 		++data.revision;
 	}
 	return report;
+}
+
+bool AlignWithModel(Data &data, const QString &path, const QByteArray &audio) {
+	const auto python = qEnvironmentVariable("WHITEGRAM_KARAOKE_PYTHON");
+	const auto model = qEnvironmentVariable("WHITEGRAM_KARAOKE_MODEL");
+	const auto script = QCoreApplication::applicationDirPath() + u"/karaoke_align.py"_q;
+	if (python.isEmpty() || model.isEmpty() || data.wordSynced || !data.hasData
+		|| !QFileInfo::exists(model) || !QFileInfo::exists(script)) return false;
+	static auto modelMutex = std::mutex();
+	const auto modelLock = std::unique_lock<std::mutex>(modelMutex, std::try_to_lock);
+	if (!modelLock.owns_lock()) return false;
+	auto directory = QTemporaryDir();
+	if (!directory.isValid()) return false;
+	auto audioPath = path;
+	if (audioPath.isEmpty()) {
+		if (audio.isEmpty()) return false;
+		audioPath = directory.filePath(u"audio.bin"_q);
+		auto file = QFile(audioPath);
+		if (!file.open(QIODevice::WriteOnly) || file.write(audio) != audio.size()) return false;
+	}
+	const auto textPath = directory.filePath(u"lyrics.txt"_q);
+	{
+		auto file = QFile(textPath);
+		if (!file.open(QIODevice::WriteOnly)) return false;
+		for (const auto &line : data.lines) file.write((line.text + QChar(u'\n')).toUtf8());
+	}
+	const auto output = directory.filePath(u"aligned.lrc"_q);
+	auto process = QProcess();
+	process.setStandardOutputFile(QProcess::nullDevice());
+	process.setStandardErrorFile(QProcess::nullDevice());
+	process.start(python, { script, audioPath, textPath, output, model });
+	if (!process.waitForStarted(5000)) return false;
+	if (!process.waitForFinished(180000)) {
+		process.kill();
+		process.waitForFinished(5000);
+		return false;
+	}
+	if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) return false;
+	auto file = QFile(output);
+	if (!file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024) return false;
+	auto aligned = ParseTimedText(QString::fromUtf8(file.readAll()));
+	if (!aligned.wordSynced || aligned.lines.size() != data.lines.size()) return false;
+	for (auto i = 0; i != int(data.lines.size()); ++i) {
+		if (NormalizedWord(aligned.lines[i].text) != NormalizedWord(data.lines[i].text)) return false;
+		const auto &line = aligned.lines[i];
+		if (line.ms < 0 || line.endMs <= line.ms) return false;
+		for (const auto &word : line.words) {
+			if (word.endMs <= word.startMs || word.startMs < line.ms || word.endMs > line.endMs) return false;
+		}
+	}
+	aligned.artist = data.artist;
+	aligned.title = data.title;
+	aligned.source = data.source + u" + local alignment"_q;
+	aligned.revision = data.revision + 1;
+	data = std::move(aligned);
+	return true;
 }
 
 } // namespace Ayu::Ui::Lyrics

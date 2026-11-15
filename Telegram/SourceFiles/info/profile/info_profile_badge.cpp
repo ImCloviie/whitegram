@@ -271,12 +271,19 @@ void Badge::setContent(Content content) {
 	case BadgeType::WhitegramUser:
 	case BadgeType::WhitegramDeveloper: {
 		const auto isDeveloper = (_content.badge == BadgeType::WhitegramDeveloper);
+		const auto isTeam = isDeveloper
+			&& (_content.customId == QLatin1String(kWhitegramTeamVariant));
 		static const auto userImage = MakeWhitegramUserBadgeImage();
 		static const auto developerImage = MakeWhitegramDeveloperBadgeImage();
-		const auto &image = isDeveloper ? developerImage : userImage;
+		static const auto teamImage = MakeWhitegramTeamBadgeImage();
+		const auto &image = isTeam
+			? teamImage
+			: isDeveloper
+			? developerImage
+			: userImage;
 		// A server icon variant may replace the bundled one, and it may
 		// arrive asynchronously, so it is looked up on every paint.
-		const auto variant = _content.customId;
+		const auto variant = isTeam ? QString() : _content.customId;
 		const auto &fallback = isDeveloper
 			? st::infoWhitegramDeveloperBadge
 			: st::infoWhitegramUserBadge;
@@ -333,7 +340,9 @@ void Badge::setContent(Content content) {
 			if (image.isNull()) {
 				return;
 			}
-			const auto iconSize = image.size() / image.devicePixelRatio();
+			// The admin panel accepts any PNG size, the badge is 22px.
+			const auto iconSize = (image.size() / image.devicePixelRatio())
+				.scaled(QSize(22, 22), Qt::KeepAspectRatio);
 			check->resize(iconSize.width() + skip, iconSize.height());
 			Painter p(check);
 			p.drawImage(

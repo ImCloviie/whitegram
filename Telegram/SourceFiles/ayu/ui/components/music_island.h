@@ -238,7 +238,6 @@ private:
 	Ui::Animations::Simple _lyricsFade;
 	QPointer<LyricsWindow> _lyricsWindow;
 	int64 _positionBaseMs = 0;
-	crl::time _positionAt = 0;
 	std::shared_ptr<const Ayu::Ui::Analysis::Result> _analysis;
 	int _analysisGeneration = 0;
 	bool _analysisStarted = false;

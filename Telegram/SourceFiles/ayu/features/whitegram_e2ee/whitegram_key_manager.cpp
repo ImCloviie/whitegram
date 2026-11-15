@@ -8,7 +8,13 @@
 #include "ayu/libs/json.hpp"
 #include "core/application.h"
 #include "main/main_session.h"
+#include "lang/lang_instance.h"
+#include "logs.h"
+#include "ui/boxes/confirm_box.h"
+#include "ui/layers/show.h"
+#include "styles/style_layers.h"
 
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -19,6 +25,23 @@
 
 namespace Whitegram::E2EE {
 namespace {
+
+[[nodiscard]] bool IsRussian() {
+	const auto id = Lang::GetInstance().id();
+	return id.startsWith(u"ru"_q) || Lang::GetInstance().baseId().startsWith(u"ru"_q);
+}
+
+// Grouped hex of the key hash, for the user to compare with the peer's.
+[[nodiscard]] QString Fingerprint(const QByteArray &key) {
+	const auto hex = QString::fromLatin1(QCryptographicHash::hash(
+		key,
+		QCryptographicHash::Sha256).toHex().left(32)).toUpper();
+	auto result = QString();
+	for (auto i = 0; i < hex.size(); i += 4) {
+		result += (i ? u" "_q : QString()) + hex.mid(i, 4);
+	}
+	return result;
+}
 
 QString DiskCachePath() {
 	return cWorkingDir() + u"tdata/whitegram/keys/peer_keys.json"_q;
@@ -57,6 +80,8 @@ void KeyManager::registerMyKey(not_null<Main::Session*> session) {
 	auto request = QNetworkRequest(url);
 	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 	request.setRawHeader("X-API-Key", Backend::ApiKey().toLatin1());
+	Backend::ApplyTlsPinning(request);
+	Backend::ApplyOwnerToken(request, userId);
 
 	nlohmann::json body;
 	body["userId"] = userId;
@@ -116,6 +141,7 @@ void KeyManager::fetchPeerPublicKey(
 
 	auto request = QNetworkRequest(url);
 	request.setRawHeader("X-API-Key", Backend::ApiKey().toLatin1());
+	Backend::ApplyTlsPinning(request);
 
 	auto manager = new QNetworkAccessManager();
 	auto reply = manager->get(request);
@@ -172,8 +198,61 @@ void KeyManager::cachePeerPublicKey(uint64 userId, const QByteArray &pubKey) {
 	if (uncompressed.isEmpty()) {
 		return;
 	}
+	const auto i = _peerKeysCache.find(userId);
+	if (i != _peerKeysCache.end() && i->second != uncompressed) {
+		// Kept aside: withPeerKey asks the user before it is trusted.
+		LOG(("Whitegram E2EE: key of %1 changed on the server.").arg(userId));
+		_changedPeerKeys[userId] = uncompressed;
+		return;
+	}
+	_changedPeerKeys.erase(userId);
 	_peerKeysCache[userId] = uncompressed;
 	saveDiskCache();
+}
+
+void KeyManager::acceptChangedKey(uint64 userId) {
+	const auto i = _changedPeerKeys.find(userId);
+	if (i == _changedPeerKeys.end()) {
+		return;
+	}
+	_peerKeysCache[userId] = i->second;
+	_changedPeerKeys.erase(i);
+	saveDiskCache();
+}
+
+void KeyManager::withPeerKey(
+		std::shared_ptr<Ui::Show> show,
+		uint64 userId,
+		Fn<void(const QByteArray &pubKey)> done) {
+	const auto proceed = [=](const QByteArray &fetched) {
+		const auto pinned = cachedPeerPublicKey(userId);
+		const auto key = pinned ? *pinned : fetched;
+		const auto i = _changedPeerKeys.find(userId);
+		if (i == _changedPeerKeys.end()) {
+			done(key);
+			return;
+		}
+		const auto changed = i->second;
+		const auto ru = IsRussian();
+		show->showBox(Ui::MakeConfirmBox({
+			.text = (ru
+				? u"Ключ шифрования собеседника изменился. Так бывает после переустановки, но это может быть и подмена.\n\nСтарый: %1\nНовый: %2\n\nСверьте новый отпечаток с собеседником. Использовать новый ключ?"_q
+				: u"The contact's encryption key has changed. This happens after a reinstall, but it may also be a substitution.\n\nOld: %1\nNew: %2\n\nCompare the new fingerprint with your contact. Use the new key?"_q
+				).arg(Fingerprint(key), Fingerprint(changed)),
+			.confirmed = [=](Fn<void()> close) {
+				KeyManager::Instance().acceptChangedKey(userId);
+				close();
+				done(changed);
+			},
+			.confirmText = (ru ? u"Использовать новый"_q : u"Use the new key"_q),
+			.confirmStyle = &st::attentionBoxButton,
+		}));
+	};
+	if (const auto cached = cachedPeerPublicKey(userId)) {
+		proceed(*cached);
+	} else {
+		fetchPeerPublicKey(userId, proceed);
+	}
 }
 
 void KeyManager::loadDiskCache() {

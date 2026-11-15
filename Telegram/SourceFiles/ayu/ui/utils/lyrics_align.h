@@ -9,11 +9,11 @@ namespace Ayu::Ui::Lyrics {
 struct AlignReport {
 	bool changed = false;
 	bool autoSynced = false;
-	std::int64_t offsetMs = 0;
-	int refinedLines = 0;
 };
 
-// Fits lyric timing to the voice in the audio (offset, word placement, timings for plain text).
+// Approximate fallback for plain text only. Published timing is never modified.
 [[nodiscard]] AlignReport Align(Data &data, const Analysis::Result &analysis);
+// Optional local speech model. Returns false without changing data on failure.
+[[nodiscard]] bool AlignWithModel(Data &data, const QString &path, const QByteArray &audio);
 
 } // namespace Ayu::Ui::Lyrics

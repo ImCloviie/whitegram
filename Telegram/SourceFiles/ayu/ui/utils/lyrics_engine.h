@@ -41,6 +41,9 @@ struct Data {
 };
 
 [[nodiscard]] std::vector<Line> ParseLrc(const QString &lrc);
+// LRC/Enhanced LRC, SubRip and WebVTT sidecars use the audio file's basename.
+[[nodiscard]] Data ParseTimedText(const QString &text);
+[[nodiscard]] Data LoadSidecar(const QString &audioPath);
 
 [[nodiscard]] Data FetchSync(
 	const QString &artist,

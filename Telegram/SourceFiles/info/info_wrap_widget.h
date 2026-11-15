@@ -146,6 +146,7 @@ public:
 	[[nodiscard]] rpl::producer<int> scrollTillBottomChanges() const;
 	[[nodiscard]] rpl::producer<bool> grabbingForExpanding() const;
 	[[nodiscard]] const Ui::RoundRect *bottomSkipRounding() const;
+	[[nodiscard]] bool fillsLayerBottom() const;
 
 	[[nodiscard]] rpl::producer<> removeRequests() const override {
 		return _removeRequests.events();

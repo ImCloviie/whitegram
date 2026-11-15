@@ -12,6 +12,7 @@
 #include "ayu/ayu_worker.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "ayu/ui/ayu_logo.h"
@@ -71,6 +72,8 @@ void initUiSettings() {
 	AyuUiSettings::setWideMultiplier(settings.wideMultiplier());
 	AyuUiSettings::setMaterialSwitches(settings.materialSwitches());
 	AyuUiSettings::setAvatarCorners(settings.avatarCorners());
+	AyuUiSettings::setTypingAnimation(
+		static_cast<AyuUiSettings::TypingAnimation>(settings.typingAnimation()));
 	Ui::SetAppliedBubbleRadius(settings.messageBubbleRadius());
 }
 
@@ -101,6 +104,10 @@ void initConnectionBypass() {
 	AyuFeatures::ConnectionBypass::init();
 }
 
+void initGlassEffect() {
+	AyuFeatures::GlassEffect::init();
+}
+
 void init() {
 	initLang();
 	initDatabase();
@@ -110,6 +117,7 @@ void init() {
 	initRCManager();
 	initTranslator();
 	initConnectionBypass();
+	initGlassEffect();
 	Whitegram::Backend::InitClientInfo();
 	(void)Whitegram::E2EE::GetOrGenerateIdentityKeyPair();
 	AyuSettings::initTimeSpentTracker();

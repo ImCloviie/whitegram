@@ -49,6 +49,11 @@ void FetchClientInfo();
 // The server keeps the ids of the clients that registered themselves,
 // that is how the badge of a Whitegram user is known.
 void RegisterUser(uint64 userId);
+
+// WHY: writes of own data need proof of the account (bot Mini App initData),
+// the backend trades it for a device token, see backend/src/auth.js.
+void EnsureOwnerToken(not_null<Main::Session*> session);
+void ApplyOwnerToken(QNetworkRequest &request, uint64 userId);
 void FetchWhitegramUser(uint64 userId);
 [[nodiscard]] bool IsWhitegramUser(uint64 userId);
 [[nodiscard]] rpl::producer<uint64> whitegramUserUpdates();

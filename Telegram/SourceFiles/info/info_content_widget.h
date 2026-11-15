@@ -123,6 +123,10 @@ public:
 	[[nodiscard]] virtual const Ui::RoundRect *bottomSkipRounding() const {
 		return nullptr;
 	}
+	// The content paints its background into the layer bottom rounding too.
+	[[nodiscard]] virtual bool fillsLayerBottom() const {
+		return false;
+	}
 
 	// Float player interface.
 	bool floatPlayerHandleWheelEvent(QEvent *e);

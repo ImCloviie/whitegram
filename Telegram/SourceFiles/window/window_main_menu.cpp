@@ -1108,6 +1108,20 @@ void MainMenu::setupMenu() {
 			ghostModeToggle->lifetime());
 	}
 
+	if (settings.showGlassToggleInDrawer()) {
+		const auto glassToggle = addAction(
+			Settings::trWhitegram(
+				QString::fromUtf8("Эффект стекла"),
+				u"Glass effect"_q),
+			{ &st::menuIconChangeColors }
+		)->toggleOn(AyuSettings::getInstance().glassEffectValue());
+
+		glassToggle->toggledChanges(
+		) | rpl::on_next([](bool enabled) {
+			AyuSettings::getInstance().setGlassEffect(enabled);
+		}, glassToggle->lifetime());
+	}
+
 	if (settings.showStreamerToggleInDrawer()) {
 		const auto streamerModeToggle = addAction(
 			tr::ayu_StreamerModeToggle(),

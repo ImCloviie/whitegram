@@ -973,6 +973,7 @@ Media::Player::TrackState Player::prepareLegacyState() const {
 		: 0;
 	result.frequency = kMsFrequency;
 	result.fileHeaderSize = _information.headerSize;
+	result.waitingForData = _waitingForData;
 
 	if (result.length == kTimeUnknown) {
 		const auto document = _options.audioId.audio();

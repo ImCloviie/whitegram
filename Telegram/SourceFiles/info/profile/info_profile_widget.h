@@ -96,6 +96,8 @@ public:
 	rpl::producer<QString> title() override;
 	rpl::producer<Dialogs::Stories::Content> titleStories() override;
 
+	[[nodiscard]] bool fillsLayerBottom() const override;
+
 private:
 	void setupFullProfileBackground();
 	void saveState(not_null<Memento*> memento);
@@ -116,6 +118,7 @@ private:
 	base::unique_qptr<Ui::RpWidget> _tabsStripFloat;
 	base::weak_qptr<TabsHost> _tabsHost;
 	base::weak_qptr<Ui::RpWidget> _tabsStrip;
+	bool _fullBackgroundShown = false;
 
 };
 

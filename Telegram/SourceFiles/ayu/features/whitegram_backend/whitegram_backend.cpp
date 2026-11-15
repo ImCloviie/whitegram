@@ -16,6 +16,8 @@
 #include "data/data_peer.h"
 #include "data/data_peer_id.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
+#include "apiwrap.h"
 #include "lang/lang_instance.h"
 #include "base/platform/base_platform_info.h"
 #include "main/main_account.h"
@@ -27,6 +29,9 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QUrlQuery>
 #include <QtCore/QPointer>
 #include <QtCore/QMimeDatabase>
 #include <QtCore/QTimer>
@@ -1009,6 +1014,134 @@ void ApplyProfileBackgrounds(
 	return request;
 }
 
+// The bot whose Mini App data proves the account to the backend.
+constexpr auto kOwnerBotUsername = "whitegrams_bot";
+
+[[nodiscard]] QString OwnerTokenPath(uint64 userId) {
+	return cWorkingDir()
+		+ u"tdata/whitegram/auth/"_q
+		+ QString::number(userId);
+}
+
+[[nodiscard]] std::map<uint64, QByteArray> &OwnerTokens() {
+	static auto result = std::map<uint64, QByteArray>();
+	return result;
+}
+
+[[nodiscard]] std::set<uint64> &OwnerTokenRequested() {
+	static auto result = std::set<uint64>();
+	return result;
+}
+
+[[nodiscard]] QByteArray OwnerToken(uint64 userId) {
+	auto &tokens = OwnerTokens();
+	if (const auto i = tokens.find(userId); i != end(tokens)) {
+		return i->second;
+	}
+	auto file = QFile(OwnerTokenPath(userId));
+	auto token = file.open(QIODevice::ReadOnly)
+		? file.readAll().trimmed()
+		: QByteArray();
+	if (token.size() != 43) {
+		token = QByteArray();
+	}
+	tokens[userId] = token;
+	return token;
+}
+
+void SaveOwnerToken(uint64 userId, const QByteArray &token) {
+	OwnerTokens()[userId] = token;
+	const auto path = OwnerTokenPath(userId);
+	QDir().mkpath(QFileInfo(path).absolutePath());
+	auto file = QFile(path);
+	if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+		file.write(token);
+	}
+}
+
+void ForgetOwnerToken(uint64 userId) {
+	OwnerTokens()[userId] = QByteArray();
+	QFile::remove(OwnerTokenPath(userId));
+}
+
+// WHY: tgWebAppData sits url-encoded in the fragment of the Mini App url,
+// decoding it once gives the initData exactly as Telegram signed it.
+[[nodiscard]] QString InitDataFromWebViewUrl(const QString &url) {
+	const auto fragment = QUrl(url).fragment(QUrl::FullyEncoded);
+	return QUrlQuery(fragment).queryItemValue(
+		u"tgWebAppData"_q,
+		QUrl::FullyDecoded);
+}
+
+void SendOwnerProof(uint64 userId, const QString &initData) {
+	const auto url = QUrl(BaseUrl() + u"/api/v1/auth/telegram"_q);
+	auto request = AuthorizedRequest(url);
+	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+	const auto body = QJsonDocument(QJsonObject{
+		{ u"initData"_q, initData },
+	}).toJson(QJsonDocument::Compact);
+	const auto reply = Service::Instance().accessManager().post(request, body);
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { reply->deleteLater(); });
+		if (reply->error() != QNetworkReply::NoError) {
+			LOG(("Whitegram Backend: owner proof refused: %1"
+				).arg(reply->errorString()));
+			OwnerTokenRequested().erase(userId);
+			return;
+		}
+		const auto json = QJsonDocument::fromJson(reply->readAll()).object();
+		const auto token = json.value(u"token"_q).toString().toUtf8();
+		if (json.value(u"userId"_q).toString() == QString::number(userId)
+			&& token.size() == 43) {
+			SaveOwnerToken(userId, token);
+		}
+	});
+}
+
+void AcquireOwnerToken(not_null<Main::Session*> session) {
+	const auto userId = session->userId().bare;
+	const auto fail = [=](const QString &reason) {
+		LOG(("Whitegram Backend: no owner proof: %1").arg(reason));
+		OwnerTokenRequested().erase(userId);
+	};
+	session->api().request(MTPcontacts_ResolveUsername(
+		MTP_flags(0),
+		MTP_string(kOwnerBotUsername),
+		MTP_string()
+	)).done(crl::guard(session.get(), [=](const MTPcontacts_ResolvedPeer &result) {
+		const auto &data = result.data();
+		session->data().processUsers(data.vusers());
+		session->data().processChats(data.vchats());
+		const auto peer = session->data().peerLoaded(
+			peerFromMTP(data.vpeer()));
+		const auto bot = peer ? peer->asUser() : nullptr;
+		if (!bot || !bot->isBot()) {
+			fail(u"bot not found"_q);
+			return;
+		}
+		session->api().request(MTPmessages_RequestMainWebView(
+			MTP_flags(0),
+			bot->input(),
+			bot->inputUser(),
+			MTP_string(),
+			MTPDataJSON(),
+			MTP_string("tdesktop")
+		)).done([=](const MTPWebViewResult &result) {
+			const auto initData = InitDataFromWebViewUrl(
+				qs(result.data().vurl()));
+			if (initData.isEmpty()) {
+				fail(u"no tgWebAppData"_q);
+			} else {
+				SendOwnerProof(userId, initData);
+			}
+		}).fail([=](const MTP::Error &error) {
+			fail(error.type());
+		}).send();
+	})).fail([=](const MTP::Error &error) {
+		fail(error.type());
+	}).send();
+}
+
 [[nodiscard]] QUrl ZoneUrl(uint64 userId, Zone zone) {
 	return QUrl(BaseUrl()
 		+ u"/api/v1/profile-backgrounds/"_q
@@ -1018,6 +1151,7 @@ void ApplyProfileBackgrounds(
 }
 
 [[nodiscard]] QNetworkReply *SendUpload(
+		uint64 userId,
 		const QUrl &url,
 		const ServerWrite &write) {
 	const auto disposition = u"form-data; name=\"file\"; filename=\""_q
@@ -1041,6 +1175,7 @@ void ApplyProfileBackgrounds(
 	isVideoPart.setBody(write.isVideo ? "true" : "false");
 	multipart->append(isVideoPart);
 	auto request = AuthorizedRequest(url);
+	ApplyOwnerToken(request, userId);
 	// Throttled progress could be far behind, see kStoppableUploadLeft.
 	request.setAttribute(
 		QNetworkRequest::EmitAllUploadProgressSignalsAttribute,
@@ -1204,10 +1339,11 @@ void SendNextWrite(uint64 userId, Zone zone) {
 	const auto url = ZoneUrl(userId, zone);
 	const auto remove = write.bytes.isEmpty();
 	const auto generation = write.generation;
+	auto removeRequest = AuthorizedRequest(url);
+	ApplyOwnerToken(removeRequest, userId);
 	const auto reply = remove
-		? Service::Instance().accessManager().deleteResource(
-			AuthorizedRequest(url))
-		: SendUpload(url, write);
+		? Service::Instance().accessManager().deleteResource(removeRequest)
+		: SendUpload(userId, url, write);
 	i->second.sending = reply;
 	i->second.unsent = write.bytes.size();
 	if (!remove) {
@@ -1659,6 +1795,44 @@ void ApplyTlsPinning(QNetworkRequest &request) {
 	request.setSslConfiguration(config);
 }
 
+void ApplyOwnerToken(QNetworkRequest &request, uint64 userId) {
+	const auto token = OwnerToken(userId);
+	if (!token.isEmpty()) {
+		request.setRawHeader("Authorization", "Bearer " + token);
+	}
+}
+
+void EnsureOwnerToken(not_null<Main::Session*> session) {
+	const auto userId = session->userId().bare;
+	if (!userId || OwnerTokenRequested().contains(userId)) {
+		return;
+	}
+	OwnerTokenRequested().insert(userId);
+	if (OwnerToken(userId).isEmpty()) {
+		AcquireOwnerToken(session);
+		return;
+	}
+	// A token the server forgot (dropped as the 11th device) is replaced.
+	auto request = AuthorizedRequest(QUrl(BaseUrl() + u"/api/v1/auth/check"_q));
+	ApplyOwnerToken(request, userId);
+	const auto reply = Service::Instance().accessManager().get(request);
+	const auto weak = base::make_weak(session);
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { reply->deleteLater(); });
+		const auto status = reply->attribute(
+			QNetworkRequest::HttpStatusCodeAttribute).toInt();
+		if (status != 401) {
+			return;
+		}
+		ForgetOwnerToken(userId);
+		if (const auto strong = weak.get()) {
+			AcquireOwnerToken(strong);
+		} else {
+			OwnerTokenRequested().erase(userId);
+		}
+	});
+}
+
 void UploadProfileBackground(
 		uint64 userId,
 		Zone zone,
@@ -1960,6 +2134,7 @@ void SyncTimeSpent(uint64 userId, int64 localMinutes) {
 			+ QByteArray::number(merged)
 			+ QByteArray("}");
 		auto put = AuthorizedRequest(url);
+		ApplyOwnerToken(put, userId);
 		put.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 		const auto reply = Service::Instance().accessManager().put(put, body);
 		QObject::connect(reply, &QNetworkReply::finished, [=] {
@@ -2068,6 +2243,7 @@ void SetTimeSpentVisible(uint64 userId, bool visible) {
 		+ QString::number(userId)
 		+ u"/visibility"_q);
 	auto request = AuthorizedRequest(url);
+	ApplyOwnerToken(request, userId);
 	request.setHeader(
 		QNetworkRequest::ContentTypeHeader,
 		"application/json");

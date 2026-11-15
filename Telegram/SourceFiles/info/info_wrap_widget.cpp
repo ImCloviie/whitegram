@@ -1289,6 +1289,10 @@ const Ui::RoundRect *WrapWidget::bottomSkipRounding() const {
 	return _content->bottomSkipRounding();
 }
 
+bool WrapWidget::fillsLayerBottom() const {
+	return _content && _content->fillsLayerBottom();
+}
+
 bool WrapWidget::hasBackButton() const {
 	return !_isSeparatedWindow
 		&& (wrap() == Wrap::Narrow || hasStackHistory());

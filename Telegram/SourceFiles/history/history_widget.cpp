@@ -527,12 +527,11 @@ HistoryWidget::HistoryWidget(
 
 				if (recipientId == myUserId) {
 					doEncryptAndSend(Whitegram::E2EE::GetMyPublicKey());
-				} else if (const auto cachedKey = Whitegram::E2EE::KeyManager::Instance().cachedPeerPublicKey(recipientId)) {
-					doEncryptAndSend(*cachedKey);
 				} else {
-					Whitegram::E2EE::KeyManager::Instance().fetchPeerPublicKey(recipientId, [=](const QByteArray &pubKey) {
-						doEncryptAndSend(pubKey);
-					});
+					Whitegram::E2EE::KeyManager::Instance().withPeerKey(
+						controller->uiShow(),
+						recipientId,
+						doEncryptAndSend);
 				}
 			};
 

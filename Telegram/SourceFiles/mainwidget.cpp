@@ -487,6 +487,7 @@ MainWidget::MainWidget(
 
 	Whitegram::E2EE::KeyManager::Instance().init(&session());
 	Whitegram::Backend::RegisterUser(session().userId().bare);
+	Whitegram::Backend::EnsureOwnerToken(&session());
 
 	cSetOtherOnline(0);
 

@@ -6,6 +6,8 @@
 #include "ayu/ui/utils/net_fetch.h"
 
 #include <QtCore/QCache>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QEventLoop>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -31,9 +33,9 @@ namespace {
 
 constexpr auto kSyllableMs = 260;
 constexpr auto kLineTailMs = 300;
-constexpr auto kMinWordMs = 90;
-constexpr auto kDurationTolerance = 10.;
-constexpr auto kReuploadTolerance = 3.;
+// Search may find the same recording with encoder padding (e.g. 119 vs 122s).
+// Keep timestamps intact; never stretch them to fill the file duration.
+constexpr auto kDurationTolerance = 3.;
 
 QCache<QString, Data> &Cache() {
 	static auto result = QCache<QString, Data>(100);
@@ -50,7 +52,7 @@ QString CacheKey(const QString &artist, const QString &title, int duration) {
 		+ u" - "_q
 		+ title.trimmed().toLower()
 		+ u" / "_q
-		+ QString::number(duration / 5);
+		+ QString::number(duration);
 }
 
 QByteArray GetBytes(const QUrl &url, int timeoutMs, bool browserAgent) {
@@ -176,14 +178,9 @@ bool ArtistMatches(const QString &have, const QString &want) {
 	if (wanted.isEmpty()) {
 		return true;
 	}
-	const auto haveStripped = StripForMatch(have);
+	const auto available = ArtistTokens(have);
 	for (const auto &token : wanted) {
-		if (haveStripped.contains(token)) {
-			return true;
-		}
-	}
-	for (const auto &token : ArtistTokens(have)) {
-		if (StripForMatch(want).contains(token)) {
+		if (available.contains(token)) {
 			return true;
 		}
 	}
@@ -205,11 +202,8 @@ int MatchScore(
 		|| !DurationMatches(duration, wantDuration)) {
 		return 0;
 	}
-	const auto exactDuration = (wantDuration > 0)
-		&& (duration > 0.)
-		&& (std::abs(duration - wantDuration) <= kReuploadTolerance);
 	if (!ArtistMatches(artist, wantArtist)) {
-		return exactDuration ? 6 : 0;
+		return 0;
 	}
 	auto score = 10;
 	if (StripForMatch(CleanedTitle(title)) == StripForMatch(CleanedTitle(wantTitle))) {
@@ -306,12 +300,13 @@ void EstimateWords(Line &line, std::int64_t limitMs) {
 	}
 	const auto natural = std::int64_t(total * kSyllableMs) + kLineTailMs;
 	auto end = (limitMs > line.ms)
-		? std::min(limitMs, line.ms + natural)
+		? limitMs
 		: line.ms + natural;
 	if (line.endMs > line.ms) {
 		end = std::min(end, line.endMs);
 	}
-	const auto span = std::max<std::int64_t>(end - line.ms, kMinWordMs * parts.size());
+	// A dense line must not spill across the next published line boundary.
+	const auto span = std::max<std::int64_t>(0, end - line.ms);
 	auto at = double(line.ms);
 	for (auto i = 0; i != parts.size(); ++i) {
 		const auto length = span * weights[i] / total;
@@ -322,7 +317,8 @@ void EstimateWords(Line &line, std::int64_t limitMs) {
 		line.words.push_back(std::move(word));
 		at += length;
 	}
-	line.endMs = line.words.back().endMs;
+	line.words.back().endMs = end;
+	line.endMs = end;
 }
 
 const QSet<QString> &StopWords() {
@@ -428,7 +424,7 @@ Data FromLrcText(const QString &synced, const QString &plain) {
 	if (!synced.trimmed().isEmpty()) {
 		data.lines = ParseLrc(synced);
 		data.synced = !data.lines.empty();
-		data.wordSynced = data.synced && std::any_of(
+		data.wordSynced = data.synced && std::all_of(
 			data.lines.begin(),
 			data.lines.end(),
 			[](const Line &line) { return !line.words.empty(); });
@@ -974,13 +970,18 @@ Data LrcCxDonor(
 
 std::vector<Line> ParseLrc(const QString &lrc) {
 	auto out = std::vector<Line>();
+	static const auto offsetTag = QRegularExpression(uR"(\[offset:\s*([+-]?\d+)\s*\])"_q,
+		QRegularExpression::CaseInsensitiveOption);
+	const auto offsetMatch = offsetTag.match(lrc);
+	// Positive LRC offset means lyrics should appear earlier.
+	const auto offset = offsetMatch.hasMatch() ? offsetMatch.captured(1).toInt() : 0;
 	static const auto stamp = QRegularExpression(
 		uR"(\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\])"_q);
 	static const auto inner = QRegularExpression(
 		uR"(<(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?>)"_q);
 	auto gaps = std::vector<std::int64_t>();
 	for (const auto &raw : lrc.split(u'\n')) {
-		const auto line = raw.trimmed();
+		const auto line = QString(raw).remove(QChar(0xFEFF)).trimmed();
 		auto it = stamp.globalMatch(line);
 		auto stamps = std::vector<std::int64_t>();
 		auto lastEnd = 0;
@@ -1012,7 +1013,7 @@ std::vector<Line> ParseLrc(const QString &lrc) {
 					: body.size();
 				const auto text = body.mid(from, till - from);
 				const auto at = ParseStamp(m.captured(1), m.captured(2), m.captured(3));
-				if (!words.empty()) {
+				if (!words.empty() && words.back().endMs <= words.back().startMs) {
 					words.back().endMs = at;
 				}
 				if (!text.trimmed().isEmpty()) {
@@ -1043,7 +1044,16 @@ std::vector<Line> ParseLrc(const QString &lrc) {
 			out.push_back(std::move(parsed));
 		}
 	}
-	std::sort(out.begin(), out.end(), [](const Line &a, const Line &b) {
+	for (auto &line : out) {
+		line.ms = std::max<std::int64_t>(0, line.ms - offset);
+		if (line.endMs > 0) line.endMs = std::max(line.ms, line.endMs - offset);
+		for (auto &word : line.words) {
+			word.startMs = std::max<std::int64_t>(0, word.startMs - offset);
+			word.endMs = std::max(word.startMs, word.endMs - offset);
+		}
+	}
+	for (auto &gap : gaps) gap = std::max<std::int64_t>(0, gap - offset);
+	std::stable_sort(out.begin(), out.end(), [](const Line &a, const Line &b) {
 		return a.ms < b.ms;
 	});
 	out.erase(std::unique(out.begin(), out.end(), [](const Line &a, const Line &b) {
@@ -1058,6 +1068,55 @@ std::vector<Line> ParseLrc(const QString &lrc) {
 		}
 	}
 	return out;
+}
+
+Data ParseTimedText(const QString &text) {
+	auto data = FromLrcText(text, QString());
+	if (!data.hasData) {
+		static const auto cue = QRegularExpression(
+			uR"(^\s*((?:\d{1,3}:)?\d{2}:\d{2}[.,]\d{3})\s+-->\s+((?:\d{1,3}:)?\d{2}:\d{2}[.,]\d{3}))"_q);
+		const auto milliseconds = [](QString stamp) {
+			stamp.replace(QChar(u','), QChar(u'.'));
+			const auto parts = stamp.split(QChar(u':'));
+			auto seconds = 0.;
+			for (const auto &part : parts) seconds = seconds * 60. + part.toDouble();
+			return std::int64_t(std::llround(seconds * 1000.));
+		};
+		auto rows = text.split(QChar(u'\n'));
+		for (auto i = 0; i < rows.size(); ++i) {
+			const auto match = cue.match(rows[i]);
+			if (!match.hasMatch()) continue;
+			auto line = Line();
+			line.ms = milliseconds(match.captured(1));
+			line.endMs = milliseconds(match.captured(2));
+			while (i + 1 < rows.size() && !rows[i + 1].trimmed().isEmpty()) {
+				line.text += (line.text.isEmpty() ? QString() : u" "_q) + rows[++i].trimmed();
+			}
+			static const auto markup = QRegularExpression(uR"(<[^>]*>)"_q);
+			line.text = DecodeEntities(line.text.remove(markup)).trimmed();
+			if (!line.text.isEmpty() && line.endMs > line.ms) data.lines.push_back(std::move(line));
+		}
+		std::stable_sort(data.lines.begin(), data.lines.end(), [](const Line &a, const Line &b) { return a.ms < b.ms; });
+		data.hasData = data.synced = !data.lines.empty();
+	}
+	Annotate(data);
+	return data;
+}
+
+Data LoadSidecar(const QString &audioPath) {
+	if (audioPath.isEmpty()) return {};
+	const auto info = QFileInfo(audioPath);
+	const auto base = info.absolutePath() + QChar(u'/') + info.completeBaseName();
+	for (const auto &extension : { u".lrc"_q, u".srt"_q, u".vtt"_q }) {
+		auto file = QFile(base + extension);
+		if (!file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024) continue;
+		auto result = ParseTimedText(QString::fromUtf8(file.readAll()));
+		if (result.hasData) {
+			result.source = u"local"_q + extension;
+			return result;
+		}
+	}
+	return {};
 }
 
 Data FetchExact(

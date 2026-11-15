@@ -642,10 +642,11 @@ int PeerBadge::drawWhitegramSponsor(Painter &p, const Descriptor &descriptor) {
 }
 
 int PeerBadge::drawWhitegramDeveloper(Painter &p, const Descriptor &descriptor) {
+	const auto isTeam = isWhitegramTeamPeer(getBareID(descriptor.peer));
 	// A server variant icon wins over the bundled one.
 	const auto admin = Whitegram::Backend::AdminBadgeFor(
 		getBareID(descriptor.peer));
-	if (admin && !admin->variant.isEmpty()) {
+	if (!isTeam && admin && !admin->variant.isEmpty()) {
 		const auto image = Whitegram::Backend::VariantIcon(admin->variant);
 		if (!image.isNull()) {
 			const auto rectForName = descriptor.rectForName;
@@ -665,7 +666,9 @@ int PeerBadge::drawWhitegramDeveloper(Painter &p, const Descriptor &descriptor) 
 	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
 	const auto py = rectForName.y();
 
-	static const auto image = MakeWhitegramDeveloperBadgeImage();
+	static const auto developerImage = MakeWhitegramDeveloperBadgeImage();
+	static const auto teamImage = MakeWhitegramTeamBadgeImage();
+	const auto &image = isTeam ? teamImage : developerImage;
 	if (!image.isNull()) {
 		p.drawImage(
 			QRect(px, py, iconw, icon->height()),

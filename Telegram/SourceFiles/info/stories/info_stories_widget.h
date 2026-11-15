@@ -81,6 +81,8 @@ public:
 	void enableBackButton() override;
 	void showFinished() override;
 
+	[[nodiscard]] bool fillsLayerBottom() const override;
+
 private:
 	void saveState(not_null<Memento*> memento);
 	void restoreState(not_null<Memento*> memento);
@@ -98,6 +100,7 @@ private:
 	rpl::variable<bool> _hasPinnedToBottom;
 	rpl::variable<bool> _emptyAlbumShown;
 	bool _shown = false;
+	bool _fullBackgroundShown = false;
 	std::unique_ptr<FlexibleScrollHelper> _flexibleScrollHelper;
 
 };

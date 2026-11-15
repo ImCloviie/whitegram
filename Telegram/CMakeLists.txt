@@ -5,6 +5,12 @@
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 add_executable(Telegram WIN32 MACOSX_BUNDLE)
+add_custom_command(TARGET Telegram POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tools/karaoke/align.py"
+        "$<TARGET_FILE_DIR:Telegram>/karaoke_align.py"
+    VERBATIM
+)
 init_non_host_target(Telegram)
 
 add_subdirectory(lib_rpl)
@@ -248,6 +254,8 @@ set(ayugram_files
         ayu/ui/components/icon_picker.h
         ayu/ui/components/avatar_corners_preview.cpp
         ayu/ui/components/avatar_corners_preview.h
+        ayu/ui/components/typing_animation_picker.cpp
+        ayu/ui/components/typing_animation_picker.h
         ayu/ui/components/message_preview.cpp
         ayu/ui/components/message_preview.h
         ayu/ui/components/music_island.cpp
@@ -263,6 +271,8 @@ set(ayugram_files
         ayu/libs/sqlite/sqlite3.c
         ayu/libs/sqlite/sqlite3.h
         ayu/libs/sqlite/sqlite_orm.h
+        ayu/features/glass_effect/glass_effect.cpp
+        ayu/features/glass_effect/glass_effect.h
         ayu/features/streamer_mode/platform/linux/streamer_mode_linux.cpp
         ayu/features/streamer_mode/platform/linux/streamer_mode_linux.h
         ayu/features/streamer_mode/platform/mac/streamer_mode_mac.mm

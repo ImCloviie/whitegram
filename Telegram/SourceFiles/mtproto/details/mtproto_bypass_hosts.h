@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/basic_types.h"
+#include "crl/crl_time.h"
 
 #include <vector>
 
@@ -33,6 +34,9 @@ void SetBypassHostsExhaustedHandler(BypassHostsExhaustedHandler handler);
 	BypassHostRequest request);
 void NotifyBypassHostResult(const QString &host, bool success);
 void NotifyBypassHostsExhausted();
+
+void NotifyBypassConnected();
+[[nodiscard]] crl::time LastBypassConnectedAt();
 
 [[nodiscard]] std::vector<QString> DefaultBypassHosts(
 	BypassHostRequest request);

@@ -359,7 +359,7 @@ private:
 			return;
 		}
 		MTP::details::SetPreferWebSocket(enabled);
-		DEBUG_LOG(("Bypass: WebSocket %1").arg(
+		LOG(("Bypass: WebSocket %1").arg(
 			enabled ? "enabled" : "disabled"));
 	}
 
@@ -417,7 +417,15 @@ private:
 			|| _wsFallbackActive) {
 			return;
 		}
-		DEBUG_LOG(("Bypass: all WS hosts failed, falling back to TCP"));
+		// WHY: one DC without a working mirror must not switch the whole
+		// app to blocked TCP while the tunnel works for the other ones.
+		const auto lastOk = MTP::details::LastBypassConnectedAt();
+		if (anyAccountConnected()
+			|| (lastOk && crl::now() - lastOk < kWsRetryAfterFallback)) {
+			LOG(("Bypass: WS hosts failed for one connection, keeping WS"));
+			return;
+		}
+		LOG(("Bypass: all WS hosts failed, falling back to TCP"));
 		_wsFallbackActive = true;
 		_wsRetryAfter = crl::now() + kWsRetryAfterFallback;
 		setPreferWebSocket(false);
@@ -434,7 +442,7 @@ private:
 		}
 		if (_wsFallbackActive) {
 			if (crl::now() >= _wsRetryAfter && !anyAccountConnected()) {
-				DEBUG_LOG(("Bypass: retrying WebSocket after TCP fallback"));
+				LOG(("Bypass: retrying WebSocket after TCP fallback"));
 				_wsFallbackActive = false;
 				_autoTriggered = true;
 				setPreferWebSocket(true);

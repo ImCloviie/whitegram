@@ -35,6 +35,7 @@ constexpr auto kIntSize = static_cast<int>(sizeof(mtpPrime));
 constexpr auto kWaitForBetterTimeout = crl::time(2000);
 constexpr auto kMinConnectedTimeout = crl::time(1000);
 constexpr auto kMaxConnectedTimeout = crl::time(8000);
+constexpr auto kMinWebSocketConnectedTimeout = crl::time(10000);
 constexpr auto kMinReceiveTimeout = crl::time(4000);
 constexpr auto kMaxReceiveTimeout = crl::time(64000);
 constexpr auto kMarkConnectionOldTimeout = crl::time(192000);
@@ -1120,7 +1121,11 @@ void SessionPrivate::connectToServer(bool afterConfig) {
 	_pingId = _pingMsgId = _pingIdToSend = _pingSendAt = 0;
 	_pingSender.cancel();
 
-	_waitForConnectedTimer.callOnce(_waitForConnected);
+	// WHY: a WebSocket needs TCP, TLS and an HTTP upgrade before it counts
+	// as connected, one second kills nearly every attempt through DPI.
+	_waitForConnectedTimer.callOnce(details::PreferWebSocket()
+		? std::max(_waitForConnected, kMinWebSocketConnectedTimeout)
+		: _waitForConnected);
 }
 
 void SessionPrivate::restart() {

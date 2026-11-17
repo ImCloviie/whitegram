@@ -354,7 +354,7 @@ PRIVATE
     emoji_suggestions/emoji_suggestions_helper.h
 )
 
-if (DESKTOP_APP_DISABLE_PRIVATE_QT_API)
+if (DESKTOP_APP_DISABLE_PRIVATE_QT_API OR QT_VERSION_MAJOR LESS 6)
     remove_target_sources(lib_ui ${src_loc}
         ui/widgets/kinetic_scroller.cpp
     )

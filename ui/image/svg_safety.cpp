@@ -9,7 +9,9 @@
 #include "base/debug_log.h"
 
 #include <QtCore/QHash>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QtCore/QHashSeed>
+#endif // Qt >= 6
 #include <QtCore/QList>
 #include <QtCore/QPair>
 #include <QtCore/QSet>
@@ -1045,9 +1047,15 @@ struct InternKey {
 	return (a.value == b.value);
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 [[nodiscard]] size_t qHash(const InternKey &key, size_t seed = 0) {
 	return key.hash;
 }
+#else // Qt >= 6
+[[nodiscard]] uint qHash(const InternKey &key, uint seed = 0) {
+	return uint(key.hash);
+}
+#endif // Qt >= 6
 
 } // namespace
 
@@ -1066,7 +1074,11 @@ QByteArray SanitizeSvg(const QByteArray &bytes) {
 	auto exposedAncestorKeys = QSet<int>();
 	auto openElements = QList<OpenElement>();
 	auto idMap = QHash<InternKey, int>();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	const auto seed = QHashSeed::globalSeed();
+#else // Qt >= 6
+	const auto seed = uint(qGlobalQHashSeed());
+#endif // Qt >= 6
 	const auto intern = [&](const QString &value) {
 		const auto key = InternKey{ value, qHash(value, seed) };
 		const auto i = idMap.constFind(key);

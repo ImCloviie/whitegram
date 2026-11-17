@@ -67,6 +67,7 @@ struct Entry {
 		{ "historyComposeAreaBg", &st::historyComposeAreaBg, Kind::Base },
 		{ "historyPinnedBg", &st::historyPinnedBg, Kind::Base },
 		{ "historyReplyBg", &st::historyReplyBg, Kind::Base },
+		{ "mediaPlayerBg", &st::mediaPlayerBg, Kind::Base },
 		{ "historyComposeButtonBg", &st::historyComposeButtonBg, Kind::Base },
 		{ "titleButtonBg", &st::titleButtonBg, Kind::Base },
 		{ "titleButtonBgActive", &st::titleButtonBgActive, Kind::Base },

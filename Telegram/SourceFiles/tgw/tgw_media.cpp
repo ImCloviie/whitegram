@@ -36,8 +36,16 @@ constexpr auto kInitialUnpackedSize = qsizetype(16 * 1024);
 		uint64(std::numeric_limits<uInt>::max())));
 }
 
+[[nodiscard]] qsizetype MaxByteArraySize() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return QByteArray::maxSize();
+#else // Qt >= 6
+	return qsizetype(std::numeric_limits<int>::max() - 32);
+#endif // Qt >= 6
+}
+
 [[nodiscard]] qsizetype GrownSize(qsizetype size) {
-	const auto limit = QByteArray::maxSize();
+	const auto limit = MaxByteArraySize();
 	return (size > limit / 2) ? limit : (size * 2);
 }
 
@@ -76,7 +84,7 @@ QByteArray UnpackPayload(const QByteArray &payload) {
 		}
 		// No client cap: the server enforces payload limits and may move them.
 		if (produced == result.size()) {
-			if (result.size() >= QByteArray::maxSize()) {
+			if (result.size() >= MaxByteArraySize()) {
 				return QByteArray();
 			}
 			result.resize(GrownSize(result.size()));

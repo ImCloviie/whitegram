@@ -320,7 +320,7 @@ struct ImageCharges {
 [[nodiscard]] uint32 ReadUInt32(const QByteArray &bytes, qsizetype at) {
 	auto result = uint32();
 	for (auto i = 0; i != 4; ++i) {
-		result = (result << 8) | uint32(uchar(bytes[at + i]));
+		result = (result << 8) | uint32(uchar(bytes.at(int(at + i))));
 	}
 	return result;
 }

@@ -33,9 +33,30 @@ constexpr auto kMinIvZoom = 25;
 constexpr auto kMaxIvZoom = 400;
 constexpr auto kLanguageCodesFormat = qint32(1);
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 1, 0)
+[[nodiscard]] QString LanguageToCode(QLocale::Language language) {
+	return QLocale::languageToCode(language);
+}
+
+[[nodiscard]] QLocale::Language CodeToLanguage(const QString &code) {
+	return QLocale::codeToLanguage(code);
+}
+#else // Qt >= 6.1
+[[nodiscard]] QString LanguageToCode(QLocale::Language language) {
+	return QLocale(language).name().section(QChar('_'), 0, 0);
+}
+
+[[nodiscard]] QLocale::Language CodeToLanguage(const QString &code) {
+	const auto trimmed = code.trimmed();
+	return trimmed.isEmpty()
+		? QLocale::AnyLanguage
+		: QLocale(trimmed).language();
+}
+#endif // Qt >= 6.1
+
 [[nodiscard]] QString SerializeLanguage(QLocale::Language language) {
 	return (language > QLocale::C)
-		? QLocale::languageToCode(language)
+		? LanguageToCode(language)
 		: QString();
 }
 
@@ -43,7 +64,7 @@ constexpr auto kLanguageCodesFormat = qint32(1);
 		const QStringList &codes) {
 	auto result = std::vector<LanguageId>();
 	for (const auto &code : codes) {
-		const auto language = QLocale::codeToLanguage(code);
+		const auto language = CodeToLanguage(code);
 		if (language <= QLocale::C) {
 			LOG(("Translate Settings: Skipping unknown language code: %1"
 				).arg(code));
@@ -1438,7 +1459,7 @@ void Settings::addFromSerialized(
 	_translateChatEnabled = (translateChatEnabled == 1);
 	if (languageCodesFormat == kLanguageCodesFormat) {
 		if (!translateToCode.isEmpty()) {
-			const auto language = QLocale::codeToLanguage(translateToCode);
+			const auto language = CodeToLanguage(translateToCode);
 			if (language <= QLocale::C) {
 				LOG(("Translate Settings: Skipping unknown language code: %1"
 					).arg(translateToCode));

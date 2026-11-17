@@ -5577,6 +5577,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_translate_menu_dont" = "Don't translate {name}";
 "lng_translate_menu_dont_other" = "Don't translate {name}";
 "lng_translate_menu_hide" = "Hide";
+"lng_translate_settings_subtitle" = "Translate Messages";
 "lng_translate_hidden_user" = "Translation bar hidden for this chat.";
 "lng_translate_hidden_group" = "Translation bar is now hidden for this group.";
 "lng_translate_hidden_channel" = "Translation bar is now hidden for this channel.";

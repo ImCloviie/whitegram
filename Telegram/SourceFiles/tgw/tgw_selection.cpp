@@ -190,7 +190,7 @@ void WidgetSelection::adopt() {
 }
 
 void WidgetSelection::menuPress(not_null<QMouseEvent*> e) {
-	const auto over = QApplication::widgetAt(e->globalPosition().toPoint());
+	const auto over = QApplication::widgetAt(e->globalPos());
 	if (_list->isAncestorOf(over)) {
 		listPress(e->button(), true);
 	}

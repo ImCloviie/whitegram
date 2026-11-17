@@ -99,7 +99,7 @@ void SetupSelectingScroll(
 			check(!(mouse->buttons() & Qt::LeftButton)
 				? 0
 				: delta
-				? delta(mouse->globalPosition().toPoint())
+				? delta(mouse->globalPos())
 				: SelectingScrollDelta(
 					widget->visibleRegion().boundingRect(),
 					mouse->pos().y()));

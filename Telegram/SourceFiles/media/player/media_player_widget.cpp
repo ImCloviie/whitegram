@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "main/main_session.h"
 #include "window/window_session_controller.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "styles/style_media_player.h"
 
 namespace Media {
@@ -89,7 +90,9 @@ Widget::Widget(
 	}, _speedToggle->lifetime());
 	_speedToggle->finishAnimating();
 
-	setAttribute(Qt::WA_OpaquePaintEvent);
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!AyuFeatures::GlassEffect::CreateTranslucent());
 	setMouseTracking(true);
 	resize(width(), st::mediaPlayerHeight + st::lineWidth);
 
@@ -286,11 +289,20 @@ void Widget::setupRightControls() {
 		auto p = QPainter(raw);
 		const auto &icon = st::mediaPlayerControlsFade;
 		const auto fade = QRect(0, 0, icon.width(), raw->height());
+		const auto fill = clip.intersected(
+			{ icon.width(), 0, raw->width() - icon.width(), raw->height() });
+		if (st::mediaPlayerBg->c.alpha() < 255) {
+			// Glass: the bar under us is already filled with the translucent
+			// color, so replace the title pixels instead of a second layer.
+			if (!fill.isEmpty()) {
+				p.setCompositionMode(QPainter::CompositionMode_Source);
+				p.fillRect(fill, st::mediaPlayerBg);
+			}
+			return;
+		}
 		if (fade.intersects(clip)) {
 			icon.fill(p, fade);
 		}
-		const auto fill = clip.intersected(
-			{ icon.width(), 0, raw->width() - icon.width(), raw->height() });
 		if (!fill.isEmpty()) {
 			p.fillRect(fill, st::mediaPlayerBg);
 		}

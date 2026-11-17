@@ -333,6 +333,9 @@ void InnerWidget::createProfileTop() {
 	startTop();
 
 	using namespace Profile;
+	const auto coverSection = _top->add(
+		object_ptr<Ui::VerticalLayout>(_top));
+	_fullProfileCoverHeight = coverSection->heightValue();
 	auto detailsStack = SectionStack(coverSection);
 	BuildProfileDetailsSections(
 		detailsStack,

@@ -106,3 +106,6 @@ menuIconClearAttention: icon {{ "menu/clear", menuIconAttentionColor }};
 // trigger rebuild
 
 // trigger rebuild 2
+
+// Removed upstream in 7.4, still used by AyuGram context menu.
+menuIconTTLAny: icon {{ "menu/auto_delete_plain", menuIconColor }};

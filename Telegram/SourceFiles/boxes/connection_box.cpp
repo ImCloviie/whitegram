@@ -1666,7 +1666,7 @@ void ProxiesBox::handleRowEvent(int id, not_null<QEvent*> e) {
 		if (!(mouse->buttons() & Qt::LeftButton)) {
 			finishPress();
 		} else {
-			updateDragSelection(mouse->globalPosition().toPoint());
+			updateDragSelection(mouse->globalPos());
 		}
 	} else if (mouse->button() == Qt::LeftButton) {
 		finishPress();

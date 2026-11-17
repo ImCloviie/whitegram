@@ -12,6 +12,7 @@
 #include "ayu/ayu_worker.h"
 #include "ayu/data/ayu_database.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
+#include "ayu/features/tg_ws_proxy/tg_ws_proxy.h"
 #include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
@@ -102,6 +103,7 @@ void initIcon() {
 
 void initConnectionBypass() {
 	AyuFeatures::ConnectionBypass::init();
+	AyuFeatures::TgWsProxy::init();
 }
 
 void initGlassEffect() {

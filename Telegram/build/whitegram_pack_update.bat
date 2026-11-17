@@ -47,16 +47,24 @@ rem v2 envelope: td-update-win-x64-<AppVersion>, signed in one pass with
 rem the local Ed25519 channel key (see backend/deploy/setup_update_signing_v2.py).
 set "UpdateFile=td-update-win-x64-%AppVersion%"
 set "D3D=modules\x64\d3d\d3dcompiler_47.dll"
+set "TGWS=modules\x64\tgwsproxy\tg-ws-proxy.exe"
+set "TGWSLIC=modules\x64\tgwsproxy\LICENSE.txt"
 
 cd /d "%ReleasePath%"
 if exist "%UpdateFile%" del /q "%UpdateFile%"
 
+if not exist "%TGWS%" (
+  echo Missing %ReleasePath%\%TGWS%
+  echo Run: python Telegram\build\whitegram_build_tgwsproxy.py
+  exit /b 1
+)
+set "ExtraPaths=-path %TGWS% -path %TGWSLIC%"
 if exist "%D3D%" (
-  Packer.exe -version %AppVersion% -path Whitegram.exe -path Updater.exe -path "%D3D%" -target win64 -channel stable -keys-loc "%KeysLoc%" -local-key "%LocalKey%" -local-key-id %LocalKeyId%
+  set "ExtraPaths=-path %D3D% !ExtraPaths!"
 ) else (
   echo Warning: %D3D% not found, packing without it.
-  Packer.exe -version %AppVersion% -path Whitegram.exe -path Updater.exe -target win64 -channel stable -keys-loc "%KeysLoc%" -local-key "%LocalKey%" -local-key-id %LocalKeyId%
 )
+Packer.exe -version %AppVersion% -path Whitegram.exe -path Updater.exe !ExtraPaths! -target win64 -channel stable -keys-loc "%KeysLoc%" -local-key "%LocalKey%" -local-key-id %LocalKeyId%
 if errorlevel 1 exit /b 1
 
 if not exist "%UpdateFile%" (

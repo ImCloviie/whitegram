@@ -266,6 +266,8 @@ set(ayugram_files
         ayu/ui/components/lyrics_window.h
         ayu/ui/components/saved_music.cpp
         ayu/ui/components/saved_music.h
+        ayu/ui/components/percent_slider.cpp
+        ayu/ui/components/percent_slider.h
         ayu/libs/json.hpp
         ayu/libs/json_ext.hpp
         ayu/libs/sqlite/sqlite3.c
@@ -318,6 +320,8 @@ set(ayugram_files
         ayu/features/connection_bypass/connection_bypass.h
         ayu/features/connection_bypass/bypass_hosts.cpp
         ayu/features/connection_bypass/bypass_hosts.h
+        ayu/features/tg_ws_proxy/tg_ws_proxy.cpp
+        ayu/features/tg_ws_proxy/tg_ws_proxy.h
         ayu/features/custom_profile_background/custom_profile_background.cpp
         ayu/features/custom_profile_background/custom_profile_background.h
         ayu/features/self_destruct/self_destruct.cpp

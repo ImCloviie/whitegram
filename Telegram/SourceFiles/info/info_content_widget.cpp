@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_content_widget.h"
 
+#include "ayu/features/glass_effect/glass_effect.h"
+
 #include "api/api_who_reacted.h"
 #include "boxes/peer_list_box.h"
 #include "data/data_chat.h"
@@ -83,7 +85,10 @@ ContentWidget::ContentWidget(
 		: st::defaultScrollArea)) {
 	using namespace rpl::mappers;
 
-	setAttribute(Qt::WA_OpaquePaintEvent);
+	// A translucent glass background lets the layer's blur show through.
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		AyuFeatures::GlassEffect::BackgroundOpacity() >= 1.);
 	_controller->wrapValue(
 	) | rpl::on_next([this](Wrap value) {
 		if (value != Wrap::Layer) {

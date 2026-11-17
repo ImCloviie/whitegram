@@ -62,6 +62,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "styles/style_ayu_styles.h"
 
 
@@ -260,7 +261,8 @@ StickersListWidget::StickersListWidget(
 	st::stickersPremiumLock))
 , _searchRequestTimer([=] { sendSearchRequest(); }) {
 	setMouseTracking(true);
-	if (st().bg->c.alpha() > 0) {
+	if (st().bg->c.alpha() > 0
+		&& !AyuFeatures::GlassEffect::CreateTranslucent()) {
 		setAttribute(Qt::WA_OpaquePaintEvent);
 	}
 

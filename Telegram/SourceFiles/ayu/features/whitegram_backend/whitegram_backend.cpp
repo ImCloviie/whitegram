@@ -403,9 +403,9 @@ void SetPendingChange(uint64 userId, Zone zone, PendingChange change) {
 		const QString &betaLabel,
 		const QString &betaVersion) {
 	if (IsRussian()) {
-		return u"Версия pre-beta "_q + betaVersion;
+		return u"Версия beta "_q + betaVersion;
 	}
-	return u"Version pre-beta "_q + betaVersion;
+	return u"Version beta "_q + betaVersion;
 }
 
 class Service {
@@ -437,7 +437,7 @@ public:
 
 	void applyLocalBetaBadge() {
 		_betaBadgeText = FormatBetaBadge(
-			u"pre-beta"_q,
+			u"beta"_q,
 			Whitegram::Backend::LocalPreBetaVersion());
 	}
 

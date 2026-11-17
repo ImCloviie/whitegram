@@ -95,6 +95,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/abstract_box.h"
 #include "styles/style_ayu_icons.h"
 #include "lang_auto.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/ui/settings/settings_main.h"
 #include "ayu/features/whitegram_crypto.h"
 #include "ayu/features/whitegram_crypto_charts.h"

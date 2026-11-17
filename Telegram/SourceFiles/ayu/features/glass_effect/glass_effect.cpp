@@ -4,9 +4,13 @@
 
 #include "ayu/ayu_settings.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
+#include "base/algorithm.h"
 #include "base/timer.h"
 #include "core/application.h"
 #include "ui/effects/animations.h"
+#include "ui/image/image_prepare.h"
+#include "ui/layers/box_content.h"
+#include "ui/layers/layer_widget.h"
 #include "ui/painter.h"
 #include "ui/rp_widget.h"
 #include "ui/style/style_core_palette.h"
@@ -14,10 +18,13 @@
 #include "window/main_window.h"
 #include "window/window_controller.h"
 #include "styles/palette.h"
+#include "styles/style_layers.h"
 
 #include <QtCore/QEvent>
 #include <QtCore/QOperatingSystemVersion>
 #include <QtCore/QPointer>
+#include <QtGui/QPaintEvent>
+#include <QtGui/QPainterPath>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QWidget>
 
@@ -30,12 +37,17 @@ namespace {
 
 constexpr auto kCrossfadeDuration = crl::time(480);
 constexpr auto kSliderApplyDelay = crl::time(30);
+constexpr auto kMinAlpha = 3;
+constexpr auto kLayerTintAlpha = 70;
 constexpr auto kBlurProperty = "WhitegramGlassBlur";
+constexpr auto kBackdropName = "WhitegramLayerBackdrop";
 
 enum class Kind {
 	Base,  // window, chat list, title, compose area: the slider value
+	Inner, // rows drawn over an already filled panel: a light extra layer
 	Hover, // hover and active rows: a bit denser than the base
-	Layer, // boxes, side menu, emoji panel: stay almost opaque to read
+	Layer, // boxes, side menu, profiles: glass over a strong blur
+	Panel, // emoji panel: almost opaque over the chat, glass as a column
 };
 
 struct Entry {
@@ -55,12 +67,27 @@ struct Entry {
 		{ "historyComposeAreaBg", &st::historyComposeAreaBg, Kind::Base },
 		{ "historyPinnedBg", &st::historyPinnedBg, Kind::Base },
 		{ "historyReplyBg", &st::historyReplyBg, Kind::Base },
+		{ "historyComposeButtonBg", &st::historyComposeButtonBg, Kind::Base },
+		{ "titleButtonBg", &st::titleButtonBg, Kind::Base },
+		{ "titleButtonBgActive", &st::titleButtonBgActive, Kind::Base },
+		{ "filterInputInactiveBg", &st::filterInputInactiveBg, Kind::Hover },
+		{ "filterInputActiveBg", &st::filterInputActiveBg, Kind::Hover },
+		{
+			"historyComposeButtonBgOver",
+			&st::historyComposeButtonBgOver,
+			Kind::Hover,
+		},
+		{ "contactsBg", &st::contactsBg, Kind::Inner },
+		{ "contactsBgOver", &st::contactsBgOver, Kind::Hover },
+		{ "searchedBarBg", &st::searchedBarBg, Kind::Hover },
+		{ "boxDividerBg", &st::boxDividerBg, Kind::Hover },
 		{ "windowBgOver", &st::windowBgOver, Kind::Hover },
 		{ "dialogsBgOver", &st::dialogsBgOver, Kind::Hover },
 		{ "sideBarBgActive", &st::sideBarBgActive, Kind::Hover },
 		{ "boxBg", &st::boxBg, Kind::Layer },
 		{ "mainMenuBg", &st::mainMenuBg, Kind::Layer },
-		{ "emojiPanBg", &st::emojiPanBg, Kind::Layer },
+		{ "emojiPanBg", &st::emojiPanBg, Kind::Panel },
+		{ "emojiPanCategories", &st::emojiPanCategories, Kind::Panel },
 	};
 	return result;
 }
@@ -78,11 +105,13 @@ struct Entry {
 	return window->testAttribute(Qt::WA_TranslucentBackground);
 }
 
-[[nodiscard]] float64 KindAlpha(Kind kind, float64 base) {
+[[nodiscard]] float64 KindAlpha(Kind kind, float64 base, bool sidePanel) {
 	switch (kind) {
 	case Kind::Base: return base;
+	case Kind::Inner: return base * 0.35;
 	case Kind::Hover: return base + (1. - base) * 0.35;
-	case Kind::Layer: return std::max(base, 0.97);
+	case Kind::Layer: return base + (1. - base) * 0.4;
+	case Kind::Panel: return sidePanel ? base : std::max(base, 0.97);
 	}
 	return base;
 }
@@ -99,9 +128,6 @@ void SetBlurBehind(
 	using namespace Platform;
 	const auto handle = reinterpret_cast<HWND>(window->winId());
 
-	// WHY: DWM composes the alpha channel of a framed window only with
-	// blur-behind enabled; an empty region turns on alpha without the old
-	// Aero blur, the real blur comes from the accent policy below.
 	auto behind = DWM_BLURBEHIND();
 	behind.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
 	behind.fEnable = TRUE;
@@ -114,7 +140,16 @@ void SetBlurBehind(
 	if (!Dlls::SetWindowCompositionAttribute) {
 		return;
 	}
-	const auto alpha = std::clamp(strength * 230 / 100, 0x10, 0xE6);
+	// Acrylic stutters while dragging on Windows 10, plain blur does not.
+	static const auto kAcrylicSupported
+		= (QOperatingSystemVersion::current().microVersion() >= 22000);
+	// WHY: plain blur on Windows 11 lags behind a dragged window and may not
+	// render, so it stays acrylic there; DWM has no radius, 0% turns it off.
+	if (strength <= 0) {
+		enabled = false;
+	}
+	const auto acrylic = kAcrylicSupported;
+	const auto alpha = std::clamp(0x10 + strength * 0xD6 / 100, 0x10, 0xE6);
 	const auto gradient = DWORD((alpha << 24)
 		| (tint.blue() << 16)
 		| (tint.green() << 8)
@@ -136,12 +171,9 @@ void SetBlurBehind(
 		DWORD gradientColor = 0;
 		int animationId = 0;
 	};
-	// Acrylic stutters while dragging on Windows 10, plain blur does not.
-	static const auto kAcrylic
-		= (QOperatingSystemVersion::current().microVersion() >= 22000);
 	auto policy = AccentPolicy();
 	if (enabled) {
-		policy.state = kAcrylic ? AccentAcrylicBlurBehind : AccentBlurBehind;
+		policy.state = acrylic ? AccentAcrylicBlurBehind : AccentBlurBehind;
 		policy.flags = 2;
 		policy.gradientColor = gradient;
 	}
@@ -208,11 +240,17 @@ public:
 		return _applied ? _alpha : 1.;
 	}
 
+	[[nodiscard]] bool layerBlurActive() const {
+		return _applied && AyuSettings::getInstance().glassBlur();
+	}
+
 	void sync(bool toggle) {
 		const auto enabled = AyuSettings::getInstance().glassEffect();
 		if (enabled && !allWindowsTranslucent()) {
 			// Opaque native windows can't become per-pixel translucent.
-			promptRestart();
+			if (toggle) {
+				promptRestart();
+			}
 			return;
 		}
 		if (!toggle) {
@@ -242,16 +280,56 @@ public:
 		updateWindows();
 	}
 
+	void registerSidePanel(not_null<QWidget*> panel) {
+		_sidePanels.emplace_back(panel.get());
+		QObject::connect(panel, &QObject::destroyed, this, [=] {
+			_sidePanelTimer.callOnce(0);
+		});
+		_sidePanelTimer.callOnce(0);
+	}
+
 protected:
 	bool eventFilter(QObject *object, QEvent *event) override {
 		const auto type = event->type();
+		if (type == QEvent::Paint && _applied && object->isWidgetType()) {
+			if (IsMainWindow(object)) {
+				// Layered windows let clicks through fully transparent pixels.
+				const auto window = static_cast<QWidget*>(object);
+				auto p = QPainter(window);
+				p.fillRect(
+					static_cast<QPaintEvent*>(event)->rect(),
+					QColor(0, 0, 0, 1));
+			} else if (const auto layer = dynamic_cast<Ui::LayerWidget*>(
+					static_cast<QWidget*>(object))) {
+				// Every layer (box, profile, side menu) gets the same glass.
+				auto p = QPainter(layer);
+				p.setClipRegion(static_cast<QPaintEvent*>(event)->region());
+				const auto radius = (layer->x() <= 0) ? 0 : st::boxRadius;
+				PaintLayerBackdrop(p, layer, radius);
+			}
+			return false;
+		}
+		if (type == QEvent::Show
+			&& _applied
+			&& object->isWidgetType()
+			&& dynamic_cast<Ui::BoxContent*>(static_cast<QWidget*>(object))) {
+			// An opaque box would hide the layer glass drawn under it.
+			static_cast<QWidget*>(object)->setAttribute(
+				Qt::WA_OpaquePaintEvent,
+				false);
+		}
+		if ((type == QEvent::Show || type == QEvent::Hide)
+			&& isSidePanel(object)) {
+			_sidePanelTimer.callOnce(0);
+		}
 		if ((type == QEvent::Show || type == QEvent::WinIdChange)
 			&& IsMainWindow(object)) {
 			const auto window = static_cast<QWidget*>(object);
 			if (type == QEvent::WinIdChange) {
 				// The new native window has no accent policy yet.
 				window->setProperty(kBlurProperty, QVariant());
-			} else if (AyuSettings::getInstance().glassEffect()) {
+			} else if (AyuSettings::getInstance().glassEffect()
+				&& !paletteHoldsWritten()) {
 				// The startup theme may load without a palette notification.
 				_captured = false;
 				applyPalette();
@@ -322,9 +400,14 @@ private:
 			_written.resize(count);
 			for (auto i = 0; i != count; ++i) {
 				const auto now = (*entries[i].color)->c;
-				// A palette restored from a snapshot may hold our own value.
-				if (!_applied || now != _written[i]) {
+				// WHY: a palette may still hold our own translucent value;
+				// taking it as the base would multiply the alpha again.
+				if (!_applied || now.rgba() != _written[i].rgba()) {
 					_base[i] = now;
+					if (entries[i].kind == Kind::Base) {
+						// Heals a base that was saved already translucent.
+						_base[i].setAlpha(255);
+					}
 				}
 			}
 			_captured = true;
@@ -336,9 +419,15 @@ private:
 		_applyingPalette = true;
 		for (auto i = 0; i != count; ++i) {
 			auto color = _base[i];
-			if (enabled) {
-				color.setAlphaF(color.alphaF()
-					* KindAlpha(entries[i].kind, _alpha));
+			if (enabled && color.alpha() > 0) {
+				// At least kMinAlpha: Windows passes clicks through alpha 0.
+				const auto scaled = int(base::SafeRound(color.alpha()
+					* KindAlpha(entries[i].kind, _alpha, _sidePanelShown)));
+				color = QColor(
+					color.red(),
+					color.green(),
+					color.blue(),
+					std::clamp(scaled, kMinAlpha, 255));
 			}
 			_written[i] = color;
 			style::main_palette::setColor(
@@ -353,6 +442,47 @@ private:
 		_applyingPalette = false;
 	}
 
+	[[nodiscard]] bool isSidePanel(QObject *object) const {
+		for (const auto &panel : _sidePanels) {
+			if (panel.data() == object) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void refreshSidePanels() {
+		_sidePanels.erase(
+			ranges::remove_if(_sidePanels, [](const auto &panel) {
+				return !panel;
+			}),
+			end(_sidePanels));
+		const auto shown = ranges::any_of(_sidePanels, [](const auto &panel) {
+			return panel && panel->isVisible();
+		});
+		if (_sidePanelShown == shown) {
+			return;
+		}
+		// A sticker column lies on the window glass like the chat list.
+		_sidePanelShown = shown;
+		if (_applied) {
+			applyPalette();
+		}
+	}
+
+	[[nodiscard]] bool paletteHoldsWritten() const {
+		const auto &entries = Entries();
+		if (!_applied || _written.size() != entries.size()) {
+			return false;
+		}
+		for (auto i = 0; i != int(entries.size()); ++i) {
+			if ((*entries[i].color)->c.rgba() != _written[i].rgba()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	std::vector<QColor> _base;
 	std::vector<QColor> _written;
 	float64 _alpha = 1.;
@@ -360,7 +490,117 @@ private:
 	bool _applied = false;
 	bool _applyingPalette = false;
 	base::Timer _sliderTimer = base::Timer([=] { applyNow(); });
+	std::vector<QPointer<QWidget>> _sidePanels;
+	bool _sidePanelShown = false;
+	base::Timer _sidePanelTimer = base::Timer([=] { refreshSidePanels(); });
 	rpl::lifetime _lifetime;
+
+};
+
+// Keeps a downscaled blurred snapshot of the window content under a layer.
+class LayerBackdrop final : public QObject {
+public:
+	explicit LayerBackdrop(not_null<QWidget*> layer)
+	: QObject(layer.get())
+	, _layer(layer) {
+		setObjectName(QLatin1String(kBackdropName));
+		layer->installEventFilter(this);
+		schedule();
+	}
+
+	void paint(QPainter &p, int radius) {
+		const auto host = this->host();
+		if (_blurred.isNull() || !host) {
+			return;
+		}
+		const auto origin = _layer->mapTo(host, QPoint());
+		p.save();
+		if (radius > 0) {
+			auto path = QPainterPath();
+			path.addRoundedRect(QRectF(_layer->rect()), radius, radius);
+			p.setClipPath(path, Qt::IntersectClip);
+		}
+		p.setRenderHint(QPainter::SmoothPixmapTransform);
+		p.drawImage(QRect(-origin, _hostSize), _blurred);
+		// Translucent rows of the layer lie on this, so text stays readable.
+		auto tint = st::boxBg->c;
+		tint.setAlpha(kLayerTintAlpha);
+		p.fillRect(_layer->rect(), tint);
+		p.restore();
+	}
+
+protected:
+	bool eventFilter(QObject *object, QEvent *event) override {
+		const auto type = event->type();
+		if (type == QEvent::Show || type == QEvent::Resize) {
+			schedule();
+		}
+		return false;
+	}
+
+private:
+	static constexpr auto kDownscale = 4;
+	static constexpr auto kMinBlurRadius = 9;
+	static constexpr auto kGrabDelay = crl::time(150);
+
+	[[nodiscard]] QWidget *host() const {
+		const auto stack = _layer->parentWidget();
+		return stack ? stack->parentWidget() : nullptr;
+	}
+
+	void schedule() {
+		// A layer resizes every frame while it animates: grab once it rests.
+		_grabTimer.callOnce(kGrabDelay);
+	}
+
+	void grab() {
+		const auto stack = _layer->parentWidget();
+		const auto host = this->host();
+		if (!host || host->size().isEmpty()) {
+			return;
+		}
+		const auto ratio = style::DevicePixelRatio();
+		auto full = QImage(
+			host->size() * ratio,
+			QImage::Format_ARGB32_Premultiplied);
+		full.setDevicePixelRatio(ratio);
+		full.fill(Qt::transparent);
+		{
+			auto p = QPainter(&full);
+			for (const auto child : host->children()) {
+				const auto widget = qobject_cast<QWidget*>(child);
+				if (!widget
+					|| widget == stack
+					|| widget->isWindow()
+					|| widget->isHidden()) {
+					continue;
+				}
+				widget->render(
+					&p,
+					widget->pos(),
+					QRegion(),
+					QWidget::DrawChildren);
+			}
+		}
+		auto small = full.scaled(
+			full.size() / (ratio * kDownscale),
+			Qt::IgnoreAspectRatio,
+			Qt::SmoothTransformation);
+		small.setDevicePixelRatio(1.);
+		const auto strength = AyuSettings::getInstance().glassBlurStrength();
+		_blurred = Images::BlurLargeImage(
+			std::move(small),
+			kMinBlurRadius + strength / 6);
+		_hostSize = host->size();
+	}
+
+	const not_null<QWidget*> _layer;
+	QImage _blurred;
+	QSize _hostSize;
+	base::Timer _grabTimer = base::Timer([=] {
+		grab();
+		_layer->update();
+	});
 
 };
 
@@ -384,7 +624,43 @@ double BackgroundOpacity() {
 	return instance ? instance->backgroundOpacity() : 1.;
 }
 
+void PaintLayerBackdrop(QPainter &p, QWidget *layer, int radius) {
+	const auto instance = Instance();
+	if (!layer || !instance || instance->backgroundOpacity() >= 1.) {
+		return;
+	} else if (!instance->layerBlurActive()) {
+		auto tint = st::boxBg->c;
+		tint.setAlpha(kLayerTintAlpha);
+		auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(tint);
+		p.drawRoundedRect(layer->rect(), radius, radius);
+		return;
+	}
+	const auto found = layer->findChild<QObject*>(
+		QLatin1String(kBackdropName),
+		Qt::FindDirectChildrenOnly);
+	const auto backdrop = found
+		? static_cast<LayerBackdrop*>(found)
+		: new LayerBackdrop(layer);
+	backdrop->paint(p, radius);
+}
+
+void RegisterSidePanel(QWidget *panel) {
+	if (!panel) {
+		return;
+	} else if (const auto instance = Instance()) {
+		instance->registerSidePanel(panel);
+	}
+}
+
 void init() {
+	if (CreateTranslucent()) {
+		// WHY: Qt scrolls by shifting already painted pixels, which keeps
+		// stale translucent rows and garbage; Qt reads this once on first use.
+		qputenv("QT_NO_FAST_SCROLL", "1");
+		qputenv("QT_NO_FAST_MOVE", "1");
+	}
 	if (const auto instance = Instance()) {
 		instance->applyNow();
 	}

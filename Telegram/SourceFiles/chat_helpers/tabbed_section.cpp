@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/tabbed_section.h"
 
 #include "chat_helpers/tabbed_selector.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ui/ui_utility.h"
 #include "window/window_session_controller.h"
 
@@ -39,7 +40,11 @@ TabbedSection::TabbedSection(
 	_selector->setAfterShownCallback(nullptr);
 	_selector->setBeforeHidingCallback(nullptr);
 
-	setAttribute(Qt::WA_OpaquePaintEvent, true);
+	// The glass shows the window under the column, so it is not opaque.
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!AyuFeatures::GlassEffect::CreateTranslucent());
+	AyuFeatures::GlassEffect::RegisterSidePanel(this);
 }
 
 void TabbedSection::beforeHiding() {

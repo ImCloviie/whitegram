@@ -12,6 +12,8 @@ namespace AyuAssets {
 
 ICON(DEFAULT, "default");
 ICON(WHITEGRAM, "whitegram");
+ICON(WHITEGRAM_LIGHT, "whitegram_light");
+ICON(WHITEGRAM_DARK, "whitegram_dark");
 ICON(ALT, "alt");
 ICON(DISCORD, "discord");
 ICON(SPOTIFY, "spotify");

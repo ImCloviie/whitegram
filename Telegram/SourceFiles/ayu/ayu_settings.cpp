@@ -11,6 +11,7 @@
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ayu_worker.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
+#include "ayu/features/tg_ws_proxy/tg_ws_proxy.h"
 #include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
@@ -652,7 +653,7 @@ void from_json(const nlohmann::json &j, MessageShotSettings &s) {
 }
 
 AyuSettings::AyuSettings()
-: _appIcon(AyuAssets::WHITEGRAM_ICON)
+: _appIcon(AyuAssets::WHITEGRAM_LIGHT_ICON)
 , _editedMark(Core::IsAppLaunched() ? tr::lng_edited(tr::now) : QString("edited")) {
 }
 
@@ -1681,8 +1682,37 @@ void AyuSettings::setConnectionBypassMode(ConnectionBypassMode val) {
 		return;
 	}
 	_connectionBypassMode = val;
+	if (val != ConnectionBypassMode::Off && _tgWsProxyEnabled.current()) {
+		_tgWsProxyEnabled = false;
+		AyuFeatures::TgWsProxy::reevaluate();
+	}
 	save();
 	AyuFeatures::ConnectionBypass::reevaluate(true, true);
+}
+
+void AyuSettings::setTgWsProxyEnabled(bool val) {
+	if (_tgWsProxyEnabled.current() == val) {
+		return;
+	}
+	_tgWsProxyEnabled = val;
+	const auto turnOffBypass = val
+		&& (_connectionBypassMode.current() != ConnectionBypassMode::Off);
+	if (turnOffBypass) {
+		_connectionBypassMode = ConnectionBypassMode::Off;
+	}
+	save();
+	if (turnOffBypass) {
+		AyuFeatures::ConnectionBypass::reevaluate(true, false);
+	}
+	AyuFeatures::TgWsProxy::reevaluate();
+}
+
+void AyuSettings::setTgWsProxySecret(const QString &val) {
+	if (_tgWsProxySecret == val) {
+		return;
+	}
+	_tgWsProxySecret = val;
+	save();
 }
 
 void AyuSettings::setConnectionBypassSecret(const QString &val) {
@@ -1919,6 +1949,8 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"profileBackgroundDim", s._profileBackgroundDim.current()},
 		{"connectionBypassMode", s._connectionBypassMode.current()},
 		{"connectionBypassSecret", s._connectionBypassSecret.current()},
+		{"tgWsProxyEnabled", s._tgWsProxyEnabled.current()},
+		{"tgWsProxySecret", s._tgWsProxySecret},
 		{"messageShotSettings", s._messageShotSettings},
 		{"cryptoFiatCurrency", s._cryptoFiatCurrency.current()},
 		{"cryptoFiatCurrencyManual", s._cryptoFiatCurrencyManual.current()},
@@ -2230,6 +2262,12 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._connectionBypassSecret = j.value(
 		"connectionBypassSecret",
 		defaults._connectionBypassSecret.current());
+	s._tgWsProxyEnabled = j.value(
+		"tgWsProxyEnabled",
+		defaults._tgWsProxyEnabled.current());
+	s._tgWsProxySecret = j.value(
+		"tgWsProxySecret",
+		defaults._tgWsProxySecret);
 
 	s._enableAccountProfiles = j.value("enableAccountProfiles", defaults._enableAccountProfiles.current());
 	s._maxAccountProfiles = j.value("maxAccountProfiles", defaults._maxAccountProfiles.current());

@@ -1000,6 +1000,12 @@ public:
 	[[nodiscard]] const QString &connectionBypassSecret() const {
 		return _connectionBypassSecret.current();
 	}
+	[[nodiscard]] bool tgWsProxyEnabled() const {
+		return _tgWsProxyEnabled.current();
+	}
+	[[nodiscard]] const QString &tgWsProxySecret() const {
+		return _tgWsProxySecret;
+	}
 
 	void setSaveDeletedMessages(bool val);
 	void setSaveMessagesHistory(bool val);
@@ -1125,6 +1131,8 @@ public:
 	void setProfileBackgroundDim(int val);
   void setConnectionBypassMode(ConnectionBypassMode val);
   void setConnectionBypassSecret(const QString &val);
+  void setTgWsProxyEnabled(bool val);
+  void setTgWsProxySecret(const QString &val);
 
   [[nodiscard]] QString bypassLastGoodHost() const;
   void setBypassLastGoodHost(const QString &host);
@@ -1145,6 +1153,9 @@ public:
 	}
   [[nodiscard]] rpl::producer<QString> connectionBypassSecretValue() const {
 		return _connectionBypassSecret.value();
+	}
+  [[nodiscard]] rpl::producer<bool> tgWsProxyEnabledValue() const {
+		return _tgWsProxyEnabled.value();
 	}
 
 	[[nodiscard]] rpl::producer<bool> useGlobalGhostModeValue() const { return _useGlobalGhostMode.value(); }
@@ -1443,6 +1454,9 @@ public:
   [[nodiscard]] bool glassBlur() const {
     return _glassBlur.current();
   }
+  [[nodiscard]] rpl::producer<bool> glassBlurValue() const {
+    return _glassBlur.value();
+  }
   [[nodiscard]] int glassBlurStrength() const {
     return _glassBlurStrength.current();
   }
@@ -1529,6 +1543,9 @@ public:
   void setStartupAnimationShowIcon(bool val);
   [[nodiscard]] rpl::producer<bool> startupAnimationShowIconValue() const {
     return _startupAnimationShowIcon.value();
+  }
+  [[nodiscard]] rpl::producer<int> startupAnimationTypeValue() const {
+    return _startupAnimationType.value();
   }
   [[nodiscard]] int startupAnimationType() const {
     return _startupAnimationType.current();
@@ -1839,6 +1856,8 @@ private:
   rpl::variable<ConnectionBypassMode> _connectionBypassMode =
 	  ConnectionBypassMode::Auto;
   rpl::variable<QString> _connectionBypassSecret;
+  rpl::variable<bool> _tgWsProxyEnabled = false;
+  QString _tgWsProxySecret;
 
   rpl::variable<bool> _enableAccountProfiles = true;
   rpl::variable<AccountProfilesVisualVariant> _accountProfilesVisualVariant = AccountProfilesVisualVariant::Folders;
@@ -1916,7 +1935,7 @@ private:
 
   rpl::variable<bool> _startupAnimationEnabled = true;
   rpl::variable<bool> _startupAnimationShowIcon = true;
-  rpl::variable<int> _startupAnimationType = 4;
+  rpl::variable<int> _startupAnimationType = 5;
   rpl::variable<int> _startupAnimationFps = 240;
 
   rpl::variable<bool> _useGlobalGhostMode = true;

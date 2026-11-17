@@ -2,6 +2,9 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
+class QPainter;
+class QWidget;
+
 namespace AyuFeatures::GlassEffect {
 
 // Background opacity bounds in percent; text and icons stay opaque.
@@ -13,6 +16,13 @@ inline constexpr auto kMaxOpacity = 95;
 
 // Opacity for the chat wallpaper: 1 while the effect is off.
 [[nodiscard]] double BackgroundOpacity();
+
+// Paints the blurred window content under a layer (side menu, settings).
+void PaintLayerBackdrop(QPainter &p, QWidget *layer, int radius);
+
+// A widget on the window glass that uses the emoji panel colors, like the
+// sticker column: while it is visible those colors follow the glass too.
+void RegisterSidePanel(QWidget *panel);
 
 // Applies the saved state; called once after settings are loaded.
 void init();

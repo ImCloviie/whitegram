@@ -18,7 +18,7 @@ public:
 
 	void markScrolling();
 	[[nodiscard]] bool scrolling() const {
-		return _scrolling;
+		return _scrolling && Usable();
 	}
 	[[nodiscard]] bool hasFresh(uint64 rowId, QSize physicalSize) const {
 		const auto i = _images.find(rowId);
@@ -49,6 +49,9 @@ public:
 		_memory += image.sizeInBytes() - slot.sizeInBytes();
 		slot = std::move(image);
 	}
+
+	// Cached rows are opaque images, wrong over a translucent background.
+	[[nodiscard]] static bool Usable();
 
 	void invalidate(uint64 rowId);
 	void clear();

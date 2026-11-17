@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
 
+#include "ayu/features/glass_effect/glass_effect.h"
+
 #include "base/call_delayed.h"
 #include "base/qt/qt_key_modifiers.h"
 #include "base/options.h"
@@ -5356,7 +5358,13 @@ void Widget::paintEvent(QPaintEvent *e) {
 		if (top > aboveBottom) {
 			p.fillRect(0, aboveBottom, width(), top - aboveBottom, bg);
 		}
+		// Under a translucent search panel the chat list snapshot shows through.
+		const auto glass = (AyuFeatures::GlassEffect::BackgroundOpacity() < 1.);
+		if (glass) {
+			p.setOpacity(1. - suggestionsShown);
+		}
 		p.drawPixmapLeft(0, top, width(), _widthAnimationCache);
+		p.setOpacity(1.);
 		belowTop = top
 			+ (_widthAnimationCache.height() / style::DevicePixelRatio());
 	}

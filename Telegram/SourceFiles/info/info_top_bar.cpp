@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_top_bar.h"
 
+#include "ayu/features/glass_effect/glass_effect.h"
+
 #include "dialogs/ui/dialogs_stories_list.h"
 #include "lang/lang_keys.h"
 #include "info/info_wrap_widget.h"
@@ -47,7 +49,10 @@ TopBar::TopBar(
 	if (_st.radius) {
 		_roundRect.emplace(_st.radius, _st.bg);
 	}
-	setAttribute(Qt::WA_OpaquePaintEvent, !_roundRect);
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!_roundRect
+			&& (AyuFeatures::GlassEffect::BackgroundOpacity() >= 1.));
 	setSelectedItems(std::move(selectedItems));
 	updateControlsVisibility(anim::type::instant);
 }

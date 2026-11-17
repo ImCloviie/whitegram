@@ -48,6 +48,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ui/boxes/confirm_box.h"
 #include "boxes/abstract_box.h"
 
@@ -119,7 +120,9 @@ GifsListWidget::GifsListWidget(
 , _mosaic(st::emojiPanWidth - st::inlineResultsLeft)
 , _previewTimer([=] { showPreview(); }) {
 	setMouseTracking(true);
-	setAttribute(Qt::WA_OpaquePaintEvent);
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!AyuFeatures::GlassEffect::CreateTranslucent());
 
 	setupSearch();
 

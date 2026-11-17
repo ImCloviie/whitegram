@@ -38,6 +38,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/mac/global_menu_mac.h"
 #endif // Q_OS_MAC
 
+#include "ayu/features/tg_ws_proxy/tg_ws_proxy.h"
+
 #include <QtCore/QLockFile>
 #include <QtGui/QSessionManager>
 #include <QtGui/QScreen>
@@ -479,9 +481,15 @@ void Sandbox::singleInstanceChecked() {
 		new NotStartedWindow();
 		return;
 	}
+	// WHY: an orphaned tg-ws-proxy from 2.3.0-2.3.1 holds tdata/working,
+	// which made the next launch fail; stop it and try once more.
+	const auto retryAfterOrphans = [] {
+		return AyuFeatures::TgWsProxy::KillOrphans()
+			&& (CrashReports::Restart() != CrashReports::CantOpen);
+	};
 	const auto result = CrashReports::Start();
 	v::match(result, [&](CrashReports::Status status) {
-		if (status == CrashReports::CantOpen) {
+		if (status == CrashReports::CantOpen && !retryAfterOrphans()) {
 			new NotStartedWindow();
 		} else {
 			launchApplication();
@@ -490,7 +498,8 @@ void Sandbox::singleInstanceChecked() {
 		// If crash dump is empty with that status it means that we
 		// didn't close the application properly. Just ignore for now.
 		if (crashdump.isEmpty()) {
-			if (CrashReports::Restart() == CrashReports::CantOpen) {
+			if (CrashReports::Restart() == CrashReports::CantOpen
+				&& !retryAfterOrphans()) {
 				new NotStartedWindow();
 			} else {
 				launchApplication();

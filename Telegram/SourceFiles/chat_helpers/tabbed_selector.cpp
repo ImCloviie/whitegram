@@ -42,6 +42,55 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 
 namespace ChatHelpers {
+namespace {
+
+// The slide animation fills the panel background itself and draws grabbed
+// tabs over it. A translucent (glass) background would be painted twice,
+// so remove it from the rows of a grab: p = s + (1 - sa) * bg.
+void StripTranslucentBackground(
+		QImage &image,
+		QColor bg,
+		int fromRow,
+		int tillRow) {
+	const auto alpha = bg.alpha();
+	if (alpha <= 0 || alpha >= 255) {
+		return;
+	}
+	if (image.format() != QImage::Format_ARGB32_Premultiplied) {
+		image = std::move(image).convertToFormat(
+			QImage::Format_ARGB32_Premultiplied);
+	}
+	const auto red = bg.red() * alpha / 255;
+	const auto green = bg.green() * alpha / 255;
+	const auto blue = bg.blue() * alpha / 255;
+	const auto width = image.width();
+	fromRow = std::clamp(fromRow, 0, image.height());
+	tillRow = std::clamp(tillRow, fromRow, image.height());
+	for (auto y = fromRow; y != tillRow; ++y) {
+		const auto row = reinterpret_cast<uint32*>(image.scanLine(y));
+		for (auto x = 0; x != width; ++x) {
+			const auto pixel = row[x];
+			const auto left = std::clamp(
+				(255 - int(qAlpha(pixel))) * 255 / (255 - alpha),
+				0,
+				255);
+			const auto sourceAlpha = 255 - left;
+			const auto strip = [&](int value, int background) {
+				return std::clamp(
+					value - background * left / 255,
+					0,
+					sourceAlpha);
+			};
+			row[x] = qRgba(
+				strip(qRed(pixel), red),
+				strip(qGreen(pixel), green),
+				strip(qBlue(pixel), blue),
+				sourceAlpha);
+		}
+	}
+}
+
+} // namespace
 
 class TabbedSelector::SlideAnimation : public Ui::RoundShadowAnimation {
 public:
@@ -1379,6 +1428,27 @@ void TabbedSelector::switchTab() {
 		: SlideAnimation::Direction::RightToLeft;
 	if (direction == SlideAnimation::Direction::LeftToRight) {
 		std::swap(wasCache, nowCache);
+	}
+	if (!_dropDown && _st.bg->c.alpha() < 255) {
+		const auto ratio = style::DevicePixelRatio();
+		const auto strip = [&](QImage &image, bool sectionIcons) {
+			const auto footerTop = _footerTop;
+			StripTranslucentBackground(
+				image,
+				_st.bg->c,
+				_scroll->y() * ratio,
+				footerTop * ratio);
+			StripTranslucentBackground(
+				image,
+				(sectionIcons ? _st.categoriesBg : _st.bg)->c,
+				footerTop * ratio,
+				height() * ratio);
+		};
+		const auto nowSectionIcons = hasSectionIcons();
+		const auto leftToRight = (direction
+			== SlideAnimation::Direction::LeftToRight);
+		strip(wasCache, leftToRight ? nowSectionIcons : wasSectionIcons);
+		strip(nowCache, leftToRight ? wasSectionIcons : nowSectionIcons);
 	}
 	_slideAnimation = std::make_unique<SlideAnimation>();
 	const auto slidingTop = _dropDown ? _footerTop : _scroll->y();

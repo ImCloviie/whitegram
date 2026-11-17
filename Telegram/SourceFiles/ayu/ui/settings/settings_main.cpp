@@ -1639,8 +1639,8 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 	ayu.addSettingToggle({
 		.id = u"whitegram/hideTelegramOnViewOnce"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Скрывать Telegram в режиме стримера при просмотре одноразового контента"),
-			QString("Hide Telegram like streamer mode while viewing view-once media")),
+			QString::fromUtf8("Скрывать окно от записи экрана при просмотре одноразовых медиа"),
+			QString("Hide window from screen capture while viewing view-once media")),
 		.getter = &AyuSettings::hideTelegramOnViewOnce,
 		.setter = &AyuSettings::setHideTelegramOnViewOnce,
 		.icon = { &st::ayuStreamerModeMenuIcon },

@@ -164,8 +164,8 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addSubsectionTitle(tr::ayu_CategoryGeneral());
 
 	const auto viewOnceTitle = Lang::Id().startsWith(u"ru"_q)
-		? u"Скрывать Telegram в режиме стримера при просмотре одноразового контента"_q
-		: u"Hide Telegram like streamer mode while viewing view-once media"_q;
+		? u"Скрывать окно от записи экрана при просмотре одноразовых медиа"_q
+		: u"Hide window from screen capture while viewing view-once media"_q;
 	ayu.addSettingToggle({
 		.id = u"whitegram/hideTelegramOnViewOnce"_q,
 		.title = rpl::single(QString(viewOnceTitle)),

@@ -5,6 +5,7 @@
 
 #include "apiwrap.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
+#include "ayu/ayu_settings.h"
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "base/timer.h"
 #include "mainwindow.h"
@@ -217,7 +218,9 @@ void SetupDecryptedContentBox(
 	box->setTitle(u"🔒 Одноразовое сообщение"_q);
 	box->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
 		AyuFeatures::StreamerMode::RequireViewOnceGuard());
-	AyuFeatures::StreamerMode::hideWidgetWindow(box);
+	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
+		AyuFeatures::StreamerMode::hideWidgetWindow(box);
+	}
 
 	const auto subtitle = isOut
 		? (ttl == 0
@@ -347,7 +350,10 @@ void ShowViewOnceBox(
 		not_null<Window::SessionController*> controller,
 		not_null<HistoryItem*> item) {
 	const auto session = &controller->session();
-	AyuFeatures::StreamerMode::hideWidgetWindow(controller->widget().get());
+	if (AyuSettings::getInstance().hideTelegramOnViewOnce()) {
+		AyuFeatures::StreamerMode::hideWidgetWindow(
+			controller->widget().get());
+	}
 
 	auto rawText = GetEncryptedPayload(item);
 	if (rawText.isEmpty()) {
@@ -380,7 +386,9 @@ void ShowViewOnceBox(
 		box->setTitle(u"🔒 Одноразовое сообщение"_q);
 		box->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
 			AyuFeatures::StreamerMode::RequireViewOnceGuard());
-		AyuFeatures::StreamerMode::hideWidgetWindow(box);
+		if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
+			AyuFeatures::StreamerMode::hideWidgetWindow(box);
+		}
 
 		if (!decrypted.has_value() && IsPasscodeEncryptedMessage(rawText)) {
 			box->addRow(object_ptr<Ui::FlatLabel>(

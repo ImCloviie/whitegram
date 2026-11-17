@@ -23,6 +23,6 @@ constexpr auto AppNameOld = "Whitegram for Windows"_cs;
 constexpr auto AppName = "Whitegram Desktop"_cs;
 constexpr auto AppFile = "Whitegram"_cs;
 constexpr auto AppVersion = 7030000;
-constexpr auto AppVersionStr = "7.3.3";
+constexpr auto AppVersionStr = "7.4.4";
 constexpr auto AppBetaVersion = false;
 constexpr auto AppAlphaVersion = TDESKTOP_ALPHA_VERSION;

@@ -196,6 +196,18 @@ void SetCustomMargins(not_null<QWindow*> window, QMargins margins) {
 	return result;
 }
 
+[[nodiscard]] QSize MaximizedBorder(uint dpi) {
+	const auto metric = [&](int index) {
+		return (GetSystemMetricsForDpiSupported() && dpi)
+			? GetSystemMetricsForDpi(index, dpi)
+			: GetSystemMetrics(index);
+	};
+	const auto padding = metric(SM_CXPADDEDBORDER);
+	return QSize(
+		metric(SM_CXSIZEFRAME) + padding,
+		metric(SM_CYSIZEFRAME) + padding);
+}
+
 } // namespace
 
 WindowHelper::WindowHelper(not_null<RpWidget*> window)
@@ -535,7 +547,10 @@ bool WindowHelper::filterNativeEvent(
 		if (_title->isHidden() || !wParam) {
 			return false;
 		}
-		if (window()->isFullScreen()) {
+		const auto style = GetWindowLongPtr(_handle, GWL_STYLE);
+		const auto fullscreen = (style & WS_POPUP)
+			&& !(style & (WS_DLGFRAME | WS_THICKFRAME));
+		if (fullscreen) {
 			// Whole window is client, and Qt must not apply custom
 			// margins of normal state (they stay set in full screen).
 			if (result) {
@@ -552,23 +567,13 @@ bool WindowHelper::filterNativeEvent(
 		}();
 		const auto addBorders = maximized || nativeResize();
 		if (addBorders) {
-			const auto dpi = _dpi.current();
-			const auto borderWidth = (GetSystemMetricsForDpiSupported() && dpi)
-				? GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
-					+ GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
-				: GetSystemMetrics(SM_CXSIZEFRAME)
-					+ GetSystemMetrics(SM_CXPADDEDBORDER);
-			const auto borderHeight = (GetSystemMetricsForDpiSupported() && dpi)
-				? GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi)
-					+ GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
-				: GetSystemMetrics(SM_CYSIZEFRAME)
-					+ GetSystemMetrics(SM_CXPADDEDBORDER);
-			r->left += borderWidth;
-			r->right -= borderWidth;
+			const auto border = MaximizedBorder(_dpi.current());
+			r->left += border.width();
+			r->right -= border.width();
 			if (maximized) {
-				r->top += borderHeight;
+				r->top += border.height();
 			}
-			r->bottom -= borderHeight;
+			r->bottom -= border.height();
 		}
 		if (maximized) {
 			const auto hMonitor = MonitorFromWindow(
@@ -954,6 +959,24 @@ void WindowHelper::updateMargins() {
 			w.top - m.top,
 			m.right - w.right,
 			m.bottom - w.bottom);
+
+		// A moved or resized window stays maximized without filling the area.
+		const auto border = MaximizedBorder(dpi);
+		const auto fills = [](int delta, int border) {
+			return (delta <= 0) && (delta >= -border);
+		};
+		const auto filling = (style & WS_MINIMIZE)
+			|| (fills(_rcWorkDelta.left(), border.width())
+				&& fills(_rcWorkDelta.top(), border.height())
+				&& fills(_rcWorkDelta.right(), border.width())
+				&& fills(_rcWorkDelta.bottom(), border.height()));
+		if (!filling) {
+			_rcWorkDelta = QMargins(
+				-border.width(),
+				-border.height(),
+				-border.width(),
+				-border.height());
+		}
 
 		_marginsDelta = _rcWorkDelta;
 

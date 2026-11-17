@@ -59,6 +59,9 @@ struct ParsedLinkTag {
 };
 
 [[nodiscard]] ParsedLinkTag ParseLinkTag(QStringView tag) {
+	if (tag.trimmed().startsWith(u"internal:"_q, Qt::CaseInsensitive)) {
+		return {};
+	}
 	if (IsMentionLink(tag)) {
 		const auto data = MentionEntityData(tag);
 		return data.isEmpty()
@@ -2111,13 +2114,21 @@ QString JoinTag(const QList<QStringView> &list) {
 	for (const auto &entry : list) {
 		length += entry.size();
 	}
+	const auto quote = [](QStringView tag) {
+		return (tag == Ui::InputField::kTagBlockquote)
+			|| (tag == Ui::InputField::kTagBlockquoteCollapsed);
+	};
 	auto result = QString();
 	result.reserve(length);
 	result.append(list.front());
+	auto onlyQuotes = quote(list.front());
 	for (auto i = 1, count = int(list.size()); i != count; ++i) {
-		if (!IsSeparateTag(list[i])) {
-			result.append(kTagSeparator).append(list[i]);
+		const auto tag = list[i];
+		if (!IsSeparateTag(tag)
+			|| (onlyQuotes && tag == Ui::InputField::kTagCode)) {
+			result.append(kTagSeparator).append(tag);
 		}
+		onlyQuotes = onlyQuotes && quote(tag);
 	}
 	return result;
 }
@@ -2630,4 +2641,38 @@ std::pair<int32, FormattedDateFlags> DeserializeFormattedDateData(
 	const auto flags = FormattedDateFlags::from_raw(
 		uint8(parts[1].toUInt()));
 	return std::pair(date, flags);
+}
+
+bool EntityReplacesText(const EntityInText &entity) {
+	const auto type = entity.type();
+	return (type == EntityType::CustomEmoji)
+		|| ((type == EntityType::FormattedDate)
+			&& (DeserializeFormattedDateData(entity.data()).second
+				!= FormattedDateFlags()));
+}
+
+void ReplacedTextRanges::add(int from, int till) {
+	if (from < till) {
+		_ranges.push_back({ .from = from, .till = till });
+	}
+}
+
+void ReplacedTextRanges::prepare() {
+	ranges::sort(_ranges, ranges::less(), &Range::from);
+	auto till = 0;
+	for (auto &range : _ranges) {
+		range.till = till = std::max(till, range.till);
+	}
+}
+
+bool ReplacedTextRanges::overlaps(int from, int till) const {
+	if (from >= till) {
+		return false;
+	}
+	const auto i = ranges::lower_bound(
+		_ranges,
+		till,
+		ranges::less(),
+		&Range::from);
+	return (i != _ranges.begin()) && ((i - 1)->till > from);
 }

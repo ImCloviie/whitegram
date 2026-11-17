@@ -202,8 +202,16 @@ bool isWhitegramUserPeer(ID peerId) {
 	return Whitegram::Backend::IsWhitegramUser(peerId);
 }
 
+bool isWhitegramTeamPeer(ID peerId) {
+	return (peerId == 8955662734)
+		|| (peerId == 5547080597)
+		|| (peerId == 8600861139);
+}
+
 bool isWhitegramDeveloperPeer(ID peerId) {
-	return peerId == 1135044445;
+	return (peerId == 1135044445)
+		|| (peerId == 8445570203)
+		|| isWhitegramTeamPeer(peerId);
 }
 
 bool isCustomBadgePeer(ID peerId) {
@@ -278,6 +286,10 @@ QImage MakeWhitegramDeveloperBadgeImage() {
 	return LoadScaledGuiImage(u":/gui/icons/ayu/"_q, u"whitegram_developer_icon"_q);
 }
 
+QImage MakeWhitegramTeamBadgeImage() {
+	return LoadScaledGuiImage(u":/gui/icons/ayu/"_q, u"whitegram_team_icon"_q);
+}
+
 // The badge image of a peer: a server variant icon if the badge was given
 // out through the admin panel, a bundled icon otherwise.
 QImage MakeWhitegramAdminBadgeImage(uint64 peerId) {
@@ -306,7 +318,11 @@ QImage MakeWhitegramAdminBadgeImage(uint64 peerId) {
 			|| (admin && admin->isDeveloper()))) {
 		return Info::Profile::Badge::Content{
 			.badge = Info::Profile::BadgeType::WhitegramDeveloper,
-			.customId = admin ? admin->variant : QString(),
+			.customId = isWhitegramTeamPeer(getBareID(peer))
+				? QString::fromLatin1(kWhitegramTeamVariant)
+				: admin
+				? admin->variant
+				: QString(),
 		};
 	} else if (admin && admin->isCustom()) {
 		return Info::Profile::Badge::Content{
@@ -389,14 +405,21 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 				|| (admin && admin->isDeveloper()));
 
 		TextWithEntities text;
-		if (isWhitegramDeveloper) {
+		if (isWhitegramTeamPeer(getBareID(peer))) {
+			text = tr::wg_TeamPopup(
+				tr::now,
+				lt_item,
+				TextWithEntities{peer->name()},
+				tr::rich);
+		} else if (isWhitegramDeveloper) {
 			text = tr::wg_DeveloperPopup(
 				tr::now,
 				lt_item,
 				TextWithEntities{peer->name()},
 				tr::rich);
 		} else if (isWhitegramCustom) {
-			const auto customText = getCustomBadge(getBareID(peer)).text;
+			auto customText = getCustomBadge(getBareID(peer)).text;
+			customText.replace(u"{name}"_q, peer->name());
 			text = customText.isEmpty()
 				? tr::wg_CustomPopup(
 					tr::now,
@@ -1085,6 +1108,10 @@ void searchPeerInner(const QString &peerId, Main::Session *session, const Userna
 				[&](const MTPDbotInlineMessageRichMessage &data)
 				{
 					return QString();
+				},
+				[&](const MTPDbotInlineMessageWidget &data)
+				{
+					return QString();
 				});
 
 			if (text.isEmpty() || text.contains(usernameResolverEmpty)) {
@@ -1604,6 +1631,10 @@ void getUserRegistrationDateInner(
 					return QString();
 				},
 				[&](const MTPDbotInlineMessageRichMessage &data)
+				{
+					return QString();
+				},
+				[&](const MTPDbotInlineMessageWidget &data)
 				{
 					return QString();
 				});

@@ -432,7 +432,8 @@ void Renderer::setPeer(uint64 peerId, Zone zone) {
 		&& _zone == zone
 		&& _path == background->path
 		&& _modified == modified
-		&& _size == size) {
+		&& _size == size
+		&& _isVideo == background->isVideo) {
 		return;
 	}
 	reset();
@@ -441,6 +442,7 @@ void Renderer::setPeer(uint64 peerId, Zone zone) {
 	_path = background->path;
 	_modified = modified;
 	_size = size;
+	_isVideo = background->isVideo;
 	if (background->isVideo) {
 		loadVideo(background->path);
 	} else {
@@ -462,6 +464,7 @@ void Renderer::reset() {
 	_path = QString();
 	_modified = QDateTime();
 	_size = -1;
+	_isVideo = false;
 	_image = QImage();
 	++_videoGeneration;
 	_video = nullptr;
@@ -504,7 +507,10 @@ void Renderer::loadImage(const QString &path) {
 	if (!_image.isNull()) {
 		_repaint();
 	} else {
-		LOG(("Whitegram Background: could not decode image."));
+		// WHY: a synced background file can arrive before the flag saying it
+		// is a video, so a clip not decoded as a picture is played instead.
+		LOG(("Whitegram Background: not an image, trying it as a video."));
+		loadVideo(path);
 	}
 }
 
@@ -558,10 +564,18 @@ void Renderer::startVideo(const QString &path, const QByteArray &bytes) {
 	_video->lockPlayer();
 	_video->player().updates(
 	) | rpl::on_next_error([=](Update &&update) {
+		// WHY: until the first frame the opaque rows hide this layer, so Qt
+		// never paints it and paint() would never take that frame.
+		const auto takeFirstFrame = [&] {
+			if (!_hasFrame.current()) {
+				advanceVideo();
+			}
+			_repaint();
+		};
 		v::match(update.data, [&](Information &) {
-			_repaint();
+			takeFirstFrame();
 		}, [&](UpdateVideo &) {
-			_repaint();
+			takeFirstFrame();
 		}, [](const auto &) {
 		});
 	}, [=](Error &&) {
@@ -817,11 +831,9 @@ void FullBackgroundLayer::paintEvent(QPaintEvent *e) {
 	auto p = QPainter(this);
 	if (_roundTopCorners && _roundTopCorners()) {
 		const auto radius = st::boxRadius;
+		// The layer leaves its bottom rounding to us, see fillsLayerBottom().
 		auto path = QPainterPath();
-		path.addRoundedRect(
-			rect() + QMargins{ 0, 0, 0, radius + 1 },
-			radius,
-			radius);
+		path.addRoundedRect(rect(), radius, radius);
 		p.setClipPath(path);
 	}
 	const auto clip = e->rect();

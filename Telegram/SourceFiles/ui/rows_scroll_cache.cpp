@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/rows_scroll_cache.h"
 
+#include "styles/palette.h"
+
 namespace Ui {
 namespace {
 
@@ -20,6 +22,10 @@ RowsScrollCache::RowsScrollCache(Fn<void()> stopped) {
 		clear();
 		stopped();
 	});
+}
+
+bool RowsScrollCache::Usable() {
+	return (st::windowBg->c.alpha() == 255);
 }
 
 void RowsScrollCache::markScrolling() {

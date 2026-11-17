@@ -24,6 +24,10 @@
         <file alias="art/ayu/win95/app_icon.ico">../../art/ayu/win95/app_icon.ico</file>
         <file alias="art/ayu/whitegram/app.png">../../art/ayu/whitegram/app.png</file>
         <file alias="art/ayu/whitegram/app_icon.ico">../../art/ayu/whitegram/app_icon.ico</file>
+        <file alias="art/ayu/whitegram_light/app.png">../../art/ayu/whitegram_light/app.png</file>
+        <file alias="art/ayu/whitegram_light/app_icon.ico">../../art/ayu/whitegram_light/app_icon.ico</file>
+        <file alias="art/ayu/whitegram_dark/app.png">../../art/ayu/whitegram_dark/app.png</file>
+        <file alias="art/ayu/whitegram_dark/app_icon.ico">../../art/ayu/whitegram_dark/app_icon.ico</file>
         <file alias="art/ayu/yaplus/app.svg">../../art/ayu/yaplus/app.svg</file>
         <file alias="art/ayu/yaplus/app_icon.ico">../../art/ayu/yaplus/app_icon.ico</file>
         <file alias="icons/ayu/nocover.svg">../../icons/ayu/nocover.svg</file>
@@ -46,6 +50,9 @@
         <file alias="icons/ayu/whitegram_developer_icon.png">../../icons/ayu/whitegram_developer_icon.png</file>
         <file alias="icons/ayu/whitegram_developer_icon@2x.png">../../icons/ayu/whitegram_developer_icon@2x.png</file>
         <file alias="icons/ayu/whitegram_developer_icon@3x.png">../../icons/ayu/whitegram_developer_icon@3x.png</file>
+        <file alias="icons/ayu/whitegram_team_icon.png">../../icons/ayu/whitegram_team_icon.png</file>
+        <file alias="icons/ayu/whitegram_team_icon@2x.png">../../icons/ayu/whitegram_team_icon@2x.png</file>
+        <file alias="icons/ayu/whitegram_team_icon@3x.png">../../icons/ayu/whitegram_team_icon@3x.png</file>
     </qresource>
 </RCC>
 

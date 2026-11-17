@@ -43,6 +43,13 @@ private:
 		Failed,
 	};
 
+	struct Target {
+		QString host;
+		QString address;
+		QString sni;
+		bool fronted = false;
+	};
+
 	void handleError(int errorCode);
 	void onEncrypted();
 	void onReadyRead();
@@ -55,12 +62,15 @@ private:
 	void startConnectToCurrentHost();
 	void resetSocketForRetry();
 	void onHostTimeout();
-	[[nodiscard]] std::vector<QString> buildHosts() const;
+	void onTcpTimeout();
+	void connectCurrentTarget();
+	[[nodiscard]] std::vector<Target> buildTargets() const;
 	[[nodiscard]] crl::time connectBudget() const override;
 	[[nodiscard]] int extractDc() const;
 	[[nodiscard]] bool isTestDc() const;
 	[[nodiscard]] bool isMediaDc() const;
 	[[nodiscard]] QString pathForDc() const;
+	[[nodiscard]] QString debugTarget() const;
 
 	const int16 _protocolDcId = 0;
 	State _state = State::Idle;
@@ -69,10 +79,13 @@ private:
 	QByteArray _appData;
 	QByteArray _secKey;
 	QString _host;
-	std::vector<QString> _hosts;
+	Target _target;
+	std::vector<Target> _hosts;
 	int _hostIndex = 0;
 	crl::time _connectBudget = 0;
 	base::Timer _hostTimer;
+	base::Timer _tcpTimer;
+	crl::time _targetDeadline = 0;
 
 };
 

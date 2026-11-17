@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_controller.h"
 #include "info/info_memento.h"
 #include "info/info_wrap_widget.h"
+#include "info/info_layer_widget.h"
 #include "ui/text/text_utilities.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/scroll_area.h"
@@ -203,10 +204,27 @@ Widget::Widget(
 	if (const auto strong = renderer.get()) {
 		// The rows below see through to the layer only while it paints.
 		_inner->setFullBackgroundPainted(strong->hasFrameValue());
+		strong->hasFrameValue(
+		) | rpl::distinct_until_changed(
+		) | rpl::on_next([=](bool shown) {
+			_fullBackgroundShown = shown;
+			// The layer gives its bottom rounding to the background then.
+			for (auto parent = parentWidget(); parent; parent = parent->parentWidget()) {
+				if (const auto layer = dynamic_cast<Info::LayerWidget*>(parent)) {
+					layer->resizeToWidth(layer->width());
+					layer->update();
+					break;
+				}
+			}
+		}, lifetime());
 	}
 	if (const auto top = dynamic_cast<Profile::TopBar*>(_pinnedToTop.get())) {
 		top->setFullProfileBackground(renderer);
 	}
+}
+
+bool Widget::fillsLayerBottom() const {
+	return _fullBackgroundShown;
 }
 
 void Widget::setInnerFocus() {

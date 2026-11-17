@@ -149,6 +149,7 @@ private:
 	QString _path;
 	QDateTime _modified;
 	qint64 _size = -1;
+	bool _isVideo = false;
 	QImage _image;
 	std::unique_ptr<Media::Streaming::Instance> _video;
 	QString _videoPath;

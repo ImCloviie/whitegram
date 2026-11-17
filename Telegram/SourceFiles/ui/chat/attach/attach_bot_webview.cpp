@@ -1722,7 +1722,7 @@ bool Panel::showWebview(Args &&args, const Webview::ThemeParams &params) {
 			}
 		},
 		.terms = [=] {
-			File::OpenUrl(tr::lng_mini_apps_tos_url(tr::now));
+			_delegate->botOpenTermsOfService();
 		},
 		.privacy = [=] {
 			_delegate->botOpenPrivacyPolicy();
@@ -2042,7 +2042,7 @@ void Panel::handleExternalShellMenuAction(const QString &id) {
 			}
 		},
 		.terms = [=] {
-			File::OpenUrl(tr::lng_mini_apps_tos_url(tr::now));
+			_delegate->botOpenTermsOfService();
 		},
 		.privacy = [=] {
 			_delegate->botOpenPrivacyPolicy();
@@ -2208,7 +2208,7 @@ void Panel::createWebviewBottom() {
 }
 
 bool Panel::createWebview(const Webview::ThemeParams &params) {
-	RpWidget *container = nullptr;
+	auto container = (RpWidget*)nullptr;
 	if (_externalShell) {
 		_externalWebviewParent = std::make_unique<RpWidget>();
 		container = _externalWebviewParent.get();
@@ -2963,10 +2963,14 @@ void Panel::openExternalLink(const QJsonObject &args) {
 			File::OpenUrl(url);
 		}
 	};
+	requestOpenLink(url, open);
+}
+
+void Panel::requestOpenLink(const QString &url, Fn<void()> open) {
 	if (allowOpenLink()) {
 		open();
 	} else {
-		confirmExternalLink(url, open);
+		confirmExternalLink(url, std::move(open));
 	}
 }
 

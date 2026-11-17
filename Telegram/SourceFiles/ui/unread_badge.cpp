@@ -120,6 +120,18 @@ bool ScaledBotVerifiedEmoji::readyInDefaultState() {
 
 } // namespace
 
+std::unique_ptr<Text::CustomEmoji> CreateBotVerifiedEmoji(
+		DocumentId iconId,
+		Text::CustomEmojiFactory factory,
+		Fn<void()> repaint) {
+	const auto outer = st::emojiSize;
+	const auto inner = int(base::SafeRound(outer * kBotVerifiedScale));
+	return MakeWrappedEmoji<ScaledBotVerifiedEmoji>(
+		factory(Data::SerializeCustomEmojiId(iconId), { .repaint = repaint }),
+		inner,
+		outer);
+}
+
 struct PeerBadge::EmojiStatus {
 	EmojiStatusId id;
 	std::unique_ptr<Ui::Text::CustomEmoji> emoji;
@@ -261,7 +273,8 @@ int PeerBadge::drawGetWidth(Painter &p, Descriptor &&descriptor) {
 		&& peer->session().premiumBadgesShown();
 	const auto emojiStatus = premiumMark
 		&& peer->emojiStatusId()
-		&& (peer->isPremium() || peer->isChannel());
+		&& (peer->isPremium() || peer->isChannel())
+		&& !peer->hideEmojiStatus();
 	const auto premiumStar = premiumMark
 		&& !emojiStatus
 		&& peer->isPremium();
@@ -642,10 +655,11 @@ int PeerBadge::drawWhitegramSponsor(Painter &p, const Descriptor &descriptor) {
 }
 
 int PeerBadge::drawWhitegramDeveloper(Painter &p, const Descriptor &descriptor) {
+	const auto isTeam = isWhitegramTeamPeer(getBareID(descriptor.peer));
 	// A server variant icon wins over the bundled one.
 	const auto admin = Whitegram::Backend::AdminBadgeFor(
 		getBareID(descriptor.peer));
-	if (admin && !admin->variant.isEmpty()) {
+	if (!isTeam && admin && !admin->variant.isEmpty()) {
 		const auto image = Whitegram::Backend::VariantIcon(admin->variant);
 		if (!image.isNull()) {
 			const auto rectForName = descriptor.rectForName;
@@ -665,7 +679,9 @@ int PeerBadge::drawWhitegramDeveloper(Painter &p, const Descriptor &descriptor) 
 	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
 	const auto py = rectForName.y();
 
-	static const auto image = MakeWhitegramDeveloperBadgeImage();
+	static const auto developerImage = MakeWhitegramDeveloperBadgeImage();
+	static const auto teamImage = MakeWhitegramTeamBadgeImage();
+	const auto &image = isTeam ? teamImage : developerImage;
 	if (!image.isNull()) {
 		p.drawImage(
 			QRect(px, py, iconw, icon->height()),
@@ -792,15 +808,10 @@ void PeerBadge::set(
 		_botVerifiedData = std::make_unique<BotVerifiedData>();
 	}
 	if (details->iconId) {
-		const auto outer = st::emojiSize;
-		const auto inner = int(base::SafeRound(
-			st::emojiSize * kBotVerifiedScale));
-		_botVerifiedData->icon = MakeWrappedEmoji<ScaledBotVerifiedEmoji>(
-			factory(
-				Data::SerializeCustomEmojiId(details->iconId),
-				{ .repaint = repaint }),
-			inner,
-			outer);
+		_botVerifiedData->icon = CreateBotVerifiedEmoji(
+			details->iconId,
+			std::move(factory),
+			std::move(repaint));
 	}
 }
 

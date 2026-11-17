@@ -19,6 +19,9 @@
 #include "base/event_filter.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/file_location.h"
+#include "ayu/ui/utils/lyrics_clock.h"
+#include "media/streaming/media_streaming_utility.h"
 #include "data/data_document.h"
 #include "data/data_saved_music.h"
 #include "data/data_document_media.h"
@@ -506,6 +509,7 @@ void MusicIsland::handleTrackChanged() {
 		return;
 	}
 	_songId = id;
+	_positionBaseMs = 0;
 	_contextId = id.contextId();
 	_controller->session().data().savedMusic().loadIds();
 
@@ -518,6 +522,12 @@ void MusicIsland::handleTrackChanged() {
 
 	loadCover();
 	resetAnalysis();
+	// Fetch against this track's duration, never the previous track's state.
+	const auto state = player->getState(AudioMsgId::Type::Song);
+	const auto frequency = state.frequency ? state.frequency : Media::Player::kDefaultFrequency;
+	_durationSeconds = (state.id == id && state.length > 0)
+		? state.length / frequency
+		: document->duration() / 1000;
 	requestLyrics();
 	checkVisibility();
 	update();
@@ -531,7 +541,8 @@ void MusicIsland::handleStateUpdate(const Media::Player::TrackState &state) {
 	_playback->updateState(state);
 
 	const auto playing = !Media::Player::IsStoppedOrStopping(state.state)
-		&& !Media::Player::IsPausedOrPausing(state.state);
+		&& !Media::Player::IsPausedOrPausing(state.state)
+		&& !state.waitingForData;
 	if (_playing != playing) {
 		_playing = playing;
 		checkLiveAnimation();
@@ -547,13 +558,8 @@ void MusicIsland::handleStateUpdate(const Media::Player::TrackState &state) {
 	_durationText = Ui::FormatDurationText(_durationSeconds);
 
 	const auto reported = int64(state.position * 1000 / frequency);
-	const auto predicted = playbackPositionMs();
-	_positionBaseMs = (_playing
-		&& _positionAt
-		&& std::abs(reported - predicted) < 250)
-		? (predicted + (reported - predicted) / 4)
-		: reported;
-	_positionAt = crl::now();
+	// The audio clock is authoritative; smoothing it adds variable lyric lag.
+	_positionBaseMs = reported;
 	updateLyricsPosition();
 	pushPlaybackToWindow();
 	checkVisibility();
@@ -2379,6 +2385,7 @@ void MusicIsland::leaveEventHook(QEvent *e) {
 }
 
 void MusicIsland::requestLyrics() {
+	const auto generation = ++_lyricsGeneration;
 	const auto &s = AyuSettings::getInstance();
 	if (!s.musicLyricsEnabled() || _titleRaw.isEmpty()) {
 		_lyrics = Ayu::Ui::Lyrics::Data();
@@ -2390,13 +2397,17 @@ void MusicIsland::requestLyrics() {
 	_lyrics = Ayu::Ui::Lyrics::Data();
 	_lyricsLoading = true;
 	_lyricsActive = -1;
-	const auto generation = ++_lyricsGeneration;
 	const auto performer = _performerRaw;
 	const auto title = _titleRaw;
 	const auto duration = int(_durationSeconds);
+	const auto document = _songId.audio();
+	const auto audioPath = document ? document->location(true).name() : QString();
 	const auto weak = base::make_weak(this);
 	crl::async([=] {
-		auto data = Ayu::Ui::Lyrics::FetchCachedSync(performer, title, duration);
+		auto data = Ayu::Ui::Lyrics::LoadSidecar(audioPath);
+		if (!data.hasData) data = Ayu::Ui::Lyrics::FetchCachedSync(performer, title, duration);
+		data.artist = performer;
+		data.title = title;
 		crl::on_main([=, data = std::move(data)]() mutable {
 			if (const auto strong = weak.get()) {
 				strong->applyLyrics(std::move(data), generation);
@@ -2436,19 +2447,26 @@ void MusicIsland::alignLyrics() {
 	}
 	_lyricsAligned = true;
 	const auto analysis = _analysis;
+	const auto document = _songId.audio();
+	const auto audioPath = document ? document->location(true).name() : QString();
+	const auto audioBytes = _mediaView ? _mediaView->bytes() : QByteArray();
 	const auto generation = _lyricsGeneration;
 	const auto weak = base::make_weak(this);
 	crl::async([=, data = _lyrics]() mutable {
-		const auto report = Ayu::Ui::Lyrics::Align(data, *analysis);
+		auto report = Ayu::Ui::Lyrics::AlignReport();
+		if (Ayu::Ui::Lyrics::AlignWithModel(data, audioPath, audioBytes)) {
+			report.changed = true;
+		} else {
+			report = Ayu::Ui::Lyrics::Align(data, *analysis);
+		}
 		crl::on_main([=, data = std::move(data)]() mutable {
 			const auto strong = weak.get();
 			if (!strong || generation != strong->_lyricsGeneration || !report.changed) {
 				return;
 			}
-			LOG(("Karaoke sync: %1, offset %2 ms, %3 lines placed by voice").arg(
-				report.autoSynced ? u"built from audio"_q : u"fitted to audio"_q,
-				QString::number(report.offsetMs),
-				QString::number(report.refinedLines)));
+			LOG(("Karaoke sync: %1, %2 lines").arg(
+				report.autoSynced ? u"approximate spectral timing"_q : u"local model alignment"_q,
+				QString::number(data.lines.size())));
 			strong->_lyrics = std::move(data);
 			strong->_lyricsActive = -1;
 			strong->updateLyricsPosition();
@@ -2459,11 +2477,24 @@ void MusicIsland::alignLyrics() {
 }
 
 int64 MusicIsland::playbackPositionMs() const {
-	if (!_playing || !_positionAt) {
-		return _positionBaseMs;
+	const auto state = Media::Player::instance()->getState(AudioMsgId::Type::Song);
+	if (state.id == _songId && state.frequency > 0) {
+		const auto reported = state.position * 1000 / state.frequency;
+		if (state.id.externalPlayId()) {
+			if (const auto mixer = Media::Player::mixer()) {
+				const auto sample = mixer->getExternalSyncTimePoint(state.id);
+				if (sample.valid()) {
+					return Ayu::Ui::Lyrics::PlaybackPosition(reported, sample.trackTime,
+						sample.worldTime, crl::now(), currentSpeed(),
+						!Media::Player::IsStoppedOrStopping(state.state)
+							&& !Media::Player::IsPausedOrPausing(state.state)
+							&& !state.waitingForData);
+				}
+			}
+		}
+		return std::max<int64>(0, reported);
 	}
-	const auto elapsed = std::min<crl::time>(crl::now() - _positionAt, 2000);
-	return _positionBaseMs + int64(elapsed * currentSpeed());
+	return _positionBaseMs;
 }
 
 float64 MusicIsland::lyricsPulse(int64 position) const {
@@ -2481,10 +2512,10 @@ void MusicIsland::updateLyricsPosition() {
 		_lyricsProgress = -1.;
 		return;
 	}
-	_lyricsPositionMs = playbackPositionMs();
+	_lyricsPositionMs = playbackPositionMs() + (_lyricsWindow ? _lyricsWindow->lyricsOffset() : 0);
 	auto active = -1;
 	if (_lyrics.synced) {
-		active = Ayu::Ui::Lyrics::ActiveLineIndex(_lyrics, _lyricsPositionMs + 120);
+		active = Ayu::Ui::Lyrics::ActiveLineIndex(_lyrics, _lyricsPositionMs);
 	} else {
 		const auto n = int(_lyrics.lines.size());
 		active = std::clamp(int(std::clamp(displayedProgress(), 0., 1.) * n), 0, n - 1);
@@ -2602,7 +2633,6 @@ void MusicIsland::seekToMs(int64 ms) {
 		type,
 		std::clamp(float64(ms) / lengthMs, 0., 1.));
 	_positionBaseMs = ms;
-	_positionAt = crl::now();
 	updateLyricsPosition();
 	pushPlaybackToWindow();
 }
@@ -2639,6 +2669,10 @@ void MusicIsland::ensureLyricsWindow() {
 		}
 		_lyricsWindow = Ui::CreateChild<LyricsWindow>(body);
 		const auto weak = base::make_weak(this);
+		_lyricsWindow->setPositionCallback([weak] {
+			const auto strong = weak.get();
+			return strong ? strong->playbackPositionMs() : int64(0);
+		});
 		_lyricsWindow->setSeekCallback([=](std::int64_t ms) {
 			if (const auto strong = weak.get()) {
 				strong->seekToMs(ms);
@@ -2701,8 +2735,9 @@ void MusicIsland::paintLyrics(
 	const auto &s = AyuSettings::getInstance();
 	const auto fontScale = s.musicLyricsFontScale() / 100.;
 	const auto keywordOn = s.musicLyricsKeyword();
-	const auto position = playbackPositionMs();
-	const auto beat = lyricsPulse(position);
+	const auto playback = playbackPositionMs();
+	const auto position = playback + (_lyricsWindow ? _lyricsWindow->lyricsOffset() : 0);
+	const auto beat = lyricsPulse(playback);
 
 	const auto radius = float64(st::musicIslandLyricsRadius);
 	auto path = QPainterPath();

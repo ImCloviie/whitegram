@@ -99,7 +99,8 @@ void Player::checkNextFrameRender() {
 	const auto now = crl::now();
 	if (now < _nextFrameTime) {
 		if (!_renderFrameTimer.isActive()) {
-			_renderFrameTimer.callOnce(_nextFrameTime - now);
+			_renderFrameTimer.callOnce(
+				std::min(_nextFrameTime - now, kDurationMax - 1));
 		}
 	} else {
 		_renderFrameTimer.cancel();
@@ -973,6 +974,7 @@ Media::Player::TrackState Player::prepareLegacyState() const {
 		: 0;
 	result.frequency = kMsFrequency;
 	result.fileHeaderSize = _information.headerSize;
+	result.waitingForData = _waitingForData;
 
 	if (result.length == kTimeUnknown) {
 		const auto document = _options.audioId.audio();

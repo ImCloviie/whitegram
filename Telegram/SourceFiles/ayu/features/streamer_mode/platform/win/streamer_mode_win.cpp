@@ -20,7 +20,13 @@ void SetWindowCaptureExcluded(
 	if (!excluded) {
 		SetWindowDisplayAffinity(handle, WDA_NONE);
 	} else if (!SetWindowDisplayAffinity(handle, WDA_EXCLUDEFROMCAPTURE)) {
-		SetWindowDisplayAffinity(handle, WDA_MONITOR);
+		const auto excludeError = GetLastError();
+		if (!SetWindowDisplayAffinity(handle, WDA_MONITOR)) {
+			LOG(("Streamer Mode Error: display affinity failed, "
+				"exclude %1, monitor %2"
+				).arg(excludeError
+				).arg(GetLastError()));
+		}
 	}
 }
 

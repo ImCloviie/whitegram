@@ -12,6 +12,7 @@
 #include "core/application.h"
 #include "window/window_controller.h"
 
+#include <QtCore/QEvent>
 #include <QtCore/QVariant>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QWidget>
@@ -33,6 +34,37 @@ void SetWindowCaptureExcluded(QWidget *widget, bool excluded) {
 	window->setProperty(kHiddenProperty, excluded);
 }
 
+// WHY: the exclusion lives on the HWND, which Qt may recreate (OpenGL, DPI),
+// and popups appear after the toggle, so every shown or re-created
+// top-level window gets it again.
+class CaptureGuard final : public QObject {
+protected:
+	bool eventFilter(QObject *object, QEvent *event) override {
+		const auto type = event->type();
+		if (type != QEvent::Show && type != QEvent::WinIdChange) {
+			return false;
+		}
+		if (!object->isWidgetType() || !isStreamerModeActive()) {
+			return false;
+		}
+		const auto widget = static_cast<QWidget*>(object);
+		if (widget->isWindow() && widget->internalWinId()) {
+			SetWindowCaptureExcluded(widget, true);
+		}
+		return false;
+	}
+
+};
+
+void EnsureCaptureGuard() {
+	static auto guard = (CaptureGuard*)nullptr;
+	if (!guard && qApp) {
+		guard = new CaptureGuard();
+		guard->setParent(qApp);
+		qApp->installEventFilter(guard);
+	}
+}
+
 } // namespace
 
 bool isStreamerModeActive() {
@@ -41,6 +73,7 @@ bool isStreamerModeActive() {
 }
 
 void apply(bool enabled) {
+	EnsureCaptureGuard();
 	Core::App().enumerateWindows([=](not_null<Window::Controller*> window) {
 		SetWindowCaptureExcluded(window->widget(), enabled);
 	});
@@ -64,6 +97,7 @@ void sync() {
 }
 
 void hideWidgetWindow(QWidget *widget) {
+	EnsureCaptureGuard();
 	SetWindowCaptureExcluded(widget, true);
 }
 

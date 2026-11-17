@@ -10,12 +10,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QRandomGenerator>
 #include <QtCore/QString>
 
+#include <atomic>
+
 namespace MTP::details {
 namespace {
 
 BypassHostsResolver Resolver;
 BypassHostResultHandler ResultHandler;
 BypassHostsExhaustedHandler ExhaustedHandler;
+std::atomic<crl::time> LastConnectedAt = 0;
 
 constexpr const char *kCfBases[] = {
 	"pclead.co.uk",
@@ -151,6 +154,14 @@ void NotifyBypassHostResult(const QString &host, bool success) {
 	if (ResultHandler) {
 		ResultHandler(host, success);
 	}
+}
+
+void NotifyBypassConnected() {
+	LastConnectedAt = crl::now();
+}
+
+crl::time LastBypassConnectedAt() {
+	return LastConnectedAt.load();
 }
 
 void NotifyBypassHostsExhausted() {

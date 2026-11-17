@@ -955,6 +955,7 @@ public:
 	[[nodiscard]] bool improveLinkPreviews() const { return _improveLinkPreviews.current(); }
 	[[nodiscard]] bool crashReporting() const { return _crashReporting.current(); }
 	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
+	[[nodiscard]] int typingAnimation() const { return _typingAnimation.current(); }
 	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
 	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
 	[[nodiscard]] bool hideTelegramOnViewOnce() const { return _hideTelegramOnViewOnce.current(); }
@@ -998,6 +999,12 @@ public:
 	}
 	[[nodiscard]] const QString &connectionBypassSecret() const {
 		return _connectionBypassSecret.current();
+	}
+	[[nodiscard]] bool tgWsProxyEnabled() const {
+		return _tgWsProxyEnabled.current();
+	}
+	[[nodiscard]] const QString &tgWsProxySecret() const {
+		return _tgWsProxySecret;
 	}
 
 	void setSaveDeletedMessages(bool val);
@@ -1084,6 +1091,7 @@ public:
 	void setImproveLinkPreviews(bool val);
 	void setCrashReporting(bool val);
 	void setAvatarCorners(int val);
+	void setTypingAnimation(int val);
 	void setSingleCornerRadius(bool val);
 	void setStreamerMode(bool val);
 	void setHideTelegramOnViewOnce(bool val);
@@ -1123,6 +1131,8 @@ public:
 	void setProfileBackgroundDim(int val);
   void setConnectionBypassMode(ConnectionBypassMode val);
   void setConnectionBypassSecret(const QString &val);
+  void setTgWsProxyEnabled(bool val);
+  void setTgWsProxySecret(const QString &val);
 
   [[nodiscard]] QString bypassLastGoodHost() const;
   void setBypassLastGoodHost(const QString &host);
@@ -1143,6 +1153,9 @@ public:
 	}
   [[nodiscard]] rpl::producer<QString> connectionBypassSecretValue() const {
 		return _connectionBypassSecret.value();
+	}
+  [[nodiscard]] rpl::producer<bool> tgWsProxyEnabledValue() const {
+		return _tgWsProxyEnabled.value();
 	}
 
 	[[nodiscard]] rpl::producer<bool> useGlobalGhostModeValue() const { return _useGlobalGhostMode.value(); }
@@ -1360,6 +1373,7 @@ public:
 	[[nodiscard]] rpl::producer<bool> crashReportingChanges() const { return _crashReporting.changes(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersValue() const { return _avatarCorners.value(); }
 	[[nodiscard]] rpl::producer<int> avatarCornersChanges() const { return _avatarCorners.changes(); }
+	[[nodiscard]] rpl::producer<int> typingAnimationValue() const { return _typingAnimation.value(); }
 	[[nodiscard]] rpl::producer<bool> singleCornerRadiusValue() const { return _singleCornerRadius.value(); }
 	[[nodiscard]] rpl::producer<bool> singleCornerRadiusChanges() const { return _singleCornerRadius.changes(); }
 	[[nodiscard]] rpl::producer<bool> streamerModeValue() const { return _streamerMode.value(); }
@@ -1422,6 +1436,34 @@ public:
 
 
 
+  [[nodiscard]] bool glassEffect() const {
+    return _glassEffect.current();
+  }
+  [[nodiscard]] rpl::producer<bool> glassEffectValue() const {
+    return _glassEffect.value();
+  }
+  [[nodiscard]] rpl::producer<bool> glassEffectChanges() const {
+    return _glassEffect.changes();
+  }
+  [[nodiscard]] int glassOpacity() const {
+    return _glassOpacity.current();
+  }
+  [[nodiscard]] rpl::producer<int> glassOpacityChanges() const {
+    return _glassOpacity.changes();
+  }
+  [[nodiscard]] bool glassBlur() const {
+    return _glassBlur.current();
+  }
+  [[nodiscard]] rpl::producer<bool> glassBlurValue() const {
+    return _glassBlur.value();
+  }
+  [[nodiscard]] int glassBlurStrength() const {
+    return _glassBlurStrength.current();
+  }
+  [[nodiscard]] bool showGlassToggleInDrawer() const {
+    return _showGlassToggleInDrawer.current();
+  }
+
   [[nodiscard]] bool showCryptoInDrawer() const {
     return _showCryptoInDrawer.current();
   }
@@ -1469,6 +1511,12 @@ public:
 
 
 
+  void setGlassEffect(bool val);
+  void setGlassOpacity(int val);
+  void setGlassBlur(bool val);
+  void setGlassBlurStrength(int val);
+  void setShowGlassToggleInDrawer(bool val);
+
   void setShowCryptoInDrawer(bool val);
   void setShowSendBotInDrawer(bool val);
   void setCryptoFiatCurrency(int val);
@@ -1495,6 +1543,9 @@ public:
   void setStartupAnimationShowIcon(bool val);
   [[nodiscard]] rpl::producer<bool> startupAnimationShowIconValue() const {
     return _startupAnimationShowIcon.value();
+  }
+  [[nodiscard]] rpl::producer<int> startupAnimationTypeValue() const {
+    return _startupAnimationType.value();
   }
   [[nodiscard]] int startupAnimationType() const {
     return _startupAnimationType.current();
@@ -1764,6 +1815,7 @@ private:
   rpl::variable<bool> _improveLinkPreviews = false;
   rpl::variable<bool> _crashReporting = true;
   rpl::variable<int> _avatarCorners = 23;
+  rpl::variable<int> _typingAnimation = 0;
   rpl::variable<bool> _singleCornerRadius = false;
   rpl::variable<bool> _streamerMode = false;
   rpl::variable<bool> _hideTelegramOnViewOnce = true;
@@ -1804,6 +1856,8 @@ private:
   rpl::variable<ConnectionBypassMode> _connectionBypassMode =
 	  ConnectionBypassMode::Auto;
   rpl::variable<QString> _connectionBypassSecret;
+  rpl::variable<bool> _tgWsProxyEnabled = false;
+  QString _tgWsProxySecret;
 
   rpl::variable<bool> _enableAccountProfiles = true;
   rpl::variable<AccountProfilesVisualVariant> _accountProfilesVisualVariant = AccountProfilesVisualVariant::Folders;
@@ -1822,6 +1876,13 @@ private:
   rpl::event_stream<> _customProfileBackgroundChanges;
 
 
+
+  rpl::variable<bool> _glassEffect = false;
+  // Background opacity in percent while the glass effect is enabled.
+  rpl::variable<int> _glassOpacity = 60;
+  rpl::variable<bool> _glassBlur = true;
+  rpl::variable<int> _glassBlurStrength = 40;
+  rpl::variable<bool> _showGlassToggleInDrawer = false;
 
   rpl::variable<bool> _showCryptoInDrawer = true;
   rpl::variable<bool> _showSendBotInDrawer = false;
@@ -1874,7 +1935,7 @@ private:
 
   rpl::variable<bool> _startupAnimationEnabled = true;
   rpl::variable<bool> _startupAnimationShowIcon = true;
-  rpl::variable<int> _startupAnimationType = 4;
+  rpl::variable<int> _startupAnimationType = 5;
   rpl::variable<int> _startupAnimationFps = 240;
 
   rpl::variable<bool> _useGlobalGhostMode = true;

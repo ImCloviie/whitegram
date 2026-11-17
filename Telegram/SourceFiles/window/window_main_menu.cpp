@@ -16,7 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qt_signal_producer.h"
 #include "boxes/about_box.h"
 #include "core/update_channel.h"
-#include "boxes/peer_list_controllers.h"
+#include "boxes/contacts_box.h"
 #include "boxes/premium_preview_box.h"
 #include "calls/group/calls_group_common.h"
 #include "calls/calls_box_controller.h"
@@ -95,6 +95,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/abstract_box.h"
 #include "styles/style_ayu_icons.h"
 #include "lang_auto.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/ui/settings/settings_main.h"
 #include "ayu/features/whitegram_crypto.h"
 #include "ayu/features/whitegram_crypto_charts.h"
@@ -1106,6 +1107,20 @@ void MainMenu::setupMenu() {
 				ghost.setGhostModeEnabled(ghostMode);
 			},
 			ghostModeToggle->lifetime());
+	}
+
+	if (settings.showGlassToggleInDrawer()) {
+		const auto glassToggle = addAction(
+			Settings::trWhitegram(
+				QString::fromUtf8("Эффект стекла"),
+				u"Glass effect"_q),
+			{ &st::menuIconChangeColors }
+		)->toggleOn(AyuSettings::getInstance().glassEffectValue());
+
+		glassToggle->toggledChanges(
+		) | rpl::on_next([](bool enabled) {
+			AyuSettings::getInstance().setGlassEffect(enabled);
+		}, glassToggle->lifetime());
 	}
 
 	if (settings.showStreamerToggleInDrawer()) {

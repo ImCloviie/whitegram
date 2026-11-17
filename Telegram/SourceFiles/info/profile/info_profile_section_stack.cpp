@@ -24,12 +24,19 @@ namespace {
 [[nodiscard]] not_null<Ui::SlideWrap<>*> CreatePlainSeparator(
 		not_null<Ui::VerticalLayout*> layout) {
 	using AyuFeatures::CustomProfileBackground::AdaptiveStyle;
+	using AyuFeatures::CustomProfileBackground::BackgroundShownValue;
 	auto inner = object_ptr<Ui::VerticalLayout>(layout);
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
-	inner->add(object_ptr<Ui::BoxContentDivider>(
+	// Over a profile background the bar is a dark band, the gap is enough.
+	const auto bar = inner->add(object_ptr<Ui::SlideWrap<Ui::BoxContentDivider>>(
 		inner.data(),
-		st::boxDividerHeight,
-		AdaptiveStyle(inner.data(), st::defaultDividerBar)));
+		object_ptr<Ui::BoxContentDivider>(
+			inner.data(),
+			st::boxDividerHeight,
+			AdaptiveStyle(inner.data(), st::defaultDividerBar))));
+	bar->toggleOn(
+		BackgroundShownValue(inner.data()) | rpl::map(!rpl::mappers::_1),
+		anim::type::instant);
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
 	return layout->add(object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 		layout,

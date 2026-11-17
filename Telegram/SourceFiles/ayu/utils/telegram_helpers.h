@@ -66,11 +66,14 @@ bool isCustomBadgePeer(ID peerId);
 bool isWhitegramSponsorPeer(ID peerId);
 bool isWhitegramUserPeer(ID peerId);
 bool isWhitegramDeveloperPeer(ID peerId);
+bool isWhitegramTeamPeer(ID peerId);
+inline constexpr auto kWhitegramTeamVariant = "wg_team";
 CustomBadge getCustomBadge(ID peerId);
 QImage MakeWhitegramSponsorBadgeImage();
 QImage MakeWhitegramSponsorLogoImage();
 QImage MakeWhitegramUserBadgeImage();
 QImage MakeWhitegramDeveloperBadgeImage();
+QImage MakeWhitegramTeamBadgeImage();
 
 rpl::producer<Info::Profile::Badge::Content> ExteraBadgeTypeFromPeer(not_null<PeerData*> peer);
 Fn<void()> badgeClickHandler(not_null<PeerData *> peer);

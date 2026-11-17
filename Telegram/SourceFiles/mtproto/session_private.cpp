@@ -35,6 +35,7 @@ constexpr auto kIntSize = static_cast<int>(sizeof(mtpPrime));
 constexpr auto kWaitForBetterTimeout = crl::time(2000);
 constexpr auto kMinConnectedTimeout = crl::time(1000);
 constexpr auto kMaxConnectedTimeout = crl::time(8000);
+constexpr auto kMinWebSocketConnectedTimeout = crl::time(10000);
 constexpr auto kMinReceiveTimeout = crl::time(4000);
 constexpr auto kMaxReceiveTimeout = crl::time(64000);
 constexpr auto kMarkConnectionOldTimeout = crl::time(192000);
@@ -351,10 +352,6 @@ void SessionPrivate::destroyAllConnections() {
 
 void SessionPrivate::cdnConfigChanged() {
 	connectToServer(true);
-}
-
-int32 SessionPrivate::getShiftedDcId() const {
-	return _shiftedDcId;
 }
 
 void SessionPrivate::dcOptionsChanged() {
@@ -1120,7 +1117,11 @@ void SessionPrivate::connectToServer(bool afterConfig) {
 	_pingId = _pingMsgId = _pingIdToSend = _pingSendAt = 0;
 	_pingSender.cancel();
 
-	_waitForConnectedTimer.callOnce(_waitForConnected);
+	// WHY: a WebSocket needs TCP, TLS and an HTTP upgrade before it counts
+	// as connected, one second kills nearly every attempt through DPI.
+	_waitForConnectedTimer.callOnce(details::PreferWebSocket()
+		? std::max(_waitForConnected, kMinWebSocketConnectedTimeout)
+		: _waitForConnected);
 }
 
 void SessionPrivate::restart() {
@@ -1349,7 +1350,8 @@ void SessionPrivate::handleReceived() {
 			return restart();
 		}
 
-		if ((messageLength > kMaxMessageLength)
+		if ((messageLength < kIntSize)
+			|| (messageLength > kMaxMessageLength)
 			|| (messageLength & 0x03)
 			|| (paddingSize < kMinPaddingSize)
 			|| (paddingSize > kMaxPaddingSize)) {
@@ -1862,7 +1864,7 @@ SessionPrivate::HandleResult SessionPrivate::handleOneReceived(
 	} return HandleResult::Success;
 
 	case mtpc_rpc_result: {
-		if (from + 3 > end) {
+		if (end - from < 4) {
 			return HandleResult::ParseError;
 		}
 		auto response = mtpBuffer();
@@ -2683,9 +2685,13 @@ void SessionPrivate::onError(
 		LOG(("Protocol Error: -429 flood code returned!"));
 	} else if (errorCode == -444) {
 		LOG(("Protocol Error: -444 bad dc_id code returned!"));
-		InvokeQueued(_instance, [instance = _instance] {
-			instance->badConfigurationError();
-		});
+		const auto &proxy = _options->proxy;
+		if (proxy.type == ProxyData::Type::Mtproto
+			|| proxy.type == ProxyData::Type::Web) {
+			InvokeQueued(_instance, [instance = _instance, proxy] {
+				instance->badConfigurationError(proxy);
+			});
+		}
 	}
 	removeTestConnection(connection);
 

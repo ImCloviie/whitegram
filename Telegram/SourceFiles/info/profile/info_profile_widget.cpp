@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_top_bar.h"
 #include "info/profile/tabs/info_profile_tabs_host.h"
 #include "info/info_wrap_widget.h"
+#include "info/info_layer_widget.h"
 #include "info/settings/info_settings_widget.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/ui_utility.h"
@@ -272,10 +273,27 @@ void Widget::setupFullProfileBackground() {
 	if (const auto strong = renderer.get()) {
 		// The rows below see through to the layer only while it paints.
 		_inner->setFullBackgroundPainted(strong->hasFrameValue());
+		strong->hasFrameValue(
+		) | rpl::distinct_until_changed(
+		) | rpl::on_next([=](bool shown) {
+			_fullBackgroundShown = shown;
+			// The layer gives its bottom rounding to the background then.
+			for (auto parent = parentWidget(); parent; parent = parent->parentWidget()) {
+				if (const auto layer = dynamic_cast<Info::LayerWidget*>(parent)) {
+					layer->resizeToWidth(layer->width());
+					layer->update();
+					break;
+				}
+			}
+		}, lifetime());
 	}
 	if (const auto top = dynamic_cast<TopBar*>(_pinnedToTop.get())) {
 		top->setFullProfileBackground(renderer);
 	}
+}
+
+bool Widget::fillsLayerBottom() const {
+	return _fullBackgroundShown;
 }
 
 void Widget::setupTabsStripFloat() {
@@ -386,31 +404,8 @@ void Widget::showSearch() {
 }
 
 rpl::producer<QString> Widget::title() {
-	if (const auto topic = controller()->key().topic()) {
-		return topic->peer()->isBot()
-			? tr::lng_info_thread_title()
-			: tr::lng_info_topic_title();
-	} else if (controller()->key().sublist()
-		&& controller()->key().sublist()->parentChat()) {
-		return tr::lng_profile_direct_messages();
-	}
-	const auto peer = controller()->key().peer();
-	if (controller()->key().savedMessages()) {
-		return tr::lng_saved_messages();
-	} else if (const auto user = peer->asUser()) {
-		return (user->isBot() && !user->isSupport())
-			? tr::lng_info_bot_title()
-			: tr::lng_info_user_title();
-	} else if (const auto channel = peer->asChannel()) {
-		return channel->isMonoforum()
-			? tr::lng_profile_direct_messages()
-			: channel->isMegagroup()
-			? tr::lng_info_group_title()
-			: tr::lng_info_channel_title();
-	} else if (peer->isChat()) {
-		return tr::lng_info_group_title();
-	}
-	Unexpected("Bad peer type in Info::TitleValue()");
+	// Profile sections draw their own top bar, it never asks for this.
+	return rpl::never<QString>();
 }
 
 rpl::producer<Dialogs::Stories::Content> Widget::titleStories() {

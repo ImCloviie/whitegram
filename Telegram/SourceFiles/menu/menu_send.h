@@ -50,6 +50,7 @@ enum class ActionType : uchar {
 	RemoveCover,
 	ChangePrice,
 	OneTimeMessage,
+	ReplyToForward,
 };
 struct Action {
 	using Type = ActionType;

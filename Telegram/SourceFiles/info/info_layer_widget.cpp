@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_layer_widget.h"
 
+#include "ayu/features/glass_effect/glass_effect.h"
+
 #include "info/info_content_widget.h"
 #include "info/info_top_bar.h"
 #include "info/info_memento.h"
@@ -316,7 +318,9 @@ QRect LayerWidget::countGeometry(int newWidth) {
 	// First resize content to new width and get the new desired height.
 	const auto contentLeft = 0;
 	const auto contentTop = 0;
-	const auto contentBottom = bottomRadius;
+	const auto contentBottom = _contentWrap->fillsLayerBottom()
+		? 0
+		: bottomRadius;
 	const auto contentWidth = newWidth;
 	auto contentHeight = desiredHeight - contentTop - contentBottom;
 	const auto scrollTillBottom = _contentWrap->scrollTillBottom(
@@ -363,7 +367,9 @@ void LayerWidget::paintEvent(QPaintEvent *e) {
 	const auto clip = e->rect();
 	const auto radius = st::boxRadius;
 	const auto &corners = Ui::CachedCornerPixmaps(Ui::BoxCorners);
-	if (!_tillBottom) {
+	if (_contentWrap->fillsLayerBottom()) {
+		// The content background covers the bottom rounding itself.
+	} else if (!_tillBottom) {
 		const auto bottom = QRect{ 0, height() - radius, width(), radius };
 		if (clip.intersects(bottom)) {
 			if (const auto rounding = _contentWrap->bottomSkipRounding()) {

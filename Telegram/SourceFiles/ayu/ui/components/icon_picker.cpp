@@ -56,6 +56,8 @@ void applyIcon() {
 
 std::vector<QString> WhitegramAppIcons() {
 	return {
+		AyuAssets::WHITEGRAM_LIGHT_ICON,
+		AyuAssets::WHITEGRAM_DARK_ICON,
 		AyuAssets::WHITEGRAM_ICON,
 	};
 }

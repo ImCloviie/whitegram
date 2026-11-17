@@ -16,7 +16,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QRandomGenerator>
+#include <QtNetwork/QSslConfiguration>
 
+#include <atomic>
 #include <cstring>
 
 namespace MTP::details {
@@ -32,12 +34,22 @@ constexpr auto kMaxFramePayload = quint64(4 * 1024 * 1024);
 constexpr auto kMaxUpgradeResponse = 16 * 1024;
 constexpr auto kWsPort = 443;
 constexpr auto kPerHostTimeout = crl::time(3500);
+constexpr auto kFrontedHostTimeout = crl::time(7000);
+constexpr auto kFrontTcpTryTimeout = crl::time(1500);
 constexpr auto kMaxBypassConnectBudget = crl::time(75 * 1000);
+constexpr auto kFrontIp = "149.154.167.220";
+constexpr auto kFrontSni = "sprinthost.ru";
 constexpr auto kAcceptGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 constexpr auto kUserAgent =
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 	"AppleWebKit/537.36 (KHTML, like Gecko) "
 	"Chrome/131.0.0.0 Safari/537.36";
+
+// Remembers which way to the front IP worked last, like tg-ws-proxy does.
+std::atomic<bool> FrontingFirst = true;
+std::atomic<crl::time> FrontDownUntil = 0;
+std::atomic<crl::time> FrontLastOk = 0;
+constexpr auto kFrontDownCooldown = crl::time(2 * 60 * 1000);
 
 } // namespace
 
@@ -48,10 +60,21 @@ WsSocket::WsSocket(
 	int16 protocolDcId)
 : AbstractSocket(thread)
 , _protocolDcId(protocolDcId)
-, _hostTimer([=] { onHostTimeout(); }) {
+, _hostTimer([=] { onHostTimeout(); })
+, _tcpTimer([=] { onTcpTimeout(); }) {
 	_socket.moveToThread(thread);
 	_socket.setProxy(proxy);
 	_socket.setPeerVerifyMode(QSslSocket::VerifyPeer);
+	{
+		// WHY: OpenSSL 3.5 adds an MLKEM key share, a 1.5 KB ClientHello
+		// spans two TCP segments and DPI drops it; classic groups keep
+		// the hello at ~330 bytes.
+		auto config = _socket.sslConfiguration();
+		config.setBackendConfigurationOption(
+			QByteArrayLiteral("Groups"),
+			QByteArrayLiteral("X25519:P-256:P-384"));
+		_socket.setSslConfiguration(config);
+	}
 	if (protocolForFiles) {
 		_socket.setSocketOption(
 			QAbstractSocket::SendBufferSizeSocketOption,
@@ -66,6 +89,10 @@ WsSocket::WsSocket(
 		};
 	};
 	using Error = QAbstractSocket::SocketError;
+	connect(
+		&_socket,
+		&QAbstractSocket::connected,
+		wrap([=] { _tcpTimer.cancel(); }));
 	connect(
 		&_socket,
 		&QSslSocket::encrypted,
@@ -115,12 +142,45 @@ QString WsSocket::pathForDc() const {
 	return isTestDc() ? u"/apiws_test"_q : u"/apiws"_q;
 }
 
-std::vector<QString> WsSocket::buildHosts() const {
-	return ResolveBypassHosts({
-		.dc = extractDc(),
+std::vector<WsSocket::Target> WsSocket::buildTargets() const {
+	const auto dc = extractDc();
+	auto result = std::vector<Target>();
+	auto front = std::vector<Target>();
+	// WHY: DPI lets a TLS hello for a Russian domain through, and the
+	// front IP still serves kws hosts of DC 2 and 4 behind it.
+	if (!isTestDc() && (dc == 2 || dc == 4)) {
+		const auto primary = u"kws%1.web.telegram.org"_q.arg(dc);
+		const auto media = u"kws%1-1.web.telegram.org"_q.arg(dc);
+		const auto names = isMediaDc()
+			? std::vector<QString>{ media, primary }
+			: std::vector<QString>{ primary };
+		const auto frontedFirst = FrontingFirst.load();
+		const auto ip = QString::fromLatin1(kFrontIp);
+		for (const auto &name : names) {
+			for (const auto fronted : { frontedFirst, !frontedFirst }) {
+				front.push_back({
+					.host = name,
+					.address = ip,
+					.sni = fronted ? QString::fromLatin1(kFrontSni) : name,
+					.fronted = fronted,
+				});
+			}
+		}
+	}
+	const auto hosts = ResolveBypassHosts({
+		.dc = dc,
 		.isMedia = isMediaDc(),
 		.isTestDc = isTestDc(),
 	});
+	for (const auto &host : hosts) {
+		result.push_back({ .host = host, .address = host, .sni = host });
+	}
+	const auto frontDown = (crl::now() < FrontDownUntil.load());
+	result.insert(
+		frontDown ? end(result) : begin(result),
+		begin(front),
+		end(front));
+	return result;
 }
 
 void WsSocket::connectToHost(const QString &address, int port) {
@@ -129,11 +189,18 @@ void WsSocket::connectToHost(const QString &address, int port) {
 	if (_state != State::Idle) {
 		return;
 	}
-	_hosts = buildHosts();
+	_hosts = buildTargets();
 	_hostIndex = 0;
-	_connectBudget = std::min(
-		kMaxBypassConnectBudget,
-		crl::time(std::max(1, int(_hosts.size()))) * kPerHostTimeout);
+	auto budget = crl::time(0);
+	for (const auto &target : _hosts) {
+		budget += (target.address != target.host)
+			? kFrontedHostTimeout
+			: kPerHostTimeout;
+	}
+	_connectBudget = std::clamp(
+		budget,
+		kPerHostTimeout,
+		kMaxBypassConnectBudget);
 	startConnectToCurrentHost();
 }
 
@@ -145,13 +212,23 @@ void WsSocket::onHostTimeout() {
 	if (_state == State::Failed || _state == State::Connected) {
 		return;
 	}
-	DEBUG_LOG(("Bypass WS: timeout on %1 (%2/%3), switching host"
-		).arg(_host
+	LOG(("Bypass WS: timeout on %1 (%2/%3), switching host"
+		).arg(debugTarget()
 		).arg(_hostIndex + 1
 		).arg(int(_hosts.size())));
 	_hostTimer.cancel();
+	_tcpTimer.cancel();
 	_socket.abort();
 	tryNextHost();
+}
+
+QString WsSocket::debugTarget() const {
+	return (_target.address == _target.host)
+		? _target.host
+		: u"%1 via %2 sni %3"_q.arg(
+			_target.host,
+			_target.address,
+			_target.sni);
 }
 
 void WsSocket::startConnectToCurrentHost() {
@@ -159,26 +236,59 @@ void WsSocket::startConnectToCurrentHost() {
 		fail();
 		return;
 	}
-	_host = _hosts[_hostIndex];
+	_target = _hosts[_hostIndex];
+	_host = _target.host;
 	_incoming.clear();
 	_appData.clear();
 	_secKey.clear();
 	_state = State::ConnectingSsl;
-	DEBUG_LOG(("Bypass WS: connecting %1 (%2/%3, dc path %4)"
-		).arg(_host
+	LOG(("Bypass WS: connecting %1 (%2/%3, dc path %4)"
+		).arg(debugTarget()
 		).arg(_hostIndex + 1
 		).arg(int(_hosts.size())
 		).arg(pathForDc()));
-	_hostTimer.callOnce(kPerHostTimeout);
-	_socket.setPeerVerifyName(_host);
+	const auto direct = (_target.address != _target.host);
+	const auto timeout = direct ? kFrontedHostTimeout : kPerHostTimeout;
+	_targetDeadline = crl::now() + timeout;
+	_hostTimer.callOnce(timeout);
+	connectCurrentTarget();
+}
+
+void WsSocket::connectCurrentTarget() {
+	// WHY: the network drops about every third SYN to the front IP while a
+	// good connect takes under half a second, so retry quickly instead.
+	if (_target.address != _target.host) {
+		_tcpTimer.callOnce(kFrontTcpTryTimeout);
+	}
+	// WHY: a fronted hello names another domain, so the certificate can't
+	// match; MTProto itself authenticates the server.
+	_socket.setPeerVerifyMode(_target.fronted
+		? QSslSocket::VerifyNone
+		: QSslSocket::VerifyPeer);
+	_socket.setPeerVerifyName(_target.sni);
 	_socket.connectToHostEncrypted(
-		_host,
+		_target.address,
 		kWsPort,
+		_target.sni,
 		QIODevice::ReadWrite,
 		QAbstractSocket::IPv4Protocol);
 }
 
+void WsSocket::onTcpTimeout() {
+	if (_state != State::ConnectingSsl
+		|| _socket.state() == QAbstractSocket::ConnectedState) {
+		return;
+	}
+	if (_targetDeadline - crl::now() < crl::time(300)) {
+		return;
+	}
+	LOG(("Bypass WS: no TCP answer from %1, retrying").arg(debugTarget()));
+	_socket.abort();
+	connectCurrentTarget();
+}
+
 void WsSocket::resetSocketForRetry() {
+	_tcpTimer.cancel();
 	_hostTimer.cancel();
 	_state = State::Idle;
 	_socket.abort();
@@ -191,17 +301,26 @@ void WsSocket::tryNextHost() {
 	if (_state == State::Failed || _state == State::Connected) {
 		return;
 	}
-	if (!_host.isEmpty()) {
+	const auto isFront = [](const Target &target) {
+		return (target.address != target.host);
+	};
+	if (isFront(_target)) {
+		const auto next = _hostIndex + 1;
+		const auto lastFront = (next >= int(_hosts.size()))
+			|| !isFront(_hosts[next]);
+		const auto now = crl::now();
+		if (lastFront && now - FrontLastOk.load() > kFrontDownCooldown) {
+			FrontDownUntil = now + kFrontDownCooldown;
+		}
+	} else if (!_host.isEmpty()) {
 		NotifyBypassHostResult(_host, false);
 	}
 	++_hostIndex;
 	if (_hostIndex >= int(_hosts.size())) {
-		DEBUG_LOG(("Bypass WS: all %1 hosts failed").arg(int(_hosts.size())));
+		LOG(("Bypass WS: all %1 hosts failed").arg(int(_hosts.size())));
 		fail();
 		return;
 	}
-	DEBUG_LOG(("Bypass WS: trying next host %1/%2").arg(
-		_hostIndex + 1).arg(int(_hosts.size())));
 	resetSocketForRetry();
 	startConnectToCurrentHost();
 }
@@ -247,8 +366,8 @@ bool WsSocket::consumeUpgradeResponse() {
 		? QByteArray()
 		: lines.front().trimmed();
 	if (!status.contains(" 101")) {
-		DEBUG_LOG(("Bypass WS: bad upgrade status for %1: %2").arg(
-			_host,
+		LOG(("Bypass WS: bad upgrade status for %1: %2").arg(
+			debugTarget(),
 			QString::fromLatin1(status)));
 		return false;
 	}
@@ -273,8 +392,15 @@ bool WsSocket::consumeUpgradeResponse() {
 	_incoming.remove(0, end + 4);
 	_state = State::Connected;
 	_hostTimer.cancel();
-	DEBUG_LOG(("Bypass WS: connected to %1").arg(_host));
-	NotifyBypassHostResult(_host, true);
+	LOG(("Bypass WS: connected to %1").arg(debugTarget()));
+	NotifyBypassConnected();
+	if (_target.address == _target.host) {
+		NotifyBypassHostResult(_host, true);
+	} else {
+		FrontingFirst = _target.fronted;
+		FrontDownUntil = 0;
+		FrontLastOk = crl::now();
+	}
 	_connected.fire({});
 	return true;
 }
@@ -497,14 +623,14 @@ void WsSocket::handleError(int errorCode) {
 	}
 	if (_state == State::Connected) {
 		logError(errorCode, _socket.errorString());
-		DEBUG_LOG(("Bypass WS: error on %1 after connect: %2").arg(
-			_host,
+		LOG(("Bypass WS: error on %1 after connect: %2").arg(
+			debugTarget(),
 			_socket.errorString()));
 		fail();
 		return;
 	}
-	DEBUG_LOG(("Bypass WS: error on %1: %2").arg(
-		_host,
+	LOG(("Bypass WS: error on %1: %2").arg(
+		debugTarget(),
 		_socket.errorString()));
 	tryNextHost();
 }
@@ -514,11 +640,17 @@ void WsSocket::fail() {
 		return;
 	}
 	_hostTimer.cancel();
-	DEBUG_LOG(("Bypass WS: failed after %1/%2 hosts").arg(
+	_tcpTimer.cancel();
+	const auto wasConnected = (_state == State::Connected);
+	LOG(("Bypass WS: failed after %1/%2 hosts").arg(
 		std::min(_hostIndex + 1, int(_hosts.size()))
 	).arg(int(_hosts.size())));
 	_state = State::Failed;
-	NotifyBypassHostsExhausted();
+	// WHY: a drop of a working tunnel is not a sign that bypass is useless,
+	// falling back to blocked TCP for minutes would only cut the user off.
+	if (!wasConnected) {
+		NotifyBypassHostsExhausted();
+	}
 	_error.fire({});
 }
 

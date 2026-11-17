@@ -48,6 +48,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ui/boxes/confirm_box.h"
 #include "boxes/abstract_box.h"
 
@@ -119,7 +120,9 @@ GifsListWidget::GifsListWidget(
 , _mosaic(st::emojiPanWidth - st::inlineResultsLeft)
 , _previewTimer([=] { showPreview(); }) {
 	setMouseTracking(true);
-	setAttribute(Qt::WA_OpaquePaintEvent);
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!AyuFeatures::GlassEffect::CreateTranslucent());
 
 	setupSearch();
 
@@ -322,6 +325,14 @@ void GifsListWidget::inlineResultsDone(const MTPmessages_BotResults &result) {
 		}
 		auto added = 0;
 		for (const auto &res : v) {
+			const auto widget = res.match([](const auto &data) {
+				return (data.vsend_message().type()
+					== mtpc_botInlineMessageWidget);
+			});
+			if (widget) {
+				// GIF selection needs a media rect that widget rows lack.
+				continue;
+			}
 			auto result = InlineBots::Result::Create(
 				&session(),
 				queryId,
@@ -864,7 +875,7 @@ void GifsListWidget::beforeHiding() {
 
 bool GifsListWidget::refreshInlineRows(int32 *added) {
 	auto it = _inlineCache.find(_inlineQuery);
-	const InlineCacheEntry *entry = nullptr;
+	auto entry = (const InlineCacheEntry*)nullptr;
 	if (it != _inlineCache.cend()) {
 		entry = it->second.get();
 		_inlineNextOffset = it->second->nextOffset;

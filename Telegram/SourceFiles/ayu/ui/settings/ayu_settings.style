@@ -163,3 +163,16 @@ profileBackgroundCardPadding: margins(14px, 14px, 14px, 14px);
 profileBackgroundZoneSkip: 14px;
 profileBackgroundBadgePadding: margins(10px, 4px, 10px, 4px);
 profileBackgroundBadgeRadius: 10px;
+
+whitegramPercentInput: InputField(defaultInputField) {
+	textMargins: margins(6px, 3px, 6px, 3px);
+	textAlign: align(right);
+	heightMin: 26px;
+	placeholderScale: 0.;
+	placeholderShift: 0px;
+	border: 1px;
+	borderActive: 1px;
+	borderRadius: 6px;
+	textBg: windowBgOver;
+	textBgActive: windowBgOver;
+}

@@ -11,6 +11,8 @@
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ayu_worker.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
+#include "ayu/features/tg_ws_proxy/tg_ws_proxy.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/features/streamer_mode/streamer_mode.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/ui/ayu_logo.h"
@@ -651,7 +653,7 @@ void from_json(const nlohmann::json &j, MessageShotSettings &s) {
 }
 
 AyuSettings::AyuSettings()
-: _appIcon(AyuAssets::WHITEGRAM_ICON)
+: _appIcon(AyuAssets::WHITEGRAM_LIGHT_ICON)
 , _editedMark(Core::IsAppLaunched() ? tr::lng_edited(tr::now) : QString("edited")) {
 }
 
@@ -893,6 +895,7 @@ void AyuSettings::validate() {
 	validateRange(_messageBubbleRadius, 0, 16, defaults._messageBubbleRadius);
 	validateRange(_wideMultiplier, 0.5, 4.0, defaults._wideMultiplier);
 	validateRange(_avatarCorners, 0, AyuUiSettings::kMaxAvatarCorners, defaults._avatarCorners);
+	validateRange(_typingAnimation, 0, AyuUiSettings::kTypingAnimationMax, defaults._typingAnimation);
 	validateRange(_cryptoFiatCurrency, 0, 2, defaults._cryptoFiatCurrency);
 	validateRange(_cryptoChartDays, 1, 90, defaults._cryptoChartDays);
 
@@ -1432,6 +1435,14 @@ void AyuSettings::setAvatarCorners(int val) {
 	save();
 }
 
+void AyuSettings::setTypingAnimation(int val) {
+	if (_typingAnimation.current() == val) return;
+	_typingAnimation = val;
+	AyuUiSettings::setTypingAnimation(
+		static_cast<AyuUiSettings::TypingAnimation>(val));
+	save();
+}
+
 void AyuSettings::setSingleCornerRadius(bool val) {
 	if (_singleCornerRadius.current() == val) return;
 	_singleCornerRadius = val;
@@ -1671,8 +1682,37 @@ void AyuSettings::setConnectionBypassMode(ConnectionBypassMode val) {
 		return;
 	}
 	_connectionBypassMode = val;
+	if (val != ConnectionBypassMode::Off && _tgWsProxyEnabled.current()) {
+		_tgWsProxyEnabled = false;
+		AyuFeatures::TgWsProxy::reevaluate();
+	}
 	save();
 	AyuFeatures::ConnectionBypass::reevaluate(true, true);
+}
+
+void AyuSettings::setTgWsProxyEnabled(bool val) {
+	if (_tgWsProxyEnabled.current() == val) {
+		return;
+	}
+	_tgWsProxyEnabled = val;
+	const auto turnOffBypass = val
+		&& (_connectionBypassMode.current() != ConnectionBypassMode::Off);
+	if (turnOffBypass) {
+		_connectionBypassMode = ConnectionBypassMode::Off;
+	}
+	save();
+	if (turnOffBypass) {
+		AyuFeatures::ConnectionBypass::reevaluate(true, false);
+	}
+	AyuFeatures::TgWsProxy::reevaluate();
+}
+
+void AyuSettings::setTgWsProxySecret(const QString &val) {
+	if (_tgWsProxySecret == val) {
+		return;
+	}
+	_tgWsProxySecret = val;
+	save();
 }
 
 void AyuSettings::setConnectionBypassSecret(const QString &val) {
@@ -1854,6 +1894,7 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"improveLinkPreviews", s._improveLinkPreviews.current()},
 		{"crashReporting", s._crashReporting.current()},
 		{"avatarCorners", s._avatarCorners.current()},
+		{"typingAnimation", s._typingAnimation.current()},
 		{"singleCornerRadius", s._singleCornerRadius.current()},
 		{"enableAccountProfiles", s._enableAccountProfiles.current()},
 		{"maxAccountProfiles", s._maxAccountProfiles.current()},
@@ -1908,9 +1949,16 @@ void to_json(nlohmann::json &j, const AyuSettings &s) {
 		{"profileBackgroundDim", s._profileBackgroundDim.current()},
 		{"connectionBypassMode", s._connectionBypassMode.current()},
 		{"connectionBypassSecret", s._connectionBypassSecret.current()},
+		{"tgWsProxyEnabled", s._tgWsProxyEnabled.current()},
+		{"tgWsProxySecret", s._tgWsProxySecret},
 		{"messageShotSettings", s._messageShotSettings},
 		{"cryptoFiatCurrency", s._cryptoFiatCurrency.current()},
 		{"cryptoFiatCurrencyManual", s._cryptoFiatCurrencyManual.current()},
+		{"glassEffect", s._glassEffect.current()},
+		{"glassOpacity", s._glassOpacity.current()},
+		{"glassBlur", s._glassBlur.current()},
+		{"glassBlurStrength", s._glassBlurStrength.current()},
+		{"showGlassToggleInDrawer", s._showGlassToggleInDrawer.current()},
 		{"showCryptoInDrawer", s._showCryptoInDrawer.current()},
 		{"showSendBotInDrawer", s._showSendBotInDrawer.current()},
 		{"showBTC", s._showBTC.current()},
@@ -2082,6 +2130,7 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._improveLinkPreviews = j.value("improveLinkPreviews", defaults._improveLinkPreviews.current());
 	s._crashReporting = j.value("crashReporting", defaults._crashReporting.current());
 	s._avatarCorners = j.value("avatarCorners", defaults._avatarCorners.current());
+	s._typingAnimation = j.value("typingAnimation", defaults._typingAnimation.current());
 	s._singleCornerRadius = j.value("singleCornerRadius", defaults._singleCornerRadius.current());
 	s._streamerMode = j.value("streamerMode", defaults._streamerMode.current());
 	s._hideTelegramOnViewOnce = j.value("hideTelegramOnViewOnce", defaults._hideTelegramOnViewOnce.current());
@@ -2213,6 +2262,12 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._connectionBypassSecret = j.value(
 		"connectionBypassSecret",
 		defaults._connectionBypassSecret.current());
+	s._tgWsProxyEnabled = j.value(
+		"tgWsProxyEnabled",
+		defaults._tgWsProxyEnabled.current());
+	s._tgWsProxySecret = j.value(
+		"tgWsProxySecret",
+		defaults._tgWsProxySecret);
 
 	s._enableAccountProfiles = j.value("enableAccountProfiles", defaults._enableAccountProfiles.current());
 	s._maxAccountProfiles = j.value("maxAccountProfiles", defaults._maxAccountProfiles.current());
@@ -2259,6 +2314,22 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._cryptoFiatCurrencyManual = j.value(
 		"cryptoFiatCurrencyManual",
 		defaults._cryptoFiatCurrencyManual.current());
+
+	s._glassEffect = j.value(
+		"glassEffect",
+		defaults._glassEffect.current());
+	s._glassOpacity = std::clamp(
+		j.value("glassOpacity", defaults._glassOpacity.current()),
+		AyuFeatures::GlassEffect::kMinOpacity,
+		AyuFeatures::GlassEffect::kMaxOpacity);
+	s._glassBlur = j.value("glassBlur", defaults._glassBlur.current());
+	s._glassBlurStrength = std::clamp(
+		j.value("glassBlurStrength", defaults._glassBlurStrength.current()),
+		0,
+		100);
+	s._showGlassToggleInDrawer = j.value(
+		"showGlassToggleInDrawer",
+		defaults._showGlassToggleInDrawer.current());
 
 	s._showCryptoInDrawer = j.value(
 		"showCryptoInDrawer",
@@ -2422,6 +2493,45 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 			}
 		}
 	}
+}
+
+void AyuSettings::setGlassEffect(bool val) {
+	if (_glassEffect.current() == val) return;
+	_glassEffect = val;
+	AyuFeatures::GlassEffect::sync(true);
+	save();
+}
+
+void AyuSettings::setGlassOpacity(int val) {
+	val = std::clamp(
+		val,
+		AyuFeatures::GlassEffect::kMinOpacity,
+		AyuFeatures::GlassEffect::kMaxOpacity);
+	if (_glassOpacity.current() == val) return;
+	_glassOpacity = val;
+	AyuFeatures::GlassEffect::sync(false);
+	save();
+}
+
+void AyuSettings::setGlassBlur(bool val) {
+	if (_glassBlur.current() == val) return;
+	_glassBlur = val;
+	AyuFeatures::GlassEffect::sync(false);
+	save();
+}
+
+void AyuSettings::setGlassBlurStrength(int val) {
+	val = std::clamp(val, 0, 100);
+	if (_glassBlurStrength.current() == val) return;
+	_glassBlurStrength = val;
+	AyuFeatures::GlassEffect::sync(false);
+	save();
+}
+
+void AyuSettings::setShowGlassToggleInDrawer(bool val) {
+	if (_showGlassToggleInDrawer.current() == val) return;
+	_showGlassToggleInDrawer = val;
+	save();
 }
 
 void AyuSettings::setShowCryptoInDrawer(bool val) {

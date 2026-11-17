@@ -14,11 +14,16 @@
 #include "ayu/ayu_settings.h"
 #include "ayu/features/custom_profile_background/custom_profile_background.h"
 #include "ayu/features/connection_bypass/connection_bypass.h"
+#include "ayu/features/tg_ws_proxy/tg_ws_proxy.h"
+#include "ayu/ui/whitegram_startup_animation.h"
+#include "ui/widgets/checkbox.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 #include "ayu/features/self_destruct/self_destruct.h"
 #include "ayu/features/self_destruct/self_destruct_box.h"
 #include "ayu/features/custom_archives/custom_archives.h"
 #include "ayu/ui/ayu_logo.h"
 #include "ayu/ui/components/icon_picker.h"
+#include "ayu/ui/components/percent_slider.h"
 #include "ayu/ui/settings/custom_archives_box.h"
 #include "ayu/ui/settings/settings_appearance.h"
 #include "ayu/ui/settings/settings_ayu.h"
@@ -41,6 +46,7 @@
 #include "ui/text/format_values.h"
 #include "styles/style_boxes.h"
 #include "ayu/ui/settings/ayu_builder.h"
+#include "ayu/ui/components/typing_animation_picker.h"
 #include "ui/toast/toast.h"
 #include "ui/painter.h"
 #include "ui/boxes/single_choice_box.h"
@@ -205,57 +211,6 @@ void BuildAyuCategories(SectionBuilder &builder) {
 	});
 }
 
-void BuildAyuLinks(SectionBuilder &builder) {
-	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
-
-	builder.addSubsectionTitle(tr::ayu_LinksHeader());
-
-	const auto controller = builder.controller();
-
-	builder.addButton({
-		.title = tr::ayu_LinksChannel(),
-		.icon = { &st::menuIconChannel },
-		.label = rpl::single(QString("@ayugram")),
-		.onClick = [=] {
-			controller->showPeerByLink(Window::PeerByLinkInfo{
-				.usernameOrId = QString("ayugram"),
-			});
-		},
-	});
-	builder.addButton({
-		.title = tr::ayu_LinksChats(),
-		.icon = { &st::menuIconChats },
-		.label = rpl::single(QString("@ayugramchat")),
-		.onClick = [=] {
-			controller->showPeerByLink(Window::PeerByLinkInfo{
-				.usernameOrId = QString("ayugramchat"),
-			});
-		},
-	});
-	builder.addButton({
-		.title = tr::ayu_LinksTranslate(),
-		.icon = { &st::menuIconTranslate },
-		.label = rpl::single(QString("Crowdin")),
-		.onClick = [=] {
-			QDesktopServices::openUrl(
-				QString("https://translate.ayugram.one"));
-		},
-	});
-	builder.addButton({
-		.title = tr::ayu_LinksDocumentation(),
-		.icon = { &st::menuIconIpAddress },
-		.label = rpl::single(QString("docs.ayugram.one")),
-		.onClick = [=] {
-			QDesktopServices::openUrl(
-				QString("https://docs.ayugram.one"));
-		},
-	});
-
-	builder.addSkip();
-}
-
 const auto kAyuMeta = BuildHelper({
 	.id = AyuMain::Id(),
 	.parentId = MainId(),
@@ -266,7 +221,7 @@ const auto kAyuMeta = BuildHelper({
 	builder.addSkip();
 	BuildVersionInfo(builder);
 	BuildAyuCategories(builder);
-	BuildAyuLinks(builder);
+	builder.addSkip();
 });
 
 
@@ -514,28 +469,26 @@ void BuildWhitegramLinks(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 
 	builder.addButton({
-		.id = u"whitegram/creator"_q,
-		.title = trWhitegram(
-			QString::fromUtf8("Разработчик"),
-			QString("Developer")),
+		.id = u"whitegram/channel"_q,
+		.title = tr::ayu_LinksChannel(),
 		.icon = { &st::menuIconChannel },
-		.label = rpl::single(QString("@ImCloviie")),
+		.label = rpl::single(QString("@whitegrambeta")),
 		.onClick = [=] {
 			controller->showPeerByLink(Window::PeerByLinkInfo{
-				.usernameOrId = QString("ImCloviie"),
+				.usernameOrId = QString("whitegrambeta"),
 			});
 		},
 	});
 	builder.addButton({
-		.id = u"whitegram/designer"_q,
+		.id = u"whitegram/support"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Дизайнер"),
-			QString("Designer")),
-		.icon = { &st::menuIconPalette },
-		.label = rpl::single(QString("@ImKloviie")),
+			QString::fromUtf8("Поддержка"),
+			QString("Support")),
+		.icon = { &st::menuIconBot },
+		.label = rpl::single(QString("@Whitegram_Support_bot")),
 		.onClick = [=] {
 			controller->showPeerByLink(Window::PeerByLinkInfo{
-				.usernameOrId = QString("ImKloviie"),
+				.usernameOrId = QString("Whitegram_Support_bot"),
 			});
 		},
 	});
@@ -1954,6 +1907,40 @@ const auto kWhitegramStartupAnimMeta = BuildHelper({
 }, [](SectionBuilder &builder) {
 	builder.addSkip();
 
+	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		auto wrap = object_ptr<Ui::VerticalLayout>(ctx.container);
+		const auto layout = wrap.data();
+		const auto preview = layout->add(
+			object_ptr<Ui::WhitegramStartupPreview>(layout),
+			st::boxRowPadding);
+		rpl::merge(
+			AyuSettings::getInstance().startupAnimationTypeValue(
+			) | rpl::to_empty,
+			AyuSettings::getInstance().startupAnimationShowIconValue(
+			) | rpl::to_empty
+		) | rpl::on_next([=] {
+			preview->restart();
+		}, preview->lifetime());
+		Ui::AddSkip(layout, st::settingsCheckboxesSkip);
+		layout->add(
+			object_ptr<Ui::FlatLabel>(
+				layout,
+				trWhitegram(
+					QString::fromUtf8(
+						"Нажмите на превью, чтобы повторить. При запуске "
+						"анимацию можно пропустить кликом или любой клавишей."),
+					QString(
+						"Click the preview to replay. On launch you can skip "
+						"the animation with a click or any key.")),
+				st::boxDividerLabel),
+			st::boxRowPadding);
+		return { .widget = std::move(wrap) };
+	});
+
+	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
+
 	auto ayu = AyuSectionBuilder(builder);
 
 	ayu.addSettingToggle({
@@ -1975,35 +1962,51 @@ const auto kWhitegramStartupAnimMeta = BuildHelper({
 	});
 
 	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
 
-	auto getAnimOptions = [] {
-		const auto id = Lang::GetInstance().id();
-		const auto baseId = Lang::GetInstance().baseId();
-		const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
-		return std::vector<QString>{
-			QString("Steam Big Picture"),
-			isRu ? QString::fromUtf8("Минималистичный тёмный") : QString("Minimalist Dark"),
-			isRu ? QString::fromUtf8("Киберпанк сетка") : QString("Cyberpunk Grid"),
-			isRu ? QString::fromUtf8("Закат") : QString("Sunset"),
-			isRu ? QString::fromUtf8("Космическая туманность") : QString("Space Nebula"),
+	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		auto wrap = object_ptr<Ui::VerticalLayout>(ctx.container);
+		const auto layout = wrap.data();
+		Ui::AddSubsectionTitle(
+			layout,
+			trWhitegram(
+				QString::fromUtf8("Стиль анимации"),
+				QString("Animation Style")));
+		const auto isRu = Lang::GetInstance().id().startsWith(u"ru"_q)
+			|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+		const auto group = std::make_shared<Ui::RadiobuttonGroup>(
+			Ui::NormalizeWhitegramStartupStyle(
+				AyuSettings::getInstance().startupAnimationType()));
+		for (const auto i : Ui::WhitegramStartupStyles()) {
+			layout->add(
+				object_ptr<Ui::Radiobutton>(
+					layout,
+					group,
+					i,
+					Ui::WhitegramStartupStyleName(i, isRu),
+					st::settingsChatbotsAccess),
+				st::settingsChatbotsAccessMargins);
+		}
+		group->setChangedCallback([](int value) {
+			AyuSettings::getInstance().setStartupAnimationType(value);
+		});
+		return { .widget = std::move(wrap) };
+	}, [] {
+		return SearchEntry{
+			.id = u"whitegram/startupAnimationType"_q,
+			.title = QString::fromUtf8("Стиль анимации"),
+			.keywords = {
+				u"animation"_q,
+				u"splash"_q,
+				QString::fromUtf8("анимац"),
+			},
+			.section = WhitegramStartupAnim::Id(),
 		};
-	};
-
-	ayu.addChooseButton({
-		.id = u"whitegram/startupAnimationType"_q,
-		.title = trWhitegram(
-			QString::fromUtf8("Стиль анимации"),
-			QString("Animation Style")),
-		.boxTitle = trWhitegram(
-			QString::fromUtf8("Стиль анимации"),
-			QString("Animation Style")),
-		.initialSelection = AyuSettings::getInstance().startupAnimationType(),
-		.options = getAnimOptions(),
-		.setter = [](int index) {
-			AyuSettings::getInstance().setStartupAnimationType(index);
-		},
 	});
 
+	builder.addSkip();
+	builder.addDivider();
 	builder.addSkip();
 
 	int currentFps = AyuSettings::getInstance().startupAnimationFps();
@@ -2315,10 +2318,114 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 			"Tap an icon to apply it to the app, the taskbar and the tray.")));
 	builder.addSkip();
 
+	auto ayu = AyuSectionBuilder(builder);
+	{
+		using namespace AyuFeatures::GlassEffect;
+
+		builder.addSubsectionTitle(trWhitegram(
+			QString::fromUtf8("Стекло и прозрачность"),
+			QString("Glass & transparency")));
+		ayu.addSettingToggle({
+			.id = u"whitegram/glassEffect"_q,
+			.title = trWhitegram(
+				QString::fromUtf8("Эффект стекла"),
+				QString("Glass effect")),
+			.getter = &AyuSettings::glassEffect,
+			.setter = &AyuSettings::setGlassEffect,
+			.icon = { &st::menuIconChangeColors },
+			.keywords = {
+				u"glass"_q,
+				u"blur"_q,
+				u"transparent"_q,
+				u"opacity"_q,
+				QString::fromUtf8("стекло"),
+				QString::fromUtf8("прозрачность"),
+				QString::fromUtf8("размытие"),
+			},
+		});
+		const auto addPercentSlider = [&](
+				rpl::producer<QString> title,
+				int min,
+				int max,
+				int current,
+				Fn<void(int)> changed) {
+			const auto searchTitle = std::make_shared<rpl::producer<QString>>(
+				rpl::duplicate(title));
+			builder.add([=](const WidgetContext &ctx)
+			-> SectionBuilder::WidgetToAdd {
+				return {
+					.widget = AyuUi::CreatePercentSlider(
+						ctx.container,
+						AyuUi::PercentSliderArgs{
+							.title = rpl::duplicate(*searchTitle),
+							.min = min,
+							.max = max,
+							.current = current,
+							.changed = changed,
+						}),
+				};
+			});
+		};
+		const auto &settings = AyuSettings::getInstance();
+		builder.scope([&] {
+			ayu.addSettingToggle({
+				.id = u"whitegram/glassBlur"_q,
+				.title = trWhitegram(
+					QString::fromUtf8("Размытие фона"),
+					QString("Background blur")),
+				.getter = &AyuSettings::glassBlur,
+				.setter = &AyuSettings::setGlassBlur,
+				.icon = { &st::menuIconPhoto },
+				.keywords = { u"blur"_q, QString::fromUtf8("размытие") },
+			});
+			builder.scope([&] {
+				addPercentSlider(
+					trWhitegram(
+						QString::fromUtf8("Сила размытия"),
+						QString("Blur strength")),
+					0,
+					100,
+					AyuSettings::getInstance().glassBlurStrength(),
+					[](int value) {
+						AyuSettings::getInstance().setGlassBlurStrength(value);
+					});
+			}, settings.glassBlurValue());
+			addPercentSlider(
+				trWhitegram(
+					QString::fromUtf8("Непрозрачность фона"),
+					QString("Background opacity")),
+				kMinOpacity,
+				kMaxOpacity,
+				AyuSettings::getInstance().glassOpacity(),
+				[](int value) {
+					AyuSettings::getInstance().setGlassOpacity(value);
+				});
+		}, settings.glassEffectValue());
+		builder.addSkip();
+		builder.addDividerText(trWhitegram(
+			QString::fromUtf8(
+				"Прозрачным становится только фон: текст, иконки и сообщения "
+				"остаются чёткими. Боковое меню, профили и окна становятся "
+				"матовым стеклом. Первое включение требует перезапуска."),
+			QString(
+				"Only the background turns translucent: text, icons and "
+				"messages stay crisp. The side menu, profiles and boxes turn "
+				"into frosted glass. The first enable needs a restart.")));
+		builder.addSkip();
+	}
+
 	builder.addSubsectionTitle(trWhitegram(
 		QString::fromUtf8("Боковое меню"),
 		QString("Side menu")));
-	auto ayu = AyuSectionBuilder(builder);
+	ayu.addSettingToggle({
+		.id = u"whitegram/showGlassToggleInDrawer"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Эффект стекла"),
+			QString("Glass effect")),
+		.getter = &AyuSettings::showGlassToggleInDrawer,
+		.setter = &AyuSettings::setShowGlassToggleInDrawer,
+		.icon = { &st::menuIconChangeColors },
+	});
 	ayu.addSettingToggle({
 		.id = u"whitegram/showSendBotInDrawer"_q,
 		.title = trWhitegram(
@@ -2330,11 +2437,55 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 	});
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Добавляет кнопку CryptoBot (@send) в боковое меню "
-			"(t.me/send). Это не Telegram Wallet (@wallet)."),
+			"Добавляет в боковое меню переключатель эффекта стекла и "
+			"кнопку CryptoBot (@send) (t.me/send). Это не Telegram "
+			"Wallet (@wallet)."),
 		QString(
-			"Adds the CryptoBot (@send) button to the side menu "
-			"(t.me/send). This is not Telegram Wallet (@wallet).")));
+			"Adds the glass effect switch and the CryptoBot (@send) "
+			"button (t.me/send) to the side menu. This is not Telegram "
+			"Wallet (@wallet).")));
+	builder.addSkip();
+
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Ввод текста"),
+		QString("Text input")));
+	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		const auto name = [](const char *ru, const char *en) {
+			return trWhitegram(QString::fromUtf8(ru), QString(en));
+		};
+		auto names = std::vector<rpl::producer<QString>>();
+		names.push_back(name("Выключена", "Off"));
+		names.push_back(name("Проявление", "Fade"));
+		names.push_back(name("Всплытие", "Rise"));
+		names.push_back(name("Падение", "Drop"));
+		names.push_back(name("Пружина", "Pop"));
+		names.push_back(name("Свечение", "Glow"));
+		return {
+			.widget = object_ptr<TypingAnimationPicker>(
+				ctx.container,
+				TypingAnimationPicker::Args{
+					.names = std::move(names),
+					.sample = name("Привет", "Hello"),
+					.current = AyuSettings::getInstance().typingAnimation(),
+					.chosen = [](int index) {
+						AyuSettings::getInstance().setTypingAnimation(index);
+					},
+				}),
+			.margin = QMargins(
+				st::settingsButtonNoIcon.padding.left(),
+				style::ConvertScale(4),
+				st::settingsButtonNoIcon.padding.right(),
+				style::ConvertScale(4)),
+		};
+	});
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Плавно анимирует символы, которые вы набираете в поле "
+			"ввода. Видно только вам."),
+		QString(
+			"Smoothly animates the characters you type in input fields. "
+			"Only visible to you.")));
 	builder.addSkip();
 
 	builder.addSectionButton({
@@ -3465,6 +3616,111 @@ void ShowBypassAboutBox(not_null<Ui::GenericBox*> box) {
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
 
+[[nodiscard]] bool IsRuLang() {
+	const auto id = Lang::GetInstance().id();
+	const auto baseId = Lang::GetInstance().baseId();
+	return id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+}
+
+void AddTgWsProxyBlock(not_null<Ui::VerticalLayout*> layout) {
+	using namespace AyuFeatures::TgWsProxy;
+
+	Ui::AddSkip(layout);
+	Ui::AddDivider(layout);
+	Ui::AddSkip(layout);
+	Ui::AddSubsectionTitle(
+		layout,
+		trWhitegram(
+			QString::fromUtf8("Обход 2 · TG WS Proxy"),
+			QString("Bypass 2 · TG WS Proxy")));
+
+	const auto card = layout->add(
+		object_ptr<BypassMirrorCard>(layout),
+		st::whitegramBypassMirrorCardMargin)->content();
+
+	card->add(
+		object_ptr<Ui::FlatLabel>(
+			card,
+			trWhitegram(
+				QString::fromUtf8(
+					"Встроенный tg-ws-proxy от Flowseal: локальный прокси, "
+					"который держит заранее открытые соединения с Telegram "
+					"и при сбое уходит на Cloudflare. Пробуйте, если первый "
+					"обход не помогает. Включение выключает первый обход, "
+					"ваш прокси вернётся после выключения."),
+				QString(
+					"Built-in tg-ws-proxy by Flowseal: a local proxy that "
+					"keeps pre-opened connections to Telegram and falls back "
+					"to Cloudflare. Try it if the first bypass does not help. "
+					"Turning it on turns the first bypass off; your own proxy "
+					"comes back when you turn it off.")),
+			st::whitegramBypassMirrorHint));
+
+	Ui::AddSkip(card, st::settingsCheckboxesSkip);
+
+	const auto statusLabel = card->add(
+		object_ptr<Ui::FlatLabel>(
+			card,
+			rpl::single(QString()),
+			st::whitegramBypassMirrorStatus));
+	statusValue(
+	) | rpl::on_next([=](const Status &status) {
+		const auto isRu = IsRuLang();
+		auto text = QString();
+		auto active = false;
+		switch (status.state) {
+		case State::Off:
+			text = isRu
+				? QString::fromUtf8("Статус: выключен")
+				: QString("Status: off");
+			break;
+		case State::Starting:
+			text = isRu
+				? QString::fromUtf8("Статус: запускается…")
+				: QString("Status: starting…");
+			break;
+		case State::Running:
+			text = (isRu
+				? QString::fromUtf8("Статус: работает на 127.0.0.1:%1")
+				: QString("Status: running on 127.0.0.1:%1")
+			).arg(status.port);
+			active = true;
+			break;
+		case State::Failed:
+			text = (isRu
+				? QString::fromUtf8("Статус: ошибка — %1")
+				: QString("Status: error — %1")
+			).arg(status.error);
+			break;
+		}
+		statusLabel->setText(text);
+		statusLabel->setTextColorOverride(active
+			? st::windowActiveTextFg->c
+			: (status.state == State::Failed)
+			? std::make_optional(st::attentionButtonFg->c)
+			: std::optional<QColor>());
+	}, statusLabel->lifetime());
+
+	Ui::AddSkip(card, st::whitegramBypassMirrorButtonSkip);
+
+	const auto button = card->add(
+		object_ptr<Ui::RoundButton>(
+			card,
+			AyuSettings::getInstance().tgWsProxyEnabledValue(
+			) | rpl::map([](bool enabled) {
+				const auto isRu = IsRuLang();
+				return enabled
+					? (isRu ? QString::fromUtf8("Выключить") : QString("Turn off"))
+					: (isRu ? QString::fromUtf8("Включить") : QString("Turn on"));
+			}),
+			st::whitegramBypassMirrorButton));
+	button->setTextTransform(Ui::RoundButtonTextTransform::NoTransform);
+	button->setClickedCallback([] {
+		auto &settings = AyuSettings::getInstance();
+		settings.setTgWsProxyEnabled(!settings.tgWsProxyEnabled());
+	});
+}
+
 void BuildWhitegramBypass(SectionBuilder &builder) {
 	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
 		auto wrap = object_ptr<Ui::VerticalLayout>(ctx.container);
@@ -3738,6 +3994,8 @@ void BuildWhitegramBypass(SectionBuilder &builder) {
 		mirrorButton->setClickedCallback([=] {
 			controller->show(Box(ShowBypassCustomMirrorBox));
 		});
+
+		AddTgWsProxyBlock(layout);
 
 		Ui::AddSkip(layout);
 

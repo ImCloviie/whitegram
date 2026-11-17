@@ -65,6 +65,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 
 
 namespace ChatHelpers {
@@ -522,7 +523,8 @@ EmojiListWidget::EmojiListWidget(
 , _showPickerTimer([=] { showPicker(); })
 , _previewTimer([=] { showPreview(); }) {
 	setMouseTracking(true);
-	if (st().bg->c.alpha() > 0) {
+	if (st().bg->c.alpha() > 0
+		&& !AyuFeatures::GlassEffect::CreateTranslucent()) {
 		setAttribute(Qt::WA_OpaquePaintEvent);
 	}
 

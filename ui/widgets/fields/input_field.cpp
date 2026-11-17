@@ -26,6 +26,7 @@
 #include "ui/qt_object_factory.h"
 #include "ui/integration.h"
 #include "ui/screen_reader_mode.h"
+#include "ayu/ayu_ui_settings.h"
 #include "styles/style_widgets.h"
 #include "styles/palette.h"
 
@@ -34,6 +35,8 @@
 #include <QtCore/QRegularExpression>
 #include <QtGui/QClipboard>
 #include <QtGui/QTextBlock>
+#include <QtGui/QTextLayout>
+#include <QtGui/QGlyphRun>
 #include <QtGui/QTextDocumentFragment>
 #include <QtGui/QPixmapCache>
 #include <QtGui/QRawFont>
@@ -1644,6 +1647,22 @@ private:
 
 };
 
+// Whitegram: local typing animation helpers.
+namespace {
+
+[[nodiscard]] bool IsTypingAnimationInput(const QString &text) {
+	if (AyuUiSettings::getTypingAnimation()
+			== AyuUiSettings::TypingAnimation::Off
+		|| text.isEmpty()
+		|| text.size() > 2) {
+		return false;
+	}
+	const auto ch = text[0];
+	return ch.isPrint() && !ch.isSpace();
+}
+
+} // namespace
+
 #ifndef QT_SPELLCHECK_UNDERLINE_FROM_CHROME
 // The mark under a misspelled word, drawn the way Chrome draws it - a wave on
 // Windows and on Linux, a row of dots on macOS. Kept in the cache of pixmaps
@@ -1973,6 +1992,9 @@ InputField::InputField(
 	) | rpl::on_next([=](int position, int removed, int added) {
 		documentContentsChanged(position, removed, added);
 	}, lifetime());
+	_typingAnimation.init([=](crl::time now) {
+		return typingAnimationsStep(now);
+	});
 	base::qt_signal_producer(
 		_inner.get(),
 		&QTextEdit::undoAvailable
@@ -2345,9 +2367,460 @@ void InputField::paintEventInner(QPaintEvent *e) {
 	_customEmojiRepaintScheduled = false;
 	paintQuotes(e);
 	_inner->QTextEdit::paintEvent(e);
+	paintTypingAnimations(e);
 #ifndef QT_SPELLCHECK_UNDERLINE_FROM_CHROME
 	paintMisspelled(e);
 #endif // !QT_SPELLCHECK_UNDERLINE_FROM_CHROME
+}
+
+void InputField::paintTypingAnimations(QPaintEvent *e) {
+	if (_typingChars.empty() && _typingGhosts.empty()) {
+		return;
+	}
+	const auto mode = AyuUiSettings::getTypingAnimation();
+	const auto duration = AyuUiSettings::TypingAnimationDuration(mode);
+	if (!duration) {
+		return;
+	}
+	const auto now = crl::now();
+	const auto document = _inner->document();
+	const auto shift = QPointF(
+		-_inner->horizontalScrollBar()->value(),
+		-_inner->verticalScrollBar()->value());
+	const auto clip = QRectF(e->rect());
+	auto p = std::optional<QPainter>();
+	const auto draw = [&](
+			const QList<QGlyphRun> &runs,
+			QPointF origin,
+			QRectF rect,
+			QColor color,
+			const AyuUiSettings::TypingAnimationFrame &frame) {
+		if (frame.opacity <= 0.) {
+			return;
+		}
+		if (!p) {
+			p.emplace(_inner->viewport());
+			p->setClipRect(e->rect());
+			p->setRenderHint(QPainter::Antialiasing);
+			p->setRenderHint(QPainter::SmoothPixmapTransform);
+		}
+		p->save();
+		p->setOpacity(frame.opacity);
+		const auto center = rect.center();
+		p->translate(center + QPointF(0., frame.offsetY * rect.height()));
+		if (frame.scale != 1.) {
+			p->scale(frame.scale, frame.scale);
+		}
+		p->translate(-center);
+		p->setPen((frame.accent > 0.)
+			? anim::color(color, st::windowActiveTextFg->c, frame.accent)
+			: color);
+		for (const auto &run : runs) {
+			p->drawGlyphRun(origin, run);
+		}
+		p->restore();
+	};
+	for (const auto &entry : _typingChars) {
+		const auto block = document->findBlock(entry.position);
+		if (!block.isValid()) {
+			continue;
+		}
+		const auto layout = block.layout();
+		if (!layout) {
+			continue;
+		}
+		const auto from = entry.position - block.position();
+		const auto till = from + entry.length;
+		if (from < 0 || till > block.length() - 1) {
+			continue;
+		}
+		const auto text = block.text().mid(from, entry.length);
+		if (text.contains(QChar::ObjectReplacementCharacter)) {
+			continue;
+		}
+		const auto line = layout->lineForTextPosition(from);
+		if (!line.isValid()) {
+			continue;
+		}
+		const auto runs = line.glyphRuns(from, entry.length);
+		if (runs.isEmpty()) {
+			continue;
+		}
+		const auto origin = layout->position() + shift;
+		const auto x1 = line.cursorToX(from);
+		const auto x2 = line.cursorToX(till);
+		const auto rect = QRectF(
+			origin.x() + std::min(x1, x2),
+			origin.y() + line.y(),
+			std::abs(x2 - x1),
+			line.height());
+		const auto extend = rect.height();
+		if (!rect.adjusted(-extend, -extend, extend, extend).intersects(clip)) {
+			continue;
+		}
+
+		auto cursor = QTextCursor(document);
+		cursor.setPosition(entry.position + entry.length);
+		const auto format = cursor.charFormat();
+		const auto color = (format.foreground().style() != Qt::NoBrush)
+			? format.foreground().color()
+			: _st.textFg->c;
+
+		draw(
+			runs,
+			origin,
+			rect,
+			color,
+			AyuUiSettings::ComputeTypingAnimationFrame(
+				mode,
+				float64(now - entry.started - entry.delay) / duration));
+	}
+	for (const auto &ghost : _typingGhosts) {
+		const auto rect = ghost.rect.translated(shift);
+		const auto extend = rect.height();
+		if (!rect.adjusted(-extend, -extend, extend, extend).intersects(clip)) {
+			continue;
+		}
+		const auto local = now - ghost.started - ghost.delay;
+		const auto progress = (local <= 0)
+			? 1.
+			: (1. - float64(local) / duration);
+		draw(
+			ghost.runs,
+			ghost.origin + shift,
+			rect,
+			ghost.color,
+			AyuUiSettings::ComputeTypingAnimationFrame(mode, progress));
+	}
+}
+
+void InputField::typingAnimationsShift(int position, int removed, int added) {
+	if (_typingChars.empty() || (!removed && !added)) {
+		return;
+	}
+	const auto delta = added - removed;
+	auto changed = false;
+	for (auto i = _typingChars.begin(); i != _typingChars.end();) {
+		const auto overlaps = (removed > 0)
+			&& (i->position < position + removed)
+			&& (i->position + i->length > position);
+		if (overlaps && removed != added) {
+			i = _typingChars.erase(i);
+			changed = true;
+			continue;
+		} else if (i->position >= position + removed && delta) {
+			i->position += delta;
+			changed = true;
+		}
+		++i;
+	}
+	if (changed) {
+		typingAnimationsRefresh();
+	}
+}
+
+void InputField::typingAnimationsAdd(int position, int length) {
+	const auto document = _inner->document();
+	for (auto i = position; i != position + length; ++i) {
+		const auto ch = document->characterAt(i);
+		if (ch == QChar::ObjectReplacementCharacter
+			|| ch == QChar::ParagraphSeparator
+			|| ch == QChar::LineSeparator
+			|| ch.isSpace()) {
+			return;
+		}
+	}
+	_typingChars.erase(
+		ranges::remove(_typingChars, position, &TypingChar::position),
+		end(_typingChars));
+	_typingChars.push_back({
+		.position = position,
+		.length = length,
+		.started = crl::now(),
+	});
+	typingAnimationsStart();
+}
+
+void InputField::typingAnimationsStart() {
+	constexpr auto kMaxTypingChars = 256;
+	if (_typingChars.size() > kMaxTypingChars) {
+		_typingChars.erase(
+			begin(_typingChars),
+			end(_typingChars) - kMaxTypingChars);
+	}
+	typingAnimationsRefresh();
+	if (!_typingAnimation.animating()) {
+		_typingAnimation.start();
+	}
+}
+
+void InputField::typingAnimationsPaste(int from, int till) {
+	if (from >= till
+		|| (AyuUiSettings::getTypingAnimation()
+			== AyuUiSettings::TypingAnimation::Off)) {
+		return;
+	}
+	const auto document = _inner->document();
+	const auto documentLayout = document->documentLayout();
+	const auto top = float64(_inner->verticalScrollBar()->value());
+	const auto bottom = top + _inner->viewport()->height();
+
+	struct Segment {
+		int position = 0;
+		int length = 0;
+	};
+	auto chars = std::vector<Segment>();
+	auto lines = std::vector<Segment>();
+	constexpr auto kPerCharLimit = 120;
+	constexpr auto kLinesLimit = 64;
+	const auto pushChar = [&](int position, int length) {
+		if (int(chars.size()) <= kPerCharLimit) {
+			chars.push_back({ position, length });
+		}
+	};
+	const auto pushLine = [&](int position, int length) {
+		if (length > 0 && int(lines.size()) < kLinesLimit) {
+			lines.push_back({ position, length });
+		}
+	};
+	// WHY: only the visible part is animated, so a huge paste costs nothing
+	// beyond the lines on screen.
+	for (auto block = document->findBlock(from)
+		; block.isValid() && block.position() < till
+		; block = block.next()) {
+		const auto box = documentLayout->blockBoundingRect(block);
+		if (box.bottom() < top) {
+			continue;
+		} else if (box.top() > bottom) {
+			break;
+		}
+		const auto layout = block.layout();
+		if (!layout) {
+			continue;
+		}
+		const auto text = block.text();
+		const auto base = block.position();
+		const auto blockFrom = std::max(from - base, 0);
+		const auto blockTill = std::min(till - base, int(text.size()));
+		for (auto i = 0; i != layout->lineCount(); ++i) {
+			const auto line = layout->lineAt(i);
+			const auto y = box.top() + line.y();
+			if (y + line.height() < top || y > bottom) {
+				continue;
+			}
+			const auto lineFrom = std::max(line.textStart(), blockFrom);
+			const auto lineTill = std::min(
+				line.textStart() + line.textLength(),
+				blockTill);
+			auto segment = lineFrom;
+			for (auto at = lineFrom; at < lineTill;) {
+				const auto ch = text[at];
+				const auto length = (ch.isHighSurrogate()
+					&& at + 1 < lineTill
+					&& text[at + 1].isLowSurrogate()) ? 2 : 1;
+				const auto object = (ch == QChar::ObjectReplacementCharacter);
+				if (object) {
+					pushLine(base + segment, at - segment);
+					segment = at + 1;
+				} else if (!ch.isSpace()) {
+					pushChar(base + at, length);
+				}
+				at += length;
+			}
+			pushLine(base + segment, lineTill - segment);
+		}
+	}
+	const auto perChar = (int(chars.size()) <= kPerCharLimit);
+	const auto &segments = perChar ? chars : lines;
+	if (segments.empty()) {
+		return;
+	}
+	const auto now = crl::now();
+	const auto count = int(segments.size());
+	const auto step = std::min(
+		perChar ? crl::time(16) : crl::time(40),
+		crl::time(360) / count);
+	for (auto i = 0; i != count; ++i) {
+		_typingChars.push_back({
+			.position = segments[i].position,
+			.length = segments[i].length,
+			.started = now,
+			.delay = i * step,
+		});
+	}
+	typingAnimationsStart();
+}
+
+void InputField::typingAnimationsRefresh() {
+	const auto document = _inner->document();
+	const auto last = std::max(document->characterCount() - 1, 0);
+	auto selections = QList<QTextEdit::ExtraSelection>();
+	for (const auto &entry : _typingChars) {
+		const auto from = std::clamp(entry.position, 0, last);
+		const auto till = std::clamp(entry.position + entry.length, 0, last);
+		if (from >= till) {
+			continue;
+		}
+		auto selection = QTextEdit::ExtraSelection();
+		selection.cursor = QTextCursor(document);
+		selection.cursor.setPosition(from);
+		selection.cursor.setPosition(till, QTextCursor::KeepAnchor);
+		selection.format.setForeground(QColor(0, 0, 0, 0));
+		selections.push_back(selection);
+	}
+	if (selections.isEmpty() && _inner->extraSelections().isEmpty()) {
+		return;
+	}
+	_inner->setExtraSelections(selections);
+}
+
+bool InputField::typingAnimationsStep(crl::time now) {
+	const auto duration = AyuUiSettings::TypingAnimationDuration(
+		AyuUiSettings::getTypingAnimation());
+	const auto was = _typingChars.size();
+	_typingChars.erase(ranges::remove_if(_typingChars, [&](
+			const TypingChar &entry) {
+		return (entry.started + entry.delay + duration <= now);
+	}), end(_typingChars));
+	if (_typingChars.size() != was) {
+		typingAnimationsRefresh();
+	}
+	_typingGhosts.erase(ranges::remove_if(_typingGhosts, [&](
+			const TypingGhost &ghost) {
+		return (ghost.started + ghost.delay + duration <= now);
+	}), end(_typingGhosts));
+	_inner->viewport()->update();
+	return !_typingChars.empty() || !_typingGhosts.empty();
+}
+
+auto InputField::typingAnimationsCapture(bool backward, bool word)
+-> std::vector<TypingGhost> {
+	auto result = std::vector<TypingGhost>();
+	auto cursor = textCursor();
+	if (!cursor.hasSelection()) {
+		cursor.movePosition(
+			(backward
+				? (word
+					? QTextCursor::PreviousWord
+					: QTextCursor::PreviousCharacter)
+				: (word
+					? QTextCursor::NextWord
+					: QTextCursor::NextCharacter)),
+			QTextCursor::KeepAnchor);
+	}
+	const auto from = cursor.selectionStart();
+	const auto till = cursor.selectionEnd();
+	if (from >= till) {
+		return result;
+	}
+	const auto document = _inner->document();
+	const auto visible = QRectF(
+		_inner->horizontalScrollBar()->value(),
+		_inner->verticalScrollBar()->value(),
+		_inner->viewport()->width(),
+		_inner->viewport()->height());
+	constexpr auto kPerCharLimit = 160;
+	const auto perChar = (till - from) <= kPerCharLimit;
+	const auto colorAt = [&](int position) {
+		auto format = QTextCursor(document);
+		format.setPosition(position);
+		const auto fmt = format.charFormat();
+		return (fmt.foreground().style() != Qt::NoBrush)
+			? fmt.foreground().color()
+			: _st.textFg->c;
+	};
+	const auto add = [&](
+			const QTextLayout *layout,
+			const QTextLine &line,
+			int blockPosition,
+			int segmentFrom,
+			int segmentTill) {
+		const auto x1 = line.cursorToX(segmentFrom);
+		const auto x2 = line.cursorToX(segmentTill);
+		const auto origin = layout->position();
+		const auto rect = QRectF(
+			origin.x() + std::min(x1, x2),
+			origin.y() + line.y(),
+			std::abs(x2 - x1),
+			line.height());
+		if (!rect.intersects(visible)) {
+			return;
+		}
+		auto runs = line.glyphRuns(segmentFrom, segmentTill - segmentFrom);
+		if (runs.isEmpty()) {
+			return;
+		}
+		result.push_back({
+			.origin = origin,
+			.rect = rect,
+			.runs = std::move(runs),
+			.color = colorAt(blockPosition + segmentTill),
+		});
+	};
+	for (auto block = document->findBlock(from)
+		; block.isValid() && block.position() < till
+		; block = block.next()) {
+		const auto layout = block.layout();
+		if (!layout) {
+			continue;
+		}
+		const auto text = block.text();
+		const auto blockFrom = std::max(from - block.position(), 0);
+		const auto blockTill = std::min(
+			till - block.position(),
+			int(text.size()));
+		for (auto i = 0; i != layout->lineCount(); ++i) {
+			const auto line = layout->lineAt(i);
+			const auto lineFrom = std::max(line.textStart(), blockFrom);
+			const auto lineTill = std::min(
+				line.textStart() + line.textLength(),
+				blockTill);
+			if (lineFrom >= lineTill) {
+				continue;
+			}
+			if (!perChar) {
+				add(layout, line, block.position(), lineFrom, lineTill);
+				continue;
+			}
+			for (auto at = lineFrom; at < lineTill;) {
+				const auto ch = text[at];
+				const auto length = (ch.isHighSurrogate()
+					&& at + 1 < lineTill
+					&& text[at + 1].isLowSurrogate()) ? 2 : 1;
+				if (ch != QChar::ObjectReplacementCharacter
+					&& !ch.isSpace()) {
+					add(layout, line, block.position(), at, at + length);
+				}
+				at += length;
+			}
+		}
+	}
+	return result;
+}
+
+void InputField::typingAnimationsCommit(std::vector<TypingGhost> &&ghosts) {
+	if (ghosts.empty()) {
+		return;
+	}
+	const auto now = crl::now();
+	const auto count = int(ghosts.size());
+	const auto step = std::min(crl::time(14), crl::time(360) / count);
+	for (auto i = 0; i != count; ++i) {
+		auto &ghost = ghosts[i];
+		ghost.started = now;
+		ghost.delay = (count - 1 - i) * step;
+		_typingGhosts.push_back(std::move(ghost));
+	}
+	constexpr auto kMaxGhosts = 400;
+	if (_typingGhosts.size() > kMaxGhosts) {
+		_typingGhosts.erase(
+			begin(_typingGhosts),
+			end(_typingGhosts) - kMaxGhosts);
+	}
+	_inner->viewport()->update();
+	if (!_typingAnimation.animating()) {
+		_typingAnimation.start();
+	}
 }
 
 #ifndef QT_SPELLCHECK_UNDERLINE_FROM_CHROME
@@ -3949,6 +4422,7 @@ void InputField::documentContentsChanged(
 		int charsRemoved,
 		int charsAdded) {
 	if (_correcting) {
+		typingAnimationsShift(position, charsRemoved, charsAdded);
 		return;
 	}
 	// In case of input method events Qt emits
@@ -3980,6 +4454,15 @@ void InputField::documentContentsChanged(
 				charsRemoved -= delta;
 			}
 		}
+	}
+
+	typingAnimationsShift(position, charsRemoved, charsAdded);
+	if (_typingInput
+		&& !_performingUndoRedo
+		&& charsAdded > 0
+		&& charsAdded <= 2
+		&& charsAdded != charsRemoved) {
+		typingAnimationsAdd(position, charsAdded);
 	}
 
 	const auto insertPosition = (_realInsertPosition >= 0)
@@ -4512,6 +4995,29 @@ void InputField::keyPressEventInner(QKeyEvent *e) {
 	const auto key = e->key();
 	const auto enter = (key == Qt::Key_Enter || key == Qt::Key_Return);
 	const auto backspace = (key == Qt::Key_Backspace);
+	const auto wasTypingInput = std::exchange(
+		_typingInput,
+		IsTypingAnimationInput(e->text()) && (!ctrl || alt) && !enter);
+	const auto typingGuard = gsl::finally([&] {
+		_typingInput = wasTypingInput;
+	});
+	const auto removing = (backspace || key == Qt::Key_Delete)
+		&& !alt
+		&& (AyuUiSettings::getTypingAnimation()
+			!= AyuUiSettings::TypingAnimation::Off);
+	auto removedGhosts = removing
+		? typingAnimationsCapture(backspace, ctrl)
+		: std::vector<TypingGhost>();
+	const auto removedCountBefore = _inner->document()->characterCount();
+	const auto removedWeak = base::make_weak(this);
+	const auto removedGuard = gsl::finally([&] {
+		if (removedGhosts.empty() || !removedWeak) {
+			return;
+		}
+		if (_inner->document()->characterCount() < removedCountBefore) {
+			typingAnimationsCommit(std::move(removedGhosts));
+		}
+	});
 	if (key == Qt::Key_Left
 		|| key == Qt::Key_Right
 		|| key == Qt::Key_Up
@@ -5031,9 +5537,17 @@ void InputField::inputMethodEventInner(QInputMethodEvent *e) {
 	_inputMethodCommit = e->commitString();
 
 	const auto weak = base::make_weak(this);
+	const auto wasTypingInput = std::exchange(
+		_typingInput,
+		e->preeditString().isEmpty()
+			&& IsTypingAnimationInput(e->commitString()));
 	_inner->QTextEdit::inputMethodEvent(e);
+	if (!weak) {
+		return;
+	}
+	_typingInput = wasTypingInput;
 
-	if (weak && _inputMethodCommit.has_value()) {
+	if (_inputMethodCommit.has_value()) {
 		const auto text = *base::take(_inputMethodCommit);
 		if (!processMarkdownReplaces(text)) {
 			processInstantReplaces(text);
@@ -6286,11 +6800,20 @@ void InputField::insertFromMimeDataInner(const QMimeData *source) {
 	}();
 	auto cursor = textCursor();
 	if (!text.isEmpty()) {
+		const auto from = cursor.selectionStart();
+		const auto removed = cursor.selectionEnd() - from;
+		const auto before = _inner->document()->characterCount();
 		insertWithTags(
 			{ cursor.selectionStart(), cursor.selectionEnd() },
 			{ text, _insertedTags });
+		ensureCursorVisible();
+		const auto added = _inner->document()->characterCount()
+			- before
+			+ removed;
+		typingAnimationsPaste(from, from + added);
+	} else {
+		ensureCursorVisible();
 	}
-	ensureCursorVisible();
 	if (!_insertedTagsDelayClear) {
 		_insertedTags.clear();
 	}

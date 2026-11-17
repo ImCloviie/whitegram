@@ -24,4 +24,29 @@ bool isMaterialSwitches();
 void setAvatarCorners(int val);
 int getAvatarCorners();
 
+enum class TypingAnimation {
+	Off = 0,
+	Fade = 1,
+	Rise = 2,
+	Drop = 3,
+	Pop = 4,
+	Glow = 5,
+};
+inline constexpr int kTypingAnimationMax = 5;
+
+void setTypingAnimation(TypingAnimation val);
+TypingAnimation getTypingAnimation();
+
+struct TypingAnimationFrame {
+	double opacity = 1.;
+	double offsetY = 0.; // In line heights, positive is down.
+	double scale = 1.;
+	double accent = 0.; // 1. is the accent color, 0. is the text color.
+};
+
+[[nodiscard]] int TypingAnimationDuration(TypingAnimation mode);
+[[nodiscard]] TypingAnimationFrame ComputeTypingAnimationFrame(
+	TypingAnimation mode,
+	double progress);
+
 }

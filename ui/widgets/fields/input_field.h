@@ -17,6 +17,7 @@
 #include <rpl/variable.h>
 
 #include <QtGui/QTextCursor>
+#include <QtGui/QGlyphRun>
 #include <QShortcut>
 
 #include <any>
@@ -498,6 +499,18 @@ private:
 #ifndef QT_SPELLCHECK_UNDERLINE_FROM_CHROME
 	void paintMisspelled(QPaintEvent *e);
 #endif // !QT_SPELLCHECK_UNDERLINE_FROM_CHROME
+	void paintTypingAnimations(QPaintEvent *e);
+	void typingAnimationsShift(int position, int removed, int added);
+	void typingAnimationsAdd(int position, int length);
+	void typingAnimationsPaste(int from, int till);
+	void typingAnimationsStart();
+	void typingAnimationsRefresh();
+	bool typingAnimationsStep(crl::time now);
+	struct TypingGhost;
+	[[nodiscard]] std::vector<TypingGhost> typingAnimationsCapture(
+		bool backward,
+		bool word);
+	void typingAnimationsCommit(std::vector<TypingGhost> &&ghosts);
 
 	void mousePressEventInner(QMouseEvent *e);
 	void mouseReleaseEventInner(QMouseEvent *e);
@@ -713,6 +726,25 @@ private:
 	bool _error = false;
 
 	bool _correcting = false;
+
+	struct TypingChar {
+		int position = 0;
+		int length = 0;
+		crl::time started = 0;
+		crl::time delay = 0;
+	};
+	std::vector<TypingChar> _typingChars;
+	struct TypingGhost {
+		QPointF origin;
+		QRectF rect;
+		QList<QGlyphRun> runs;
+		QColor color;
+		crl::time started = 0;
+		crl::time delay = 0;
+	};
+	std::vector<TypingGhost> _typingGhosts;
+	Animations::Basic _typingAnimation;
+	bool _typingInput = false;
 	MimeDataHook _mimeDataHook;
 	rpl::event_stream<bool> _menuShownChanges;
 	base::unique_qptr<PopupMenu> _contextMenu;

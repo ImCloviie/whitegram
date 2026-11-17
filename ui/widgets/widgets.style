@@ -962,7 +962,7 @@ defaultMenuSeparator: MenuSeparator {
 defaultMenu: Menu {
 	skip: 0px;
 
-	itemBg: windowBg;
+	itemBg: menuBg;
 	itemBgOver: windowBgOver;
 	itemFg: windowFg;
 	itemFgOver: windowFgOver;

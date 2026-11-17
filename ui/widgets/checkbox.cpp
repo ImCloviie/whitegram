@@ -132,7 +132,10 @@ void ToggleView::paint(QPainter &p, int left, int top, int outerWidth) {
 	auto pen = anim::pen(_st->untoggledFg, _st->toggledFg, toggled);
 	pen.setWidth(_st->border);
 	p.setPen(pen);
-	p.setBrush(anim::brush(_st->untoggledBg, _st->toggledBg, toggled));
+	// Glass mode makes the window background translucent; the knob is not.
+	auto knob = anim::color(_st->untoggledBg, _st->toggledBg, toggled);
+	knob.setAlpha(255);
+	p.setBrush(knob);
 	p.drawEllipse(fgRectF);
 
 	if (_locked || _st->xsize > 0) {

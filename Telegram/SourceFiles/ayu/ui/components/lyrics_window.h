@@ -11,6 +11,7 @@
 #include "ui/rp_widget.h"
 
 #include <QtCore/QHash>
+#include <QtCore/QPointer>
 
 #include <array>
 #include <deque>
@@ -47,6 +48,7 @@ protected:
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
+	void closeEvent(QCloseEvent *e) override;
 
 private:
 	enum class Control {
@@ -62,6 +64,10 @@ private:
 		VolumeIcon,
 		Volume,
 		Line,
+		PillPrevious,
+		PillPlay,
+		PillNext,
+		Pill,
 	};
 
 	enum class ToastKind {
@@ -87,7 +93,12 @@ private:
 		Track,
 		Timer,
 		Alert,
-		Call,
+	};
+
+	struct PillButtons {
+		QRectF previous;
+		QRectF play;
+		QRectF next;
 	};
 
 	enum class Theme {
@@ -195,6 +206,8 @@ private:
 
 	[[nodiscard]] std::int64_t position() const;
 	[[nodiscard]] int activeIndex(std::int64_t position) const;
+	[[nodiscard]] bool interludeAt(std::int64_t position, double *progress, int *next) const;
+	void paintInterlude(QPainter &p, double anchor);
 	[[nodiscard]] QFont lyricFont() const;
 	[[nodiscard]] double anchorY() const;
 	[[nodiscard]] int lineAt(QPoint point) const;
@@ -225,6 +238,9 @@ private:
 	void paintParticles(QPainter &p, bool front);
 	void paintGlass(QPainter &p, const QRectF &rect, std::int64_t position);
 	void paintPill(QPainter &p, std::int64_t position);
+	void paintPillExpanded(QPainter &p, const QRectF &rect, std::int64_t position);
+	[[nodiscard]] QRectF pillRect() const;
+	[[nodiscard]] PillButtons pillButtons(const QRectF &rect) const;
 	void paintWeatherChip(QPainter &p);
 	void paintNowCard(QPainter &p, std::int64_t position);
 	void buildCardArt();
@@ -282,7 +298,7 @@ private:
 	void requestBackdrop(bool sync);
 	void scheduleHiddenLayout();
 	void setLyricsOffset(std::int64_t offset, bool announce);
-	void applyBackdrop(std::uint64_t key, QImage background, QImage frost, QImage glow);
+	void applyBackdrop(std::uint64_t key, QImage background, QImage frost, QImage glow, QImage light);
 	[[nodiscard]] std::uint64_t backdropKey() const;
 	[[nodiscard]] QString translationTarget() const;
 	void renderTranslation(QPainter &p, const LineLayout &line, QPointF at, QColor color) const;
@@ -346,7 +362,13 @@ private:
 	QPixmap _art;
 	QPixmap _blurred;
 	QColor _accent;
+	QColor _tone;
+	QColor _toneSecond;
+	bool _toneMono = false;
 	bool _loading = false;
+	double _interlude = 0.;
+	double _interludeProgress = 0.;
+	int _interludeNext = -1;
 
 	Geometry _geometry;
 	std::vector<LineLayout> _lines;
@@ -357,10 +379,12 @@ private:
 	QSize _layoutSize;
 	double _contentHeight = 0.;
 	QPixmap _frost;
+	QImage _frostImage;
 	QPixmap _customCover;
 	std::vector<float> _eqLevels;
 	QPixmap _backgroundCache;
 	QPixmap _glowCache;
+	QPixmap _lightCache;
 	std::vector<std::pair<QRectF, QPixmap>> _glassCache;
 
 	std::int64_t _basePosition = 0;
@@ -412,6 +436,9 @@ private:
 	int _ecgPatternAt = -1;
 	double _redBoost = 0.;
 	double _pillWidth = 0.;
+	double _pillExpand = 0.;
+	double _pillVelocity = 0.;
+	bool _pillHovered = false;
 	PillMode _pillMode = PillMode::Track;
 
 	std::vector<Particle> _particles;
@@ -433,6 +460,7 @@ private:
 	std::uint64_t _backdropPending = 0;
 	double _paintCpu = 0.;
 	bool _everShown = false;
+	QPointer<QWidget> _home;
 	std::int64_t _lyricsOffset = 0;
 	bool _hiddenLayoutScheduled = false;
 	std::array<crl::time, 2> _widgetFrameAt = {};

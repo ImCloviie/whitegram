@@ -4,8 +4,11 @@
 #include "ayu/ui/utils/lyrics_engine.h"
 
 #include "ayu/ui/utils/net_fetch.h"
+#include "settings.h"
 
 #include <QtCore/QCache>
+#include <QtCore/QCryptographicHash>
+#include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QEventLoop>
@@ -25,6 +28,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <future>
 #include <map>
 #include <optional>
 
@@ -124,18 +128,41 @@ QString StripForMatch(QString value) {
 QString CleanedTitle(const QString &title) {
 	auto out = title.trimmed();
 	static const auto tags = QRegularExpression(
-		uR"(\s*[\(\[]\s*(prod\.?|producer|by|feat\.?|ft\.?|with|remaster(ed)?|explicit|official|lyrics?|audio|video|sped up|slowed)\b[^\(\)\[\]]*[\)\]])"_q,
+		uR"(\s*[\(\[]\s*(prod\.?|producer|by|feat\.?|ft\.?|with|w/|remaster(ed)?|explicit|official|lyrics?|audio|video|sped up|slowed|unreleased|snippet|leak(ed)?|demo|prerelease)\b[^\(\)\[\]]*[\)\]])"_q,
 		QRegularExpression::CaseInsensitiveOption);
 	out.replace(tags, QString());
 	static const auto tail = QRegularExpression(
-		uR"(\s+[-–—]\s*(prod\.?|producer|feat\.?|ft\.?)\b.*$)"_q,
+		uR"((\s+[-–—]\s*(prod\.?|producer|feat\.?|ft\.?)\b.*$)|(\s+w/\s+.*$))"_q,
 		QRegularExpression::CaseInsensitiveOption);
 	out.replace(tail, QString());
 	static const auto ext = QRegularExpression(
 		uR"(\.(mp3|m4a|flac|ogg|opus|wav|aac)$)"_q,
 		QRegularExpression::CaseInsensitiveOption);
 	out.replace(ext, QString());
+	// Uploaders append "| artist |" and "(@channel)" to titles; no catalogue has them.
+	static const auto uploader = QRegularExpression(
+		uR"((\s*[\(\[]\s*@[^\)\]]*[\)\]])|(\s*\|.*$))"_q);
+	out.replace(uploader, QString());
 	return out.trimmed();
+}
+
+QString CleanedArtist(const QString &artist) {
+	auto out = artist;
+	static const auto groups = QRegularExpression(uR"([\(\[（][^\)\]）]*[\)\]）])"_q);
+	static const auto handles = QRegularExpression(uR"(@[\w.]+)"_q);
+	static const auto channel = QRegularExpression(
+		uR"(^\s*(тгк|tgk|tg|канал)\s+)"_q,
+		QRegularExpression::CaseInsensitiveOption);
+	out.replace(groups, QString());
+	out.replace(handles, QString());
+	out.replace(channel, QString());
+	auto result = QString();
+	for (const auto ch : out) {
+		result += (ch.isLetterOrNumber() || ch.isSpace() || ch == QChar(u',') || ch == QChar(u'&') || ch == QChar(u'-') || ch == QChar(u'.') || ch == QChar(u'\''))
+			? ch
+			: QChar(u' ');
+	}
+	return result.simplified();
 }
 
 QString ProdArtistFromTitle(const QString &title) {
@@ -148,7 +175,7 @@ QString ProdArtistFromTitle(const QString &title) {
 
 QStringList ArtistTokens(const QString &artist) {
 	static const auto split = QRegularExpression(
-		uR"(\s*(,|&|/|;|\bfeat\.?|\bft\.?|\bx\b|\band\b|\bи\b)\s*)"_q,
+		uR"(\s*(,|、|&|/|;|\bfeat\.?|\bft\.?|\bx\b|\band\b|\bи\b)\s*)"_q,
 		QRegularExpression::CaseInsensitiveOption);
 	auto result = QStringList();
 	for (const auto &part : artist.split(split, Qt::SkipEmptyParts)) {
@@ -219,22 +246,29 @@ int MatchScore(
 }
 
 void AppendWord(std::vector<Word> &words, Word word) {
-	if (!words.empty()) {
-		auto &previous = words.back().text;
-		const auto glued = !previous.isEmpty()
-			&& !previous.back().isSpace()
-			&& previous.back().isLetter()
-			&& !word.text.isEmpty()
-			&& word.text.front().isLetter()
-			&& !IsCjk(previous.back())
-			&& !IsCjk(word.text.front())
-			&& previous.trimmed().size() > 1
-			&& word.text.trimmed().size() > 1;
-		if (glued) {
-			previous += QChar(u' ');
+	// A whitespace chunk only separates words; as its own word it would hold the line lit.
+	if (word.text.trimmed().isEmpty()) {
+		if (!words.empty()) {
+			words.back().text += word.text;
 		}
+		return;
 	}
 	words.push_back(std::move(word));
+}
+
+void FixSpacing(Line &line) {
+	// Syllables of one word arrive unspaced, so spaces are added only when a provider stripped them all.
+	if (line.words.size() < 2) {
+		return;
+	}
+	for (const auto &word : line.words) {
+		if (word.text.contains(QChar(u' ')) || IsCjk(word.text.front())) {
+			return;
+		}
+	}
+	for (auto i = 0; i + 1 < int(line.words.size()); ++i) {
+		line.words[i].text += QChar(u' ');
+	}
 }
 
 bool IsCreditLine(const QString &text) {
@@ -268,6 +302,7 @@ std::vector<Line> ParseYrc(const QString &yrc) {
 				AppendWord(parsed.words, std::move(word));
 			}
 		}
+		FixSpacing(parsed);
 		for (const auto &word : parsed.words) {
 			parsed.text += word.text;
 		}
@@ -299,8 +334,9 @@ void EstimateWords(Line &line, std::int64_t limitMs) {
 		total += weight;
 	}
 	const auto natural = std::int64_t(total * kSyllableMs) + kLineTailMs;
+	// An instrumental break before the next line must not stretch the fill over it.
 	auto end = (limitMs > line.ms)
-		? limitMs
+		? std::min(limitMs, line.ms + natural * 8 / 5)
 		: line.ms + natural;
 	if (line.endMs > line.ms) {
 		end = std::min(end, line.endMs);
@@ -365,6 +401,10 @@ void Annotate(Data &data) {
 				: std::int64_t(-1);
 			if (line.endMs <= line.ms && next > line.ms) {
 				line.endMs = next;
+			}
+			if (!line.words.empty() && line.words.back().endMs > line.ms) {
+				// A held trailing chunk (16 s of silence in some yrc) is not part of the sung line.
+				line.endMs = std::min(line.endMs, line.words.back().endMs + kLineTailMs);
 			}
 			EstimateWords(line, next);
 			if (line.endMs <= line.ms) {
@@ -560,6 +600,7 @@ Data NeteaseFetch(
 		.value(u"result"_q).toObject()
 		.value(u"songs"_q).toArray();
 	auto bestId = qint64(0);
+	auto bestDuration = 0.;
 	auto bestScore = 0;
 	for (const auto &value : songs) {
 		const auto song = value.toObject();
@@ -577,6 +618,7 @@ Data NeteaseFetch(
 		if (score > bestScore) {
 			bestScore = score;
 			bestId = qint64(song.value(u"id"_q).toDouble());
+			bestDuration = song.value(u"duration"_q).toDouble();
 		}
 	}
 	if (!bestId) {
@@ -610,6 +652,7 @@ Data NeteaseFetch(
 	}
 	data.hasData = true;
 	data.source = u"netease"_q;
+	data.sourceDurationMs = std::int64_t(bestDuration);
 	return data;
 }
 
@@ -685,6 +728,7 @@ std::vector<Line> ParseKrc(const QString &krc, const QString &artist, const QStr
 				AppendWord(parsed.words, std::move(word));
 			}
 		}
+		FixSpacing(parsed);
 		for (const auto &word : parsed.words) {
 			parsed.text += word.text;
 		}
@@ -707,32 +751,55 @@ Data KugouFetch(
 		const QString &title,
 		int duration,
 		int timeoutMs) {
-	auto url = QUrl(u"https://krcs.kugou.com/search"_q);
+	// WHY: krcs answers a keyword search with nothing now; it finds lyrics only by a song hash.
+	auto url = QUrl(u"http://mobilecdn.kugou.com/api/v3/search/song"_q);
 	auto q = QUrlQuery();
-	q.addQueryItem(u"ver"_q, u"1"_q);
-	q.addQueryItem(u"man"_q, u"yes"_q);
-	q.addQueryItem(u"client"_q, u"mobi"_q);
-	q.addQueryItem(u"keyword"_q, artist.isEmpty() ? title : (artist + u" - "_q + title));
-	if (duration > 0) {
-		q.addQueryItem(u"duration"_q, QString::number(duration * 1000));
-	}
+	q.addQueryItem(u"format"_q, u"json"_q);
+	q.addQueryItem(u"keyword"_q, artist.isEmpty() ? title : (artist + u" "_q + title));
+	q.addQueryItem(u"page"_q, u"1"_q);
+	q.addQueryItem(u"pagesize"_q, u"10"_q);
+	q.addQueryItem(u"showtype"_q, u"1"_q);
 	url.setQuery(q);
-	const auto doc = QJsonDocument::fromJson(GetBytes(url, timeoutMs, false));
-	auto bestScore = 0;
-	auto bestId = QString();
-	auto bestKey = QString();
-	for (const auto &value : doc.object().value(u"candidates"_q).toArray()) {
-		const auto candidate = value.toObject();
+	const auto songs = QJsonDocument::fromJson(GetBytes(url, timeoutMs, false))
+		.object().value(u"data"_q).toObject().value(u"info"_q).toArray();
+	auto ranked = std::vector<std::pair<int, QJsonObject>>();
+	for (const auto &value : songs) {
+		const auto song = value.toObject();
 		const auto score = MatchScore(
-			candidate.value(u"song"_q).toString(),
-			candidate.value(u"singer"_q).toString(),
-			candidate.value(u"duration"_q).toDouble() / 1000.,
+			song.value(u"songname"_q).toString(),
+			song.value(u"singername"_q).toString(),
+			song.value(u"duration"_q).toDouble(),
 			title,
 			artist,
 			duration);
-		if (score > bestScore) {
-			bestScore = score;
+		if (score > 0) {
+			ranked.emplace_back(score, song);
+		}
+	}
+	std::stable_sort(ranked.begin(), ranked.end(), [](const auto &a, const auto &b) {
+		return a.first > b.first;
+	});
+	auto bestId = QString();
+	auto bestKey = QString();
+	auto bestDuration = 0.;
+	for (auto i = 0; i != std::min(int(ranked.size()), 3) && bestId.isEmpty(); ++i) {
+		const auto &song = ranked[i].second;
+		auto search = QUrl(u"https://krcs.kugou.com/search"_q);
+		auto sq = QUrlQuery();
+		sq.addQueryItem(u"ver"_q, u"1"_q);
+		sq.addQueryItem(u"man"_q, u"yes"_q);
+		sq.addQueryItem(u"client"_q, u"mobi"_q);
+		sq.addQueryItem(u"hash"_q, song.value(u"hash"_q).toString());
+		sq.addQueryItem(
+			u"duration"_q,
+			QString::number(qint64(song.value(u"duration"_q).toDouble() * 1000)));
+		search.setQuery(sq);
+		const auto candidates = QJsonDocument::fromJson(GetBytes(search, timeoutMs, false))
+			.object().value(u"candidates"_q).toArray();
+		if (!candidates.isEmpty()) {
+			const auto candidate = candidates.first().toObject();
 			bestId = candidate.value(u"id"_q).toVariant().toString();
+			bestDuration = song.value(u"duration"_q).toDouble() * 1000.;
 			bestKey = candidate.value(u"accesskey"_q).toString();
 		}
 	}
@@ -758,6 +825,7 @@ Data KugouFetch(
 	data.synced = data.wordSynced = true;
 	data.hasData = true;
 	data.source = u"kugou"_q;
+	data.sourceDurationMs = std::int64_t(bestDuration);
 	return data;
 }
 
@@ -1126,7 +1194,10 @@ Data FetchExact(
 	int timeoutMs);
 
 Data FetchSync(const QString &artist, const QString &title, int durationSec, int timeoutMs) {
-	auto wantArtist = artist.trimmed();
+	auto wantArtist = CleanedArtist(artist);
+	if (wantArtist.isEmpty()) {
+		wantArtist = artist.trimmed();
+	}
 	auto wantTitle = CleanedTitle(title);
 	if (wantArtist.isEmpty()) {
 		wantArtist = ProdArtistFromTitle(title);
@@ -1166,14 +1237,26 @@ Data FetchExact(
 		int durationSec,
 		int timeoutMs) {
 	auto result = Data();
-	const auto lrclib = BestLrclib(wantArtist, wantTitle, durationSec, timeoutMs);
+	// The three timed catalogues answer in parallel, so a track waits for the slowest one only.
+	auto lrclibTask = std::async(std::launch::async, [=] {
+		return BestLrclib(wantArtist, wantTitle, durationSec, timeoutMs);
+	});
+	auto kugouTask = std::async(std::launch::async, [=] {
+		return KugouFetch(wantArtist, wantTitle, durationSec, timeoutMs);
+	});
+	auto neteaseTask = std::async(std::launch::async, [=] {
+		return NeteaseFetch(wantArtist, wantTitle, durationSec, timeoutMs);
+	});
+	const auto lrclib = lrclibTask.get();
 	const auto lrclibSynced = lrclib && !lrclib->synced.trimmed().isEmpty();
 	if (lrclibSynced) {
 		result = FromLrcText(lrclib->synced, QString());
 		result.source = u"lrclib"_q;
+		result.sourceDurationMs = std::int64_t(lrclib->duration * 1000.);
 	}
+	auto kugou = kugouTask.get();
+	auto netease = neteaseTask.get();
 	if (!result.wordSynced) {
-		auto kugou = KugouFetch(wantArtist, wantTitle, durationSec, timeoutMs);
 		if (kugou.hasData
 			&& (!result.synced
 				|| kugou.lines.size() * 10 >= result.lines.size() * 7)) {
@@ -1181,7 +1264,6 @@ Data FetchExact(
 		}
 	}
 	if (!result.wordSynced) {
-		auto netease = NeteaseFetch(wantArtist, wantTitle, durationSec, timeoutMs);
 		if (netease.hasData
 			&& (netease.wordSynced || !result.synced)
 			&& (!result.synced
@@ -1189,15 +1271,61 @@ Data FetchExact(
 			result = std::move(netease);
 		}
 	}
+	if (!result.synced && !wantArtist.isEmpty()) {
+		// WHY: a same-tempo cut keeps timing up to a shift AlignOffset finds; sped-up cuts keep words only.
+		auto candidates = LrclibSearch(wantArtist + u" "_q + wantTitle, timeoutMs);
+		if (candidates.empty()) {
+			candidates = LrclibSearch(wantTitle, timeoutMs);
+		}
+		auto best = (const Candidate*)nullptr;
+		auto plainText = QString();
+		for (const auto &c : candidates) {
+			if (!TitleMatches(c.title, wantTitle) || !ArtistMatches(c.artist, wantArtist)) {
+				continue;
+			}
+			const auto ratio = (durationSec > 0 && c.duration > 0.) ? (c.duration / durationSec) : 1.;
+			if (!c.synced.trimmed().isEmpty() && std::abs(ratio - 1.) <= 0.06
+				&& (!best || std::abs(c.duration - durationSec) < std::abs(best->duration - durationSec))) {
+				best = &c;
+			}
+			if (plainText.isEmpty()) {
+				plainText = c.plain.trimmed();
+				if (plainText.isEmpty()) {
+					auto rows = QStringList();
+					for (const auto &line : ParseLrc(c.synced)) {
+						rows.push_back(line.text);
+					}
+					plainText = rows.join(QChar(u'\n'));
+				}
+			}
+		}
+		if (best) {
+			auto other = FromLrcText(best->synced, QString());
+			if (other.synced) {
+				other.source = u"lrclib (другая версия)"_q;
+				other.sourceDurationMs = std::int64_t(best->duration * 1000.);
+				result = std::move(other);
+			}
+		} else if (!result.hasData) {
+			result = PlainData(plainText, u"lrclib (другая версия)"_q);
+		}
+	}
 	if (!result.hasData && lrclib) {
 		result = FromLrcText(QString(), lrclib->plain);
 		result.source = u"lrclib"_q;
 	}
 	if (!result.hasData) {
-		result = PlainData(GeniusFetch(wantArtist, wantTitle, timeoutMs), u"genius"_q);
-	}
-	if (!result.hasData) {
-		result = PlainData(OvhFetch(wantArtist, wantTitle, timeoutMs), u"lyrics.ovh"_q);
+		auto genius = std::async(std::launch::async, [=] {
+			return GeniusFetch(wantArtist, wantTitle, timeoutMs);
+		});
+		auto ovh = std::async(std::launch::async, [=] {
+			return OvhFetch(wantArtist, wantTitle, timeoutMs);
+		});
+		result = PlainData(genius.get(), u"genius"_q);
+		const auto fallback = ovh.get();
+		if (!result.hasData) {
+			result = PlainData(fallback, u"lyrics.ovh"_q);
+		}
 	}
 	if (result.hasData && !result.synced) {
 		auto donor = LrcCxDonor(wantArtist, wantTitle, result, timeoutMs);
@@ -1211,6 +1339,83 @@ Data FetchExact(
 	return result;
 }
 
+namespace {
+
+constexpr auto kDiskCacheVersion = 1;
+
+QString DiskCachePath(const QString &key) {
+	const auto hash = QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha1).toHex();
+	return cWorkingDir() + u"tdata/whitegram/lyrics/"_q + QString::fromLatin1(hash) + u".json"_q;
+}
+
+QJsonObject SerializeData(const Data &data) {
+	auto lines = QJsonArray();
+	for (const auto &line : data.lines) {
+		auto words = QJsonArray();
+		for (const auto &word : line.words) {
+			words.push_back(QJsonArray{ double(word.startMs), double(word.endMs), word.text });
+		}
+		lines.push_back(QJsonObject{
+			{ u"ms"_q, double(line.ms) },
+			{ u"end"_q, double(line.endMs) },
+			{ u"text"_q, line.text },
+			{ u"words"_q, words },
+		});
+	}
+	return QJsonObject{
+		{ u"version"_q, kDiskCacheVersion },
+		{ u"synced"_q, data.synced },
+		{ u"wordSynced"_q, data.wordSynced },
+		{ u"artist"_q, data.artist },
+		{ u"title"_q, data.title },
+		{ u"source"_q, data.source },
+		{ u"plain"_q, data.plain },
+		{ u"sourceDuration"_q, double(data.sourceDurationMs) },
+		{ u"lines"_q, lines },
+	};
+}
+
+std::optional<Data> DeserializeData(const QJsonObject &object) {
+	if (object.value(u"version"_q).toInt() != kDiskCacheVersion) {
+		return std::nullopt;
+	}
+	auto data = Data();
+	data.synced = object.value(u"synced"_q).toBool();
+	data.wordSynced = object.value(u"wordSynced"_q).toBool();
+	data.artist = object.value(u"artist"_q).toString();
+	data.title = object.value(u"title"_q).toString();
+	data.source = object.value(u"source"_q).toString();
+	data.plain = object.value(u"plain"_q).toString();
+	data.sourceDurationMs = std::int64_t(object.value(u"sourceDuration"_q).toDouble());
+	for (const auto &value : object.value(u"lines"_q).toArray()) {
+		const auto o = value.toObject();
+		auto line = Line();
+		line.ms = std::int64_t(o.value(u"ms"_q).toDouble());
+		line.endMs = std::int64_t(o.value(u"end"_q).toDouble());
+		line.text = o.value(u"text"_q).toString();
+		for (const auto &item : o.value(u"words"_q).toArray()) {
+			const auto w = item.toArray();
+			if (w.size() == 3) {
+				line.words.push_back(Word{
+					.startMs = std::int64_t(w[0].toDouble()),
+					.endMs = std::int64_t(w[1].toDouble()),
+					.text = w[2].toString(),
+				});
+			}
+		}
+		data.lines.push_back(std::move(line));
+	}
+	data.hasData = !data.lines.empty();
+	if (!data.hasData) {
+		return std::nullopt;
+	}
+	// Keywords and repeats are derived, so they are rebuilt instead of stored.
+	Annotate(data);
+	return data;
+}
+
+} // namespace
+
 Data FetchCachedSync(const QString &artist, const QString &title, int durationSec) {
 	const auto key = CacheKey(artist, title, durationSec);
 	{
@@ -1219,7 +1424,24 @@ Data FetchCachedSync(const QString &artist, const QString &title, int durationSe
 			return *hit;
 		}
 	}
+	const auto path = DiskCachePath(key);
+	auto file = QFile(path);
+	if (file.open(QIODevice::ReadOnly)) {
+		if (auto stored = DeserializeData(QJsonDocument::fromJson(file.readAll()).object())) {
+			const auto lock = QMutexLocker(&CacheMutex());
+			Cache().insert(key, new Data(*stored));
+			return std::move(*stored);
+		}
+	}
 	auto data = FetchSync(artist, title, durationSec);
+	// Misses stay in memory only, so a track gets a fresh search after a restart.
+	if (data.hasData) {
+		QDir().mkpath(QFileInfo(path).absolutePath());
+		auto out = QFile(path);
+		if (out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+			out.write(QJsonDocument(SerializeData(data)).toJson(QJsonDocument::Compact));
+		}
+	}
 	const auto lock = QMutexLocker(&CacheMutex());
 	Cache().insert(key, new Data(data));
 	return data;

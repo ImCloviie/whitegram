@@ -1400,11 +1400,9 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 				ctx.container,
 				trWhitegram(
 					QString::fromUtf8(
-						"Обновления, аккаунты, приватность и мелкие "
-						"удобства клиента."),
+						"Обновления, аккаунты и приватность."),
 					QString(
-						"Updates, accounts, privacy and everyday "
-						"conveniences.")),
+						"Updates, accounts and privacy.")),
 				st::boxDividerLabel),
 		};
 	});
@@ -2107,11 +2105,9 @@ void BuildArchivesList(SectionBuilder &builder) {
 						layout,
 						trWhitegram(
 							QString::fromUtf8(
-								"Пока нет папок. Создайте первую — "
-								"можно сразу поставить PIN или пароль."),
+								"Папок пока нет."),
 							QString(
-								"No folders yet. Create the first one — "
-								"you can set a PIN or password right away.")),
+								"No folders yet.")),
 						st::boxDividerLabel),
 					st::boxRowPadding);
 			}
@@ -2170,13 +2166,13 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 				ctx.container,
 				trWhitegram(
 					QString::fromUtf8(
-						"Свои папки в списке чатов — отдельно от обычного "
-						"архива Telegram. Чаты можно скрыть из основного "
-						"списка и защитить PIN или паролем."),
+						"Отдельные папки для чатов. Чаты из них можно убрать "
+						"из общего списка, а саму папку закрыть PIN-кодом "
+						"или паролем."),
 					QString(
-						"Your own folders in the chat list — separate from "
-						"Telegram’s archive. Hide chats from the main list "
-						"and protect folders with a PIN or password.")),
+						"Separate folders for chats. You can remove their "
+						"chats from the main list and lock the folder with "
+						"a PIN or password.")),
 				st::boxDividerLabel),
 		};
 	});
@@ -2212,16 +2208,15 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"«Сохранять папки вручную» — правки применяются после "
-			"«Сохранить». Если выключить, изменения входят в силу сразу "
-			"и кнопки «Сохранить» не будет.\n\n"
-			"Если выключить сами папки, они исчезнут из списка чатов. "
-			"Настройки сохранятся. Архив Telegram не меняется."),
+			"При ручном сохранении изменения применяются только после "
+			"нажатия «Сохранить».\n\n"
+			"Если выключить папки, они пропадут из списка чатов, но "
+			"их настройки останутся."),
 		QString(
-			"“Save folder edits manually” applies changes after Save. "
-			"If disabled, edits apply immediately and Save is hidden.\n\n"
-			"If Chat folders is disabled, they disappear from the list. "
-			"Settings are kept. Telegram’s archive is unchanged.")));
+			"With manual saving, changes apply only after you press "
+			"Save.\n\n"
+			"If you turn folders off, they disappear from the chat "
+			"list, but their settings are kept.")));
 
 	builder.addSkip();
 	builder.addSubsectionTitle(trWhitegram(
@@ -2233,10 +2228,11 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Совет: ПКМ по чату → «Папки». Папки видны вверху списка чатов."),
+			"Чтобы добавить чат в папку, нажмите на него правой кнопкой "
+			"мыши и выберите «Папки»."),
 		QString(
-			"Tip: right-click a chat → Folders. Folders appear at the top "
-			"of the chat list.")));
+			"To add a chat to a folder, right-click it and choose "
+			"Folders.")));
 	builder.addSkip();
 });
 

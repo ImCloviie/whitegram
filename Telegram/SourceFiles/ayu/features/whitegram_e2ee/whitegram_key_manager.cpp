@@ -6,6 +6,7 @@
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "ayu/libs/json.hpp"
+#include "base/call_delayed.h"
 #include "core/application.h"
 #include "main/main_session.h"
 #include "lang/lang_instance.h"
@@ -25,6 +26,9 @@
 
 namespace Whitegram::E2EE {
 namespace {
+
+constexpr auto kRegisterAttempts = 10;
+constexpr auto kRegisterRetryDelay = crl::time(30 * 1000);
 
 [[nodiscard]] bool IsRussian() {
 	const auto id = Lang::GetInstance().id();
@@ -62,7 +66,9 @@ void KeyManager::init(not_null<Main::Session*> session) {
 	registerMyKey(session);
 }
 
-void KeyManager::registerMyKey(not_null<Main::Session*> session) {
+void KeyManager::registerMyKey(
+		not_null<Main::Session*> session,
+		int attempt) {
 	const auto userId = session->userId().bare;
 	if (_registeredUsers.contains(userId) || _registeringUsers.contains(userId)) {
 		return;
@@ -93,8 +99,15 @@ void KeyManager::registerMyKey(not_null<Main::Session*> session) {
 
 	QObject::connect(reply, &QNetworkReply::finished, [=] {
 		KeyManager::Instance()._registeringUsers.erase(userId);
+		const auto status = reply->attribute(
+			QNetworkRequest::HttpStatusCodeAttribute).toInt();
 		if (reply->error() == QNetworkReply::NoError) {
 			KeyManager::Instance()._registeredUsers.insert(userId);
+		} else if (status == 401 && attempt + 1 < kRegisterAttempts) {
+			// The device token may still be on its way on a first launch.
+			base::call_delayed(kRegisterRetryDelay, session, [=] {
+				KeyManager::Instance().registerMyKey(session, attempt + 1);
+			});
 		}
 		reply->deleteLater();
 		manager->deleteLater();

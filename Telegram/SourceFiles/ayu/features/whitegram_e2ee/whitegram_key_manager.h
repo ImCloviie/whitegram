@@ -28,7 +28,7 @@ public:
 	static KeyManager &Instance();
 
 	void init(not_null<Main::Session*> session);
-	void registerMyKey(not_null<Main::Session*> session);
+	void registerMyKey(not_null<Main::Session*> session, int attempt = 0);
 
 	void fetchPeerPublicKey(
 		uint64 userId,

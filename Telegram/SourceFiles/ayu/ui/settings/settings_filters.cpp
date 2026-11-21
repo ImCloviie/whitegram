@@ -47,6 +47,28 @@ void BuildFiltersSettings(SectionBuilder &builder) {
 	auto *settings = &AyuSettings::getInstance();
 
 	builder.addSkip();
+	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
+		return {
+			.widget = object_ptr<Ui::FlatLabel>(
+				ctx.container,
+				trWhitegram(
+					QString::fromUtf8(
+						"Фильтры прячут лишние сообщения: по словам и "
+						"выражениям, от заблокированных пользователей "
+						"или от выбранных людей и каналов. Скрыто будет "
+						"только у вас, остальные видят сообщения как "
+						"обычно."),
+					QString(
+						"Filters hide messages you don't want to see: by "
+						"words and expressions, from blocked users, or "
+						"from chosen people and channels. They are hidden "
+						"only for you, everyone else sees them as usual.")),
+				st::boxDividerLabel),
+		};
+	});
+	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
 	builder.addSubsectionTitle(tr::ayu_RegexFilters());
 
 	const auto enabledButton = builder.addButton({
@@ -102,11 +124,23 @@ void BuildFiltersSettings(SectionBuilder &builder) {
 	}
 
 	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Общие фильтры всегда работают в каналах, а в группах и "
+			"личных чатах — только со вторым переключателем.\n\n"
+			"«Скрывать от пользователей в ЧС» прячет сообщения и "
+			"пересылки от тех, кого вы заблокировали, в группах и "
+			"каналах. Личный чат с ними остаётся видимым."),
+		QString(
+			"Shared filters always work in channels, and in groups and "
+			"private chats only with the second switch.\n\n"
+			"\"Hide from blocked users\" hides messages and forwards "
+			"from people you blocked in groups and channels. Your "
+			"private chat with them stays visible.")));
+	builder.addSkip();
 }
 
 void BuildShared(SectionBuilder &builder) {
-	builder.addDivider();
-	builder.addSkip();
 
 	const auto controller = builder.controller();
 	builder.addButton({
@@ -136,6 +170,23 @@ void BuildShadowBan(SectionBuilder &builder) {
 			controller->showSettings(AyuFiltersList::Id());
 		},
 	});
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Общие фильтры — слова и регулярные выражения для всех "
+			"чатов. Фильтр только для одного чата: выделите текст в "
+			"сообщении, нажмите правой кнопкой и выберите «Добавить "
+			"фильтр».\n\n"
+			"Теневой бан скрывает все сообщения и пересылки выбранных "
+			"людей и каналов. Добавить можно через меню сообщения: "
+			"«В теневой бан»."),
+		QString(
+			"Shared filters are words and regular expressions for all "
+			"chats. For one chat only, select text in a message, "
+			"right-click and choose \"Add filter\".\n\n"
+			"Shadow ban hides every message and forward from chosen "
+			"people and channels. Add them from the message menu: "
+			"\"Shadow ban\".")));
 }
 
 void BuildPerDialog(SectionBuilder &builder) {

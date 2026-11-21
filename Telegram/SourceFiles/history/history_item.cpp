@@ -95,6 +95,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 // AyuGram includes
+#include "ayu/features/whitegram_e2ee/whitegram_one_time_media.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/message_shot/message_shot.h"
@@ -4954,6 +4955,9 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 	auto text = textWithEntities;
 	if (Whitegram::E2EE::IsEncryptedMessage(text.text)) {
 		Whitegram::E2EE::SaveEncryptedPayload(this, text.text);
+		if (!dynamic_cast<Whitegram::E2EE::OneTimeMedia*>(_media.get())) {
+			_media = std::make_unique<Whitegram::E2EE::OneTimeMedia>(this);
+		}
 
 		const auto peerId = history()->peer->id.value;
 		const auto msgId = id.bare;

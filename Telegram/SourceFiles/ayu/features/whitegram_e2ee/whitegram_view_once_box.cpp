@@ -12,7 +12,9 @@
 #include "data/data_channel.h"
 #include "data/data_peer.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
 #include "history/history.h"
+#include "history/history_item_components.h"
 #include "history/history_item.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
@@ -185,7 +187,7 @@ void SpoilerOverlay::paintEvent(QPaintEvent *e) {
 	p.setFont(st::boxLabel.style.font);
 	p.drawText(
 		pillRect,
-		u"👁️  Нажмите для просмотра"_q,
+		u"Нажмите, чтобы открыть"_q,
 		QTextOption(Qt::AlignCenter));
 }
 
@@ -211,11 +213,12 @@ void SetupDecryptedContentBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Main::Session*> session,
 		not_null<HistoryItem*> item,
-		const MessageContent &content) {
+		const MessageContent &content,
+		const QString &payload) {
 	const auto ttl = content.ttl;
 	const auto isOut = item->out();
 
-	box->setTitle(u"🔒 Одноразовое сообщение"_q);
+	box->setTitle(rpl::single(u"Одноразовое сообщение"_q));
 	box->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
 		AyuFeatures::StreamerMode::RequireViewOnceGuard());
 	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
@@ -265,6 +268,9 @@ void SetupDecryptedContentBox(
 	};
 
 	const auto startCountdown = [=] {
+		if (!isOut) {
+			MarkViewed(payload);
+		}
 		if (isOut || ttl <= 0 || state->countdownStarted) {
 			return;
 		}
@@ -361,35 +367,49 @@ void ShowViewOnceBox(
 	}
 	const auto myPrivKey = GetOrGenerateIdentityKeyPair().privateKey;
 
-	auto decrypted = Decrypt(rawText, myPrivKey);
+	auto decrypted = item->out()
+		? GetLocalSentMessageById(item->fullId())
+		: std::optional<MessageContent>();
 	if (!decrypted.has_value()) {
-		decrypted = GetLocalSentMessageById(item->fullId());
+		decrypted = Decrypt(rawText, myPrivKey);
 	}
-	if (!decrypted.has_value()) {
+	if (!decrypted.has_value() && item->out()) {
 		decrypted = GetLocalSentMessage(rawText);
 	}
-	if (!decrypted.has_value()) {
-		decrypted = GetLocalSentMessage(item->originalText().text);
-	}
-	if (!decrypted.has_value()) {
-		if (const auto bytes = ExtractPayloadBytes(rawText)) {
-			decrypted = GetLocalSentMessage(QString::fromLatin1(bytes->toHex()));
+
+	auto refusal = QString();
+	if (decrypted.has_value() && !item->out()) {
+		const auto from = item->from()->asUser();
+		const auto senderOk = from
+			&& !from->isBot()
+			&& (peerToUser(from->id).bare == decrypted->senderId);
+		const auto recipientOk = !decrypted->recipientId
+			|| (decrypted->recipientId == session->userId().bare);
+		if (item->Has<HistoryMessageForwarded>() || !senderOk || !recipientOk) {
+			refusal = u"Это копия одноразового сообщения. Открыть можно только оригинал, присланный самим автором."_q;
+		} else if (WasViewed(rawText)) {
+			refusal = u"Это сообщение уже было открыто. Одноразовое сообщение можно посмотреть только один раз."_q;
 		}
-	}
-	if (!decrypted.has_value()) {
-		if (const auto bytes = ExtractPayloadBytes(item->originalText().text)) {
-			decrypted = GetLocalSentMessage(QString::fromLatin1(bytes->toHex()));
+		if (!refusal.isEmpty()) {
+			auto &text = decrypted->text;
+			SecureCleanseString(text);
+			decrypted = std::nullopt;
 		}
 	}
 
 	controller->show(Box([=](not_null<Ui::GenericBox*> box) mutable {
-		box->setTitle(u"🔒 Одноразовое сообщение"_q);
+		box->setTitle(rpl::single(u"Одноразовое сообщение"_q));
 		box->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
 			AyuFeatures::StreamerMode::RequireViewOnceGuard());
 		if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
 			AyuFeatures::StreamerMode::hideWidgetWindow(box);
 		}
 
+		if (!refusal.isEmpty()) {
+			box->addRow(object_ptr<Ui::FlatLabel>(box, refusal, st::boxLabel));
+			box->addButton(tr::lng_close(), [=] { box->closeBox(); });
+			return;
+		}
 		if (!decrypted.has_value() && IsPasscodeEncryptedMessage(rawText)) {
 			box->addRow(object_ptr<Ui::FlatLabel>(
 				box,
@@ -411,7 +431,8 @@ void ShowViewOnceBox(
 							innerBox,
 							session,
 							copyItem,
-							*res);
+							*res,
+							rawText);
 					}));
 				} else {
 					field->showError();
@@ -426,13 +447,13 @@ void ShowViewOnceBox(
 		if (!decrypted.has_value()) {
 			box->addRow(object_ptr<Ui::FlatLabel>(
 				box,
-				u"Не удалось расшифровать сообщение. Возможно, оно предназначено для другого пользователя или ключ не совпадает."_q,
+				u"Не удалось расшифровать сообщение: оно зашифровано не для ключа этого устройства. Попросите собеседника отправить его ещё раз — новое сообщение откроется на всех ваших устройствах."_q,
 				st::boxLabel));
 			box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 			return;
 		}
 
-		SetupDecryptedContentBox(box, session, item, *decrypted);
+		SetupDecryptedContentBox(box, session, item, *decrypted, rawText);
 	}));
 }
 

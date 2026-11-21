@@ -352,6 +352,8 @@ set(ayugram_files
         ayu/features/whitegram_e2ee/whitegram_key_manager.h
         ayu/features/whitegram_e2ee/whitegram_view_once_box.cpp
         ayu/features/whitegram_e2ee/whitegram_view_once_box.h
+        ayu/features/whitegram_e2ee/whitegram_one_time_media.cpp
+        ayu/features/whitegram_e2ee/whitegram_one_time_media.h
         ayu/features/whitegram_e2ee/whitegram_one_time_view.cpp
         ayu/features/whitegram_e2ee/whitegram_one_time_view.h
         ayu/features/whitegram_plugins/whitegram_plugins.cpp

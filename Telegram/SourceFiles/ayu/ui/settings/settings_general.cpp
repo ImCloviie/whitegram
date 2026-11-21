@@ -163,16 +163,6 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 
 	builder.addSubsectionTitle(tr::ayu_CategoryGeneral());
 
-	const auto viewOnceTitle = Lang::Id().startsWith(u"ru"_q)
-		? u"Скрывать окно от записи экрана при просмотре одноразовых медиа"_q
-		: u"Hide window from screen capture while viewing view-once media"_q;
-	ayu.addSettingToggle({
-		.id = u"whitegram/hideTelegramOnViewOnce"_q,
-		.title = rpl::single(QString(viewOnceTitle)),
-		.getter = &AyuSettings::hideTelegramOnViewOnce,
-		.setter = &AyuSettings::setHideTelegramOnViewOnce,
-	});
-
 	const auto controller = builder.controller();
 	ayu.addToggle({
 		.id = u"ayu/disableStories"_q,
@@ -313,40 +303,14 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 }
 
-const auto kMeta = BuildHelper({
-	.id = AyuGeneral::Id(),
-	.parentId = AyuMain::Id(),
-	.title = &tr::ayu_CategoryGeneral,
-	.icon = &st::menuIconShowAll,
-}, [](SectionBuilder &builder) {
+} // namespace
+
+void BuildAyuGeneralContent(SectionBuilder &builder) {
 	auto ayu = AyuSectionBuilder(builder);
 
 	builder.addSkip();
 	BuildQoLToggles(builder, ayu);
 	builder.addSkip();
-});
-
-} // namespace
-
-rpl::producer<QString> AyuGeneral::title() {
-	return tr::ayu_CategoryGeneral();
-}
-
-AyuGeneral::AyuGeneral(
-	QWidget *parent,
-	not_null<Window::SessionController*> controller)
-: Section(parent, controller) {
-	setupContent();
-}
-
-void AyuGeneral::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	build(content, kMeta.build);
-	Ui::ResizeFitChild(this, content);
-}
-
-Type AyuGeneralId() {
-	return AyuGeneral::Id();
 }
 
 } // namespace Settings

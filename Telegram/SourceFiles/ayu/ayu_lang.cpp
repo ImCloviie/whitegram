@@ -54,79 +54,43 @@ QString AyuLanguage::getCachePath(const QString &langId) const {
 	return getCacheDir() + langId + u".json"_q;
 }
 
+// Whitegram ships its own translations of these strings inside the app
+// instead of downloading the AyuGram ones: English comes from
+// lang.strings, other languages from :/whitegram/langs/<id>.json.
 void AyuLanguage::loadCachedLanguage() {
-	const auto langPackId = Lang::GetInstance().id();
-	const auto langPackBaseId = Lang::GetInstance().baseId();
-	auto finalLangPackId = langMapping.contains(langPackId) ? langMapping[langPackId] : langPackId;
+	loadEmbeddedLanguage(
+		Lang::GetInstance().id(),
+		Lang::GetInstance().baseId());
+}
 
-	if (finalLangPackId.isEmpty()) {
-		finalLangPackId = langPackBaseId;
-	}
-	if (finalLangPackId.isEmpty()) {
-		return;
-	}
-
-	const auto cachePath = getCachePath(finalLangPackId);
-	QFile file(cachePath);
-	if (!file.exists()) {
-		const auto basePath = getCachePath(langPackBaseId);
-		if (!QFile::exists(basePath)) {
-			return;
+void AyuLanguage::loadEmbeddedLanguage(
+		const QString &id,
+		const QString &baseId) {
+	const auto mapped = langMapping.contains(id) ? langMapping[id] : id;
+	for (const auto &candidate : { mapped, baseId }) {
+		if (candidate.isEmpty()) {
+			continue;
 		}
-		file.setFileName(basePath);
-	}
-
-	if (file.open(QIODevice::ReadOnly)) {
-		const auto data = file.readAll();
-		file.close();
-
+		QFile file(u":/whitegram/langs/%1.json"_q.arg(candidate));
+		if (!file.open(QIODevice::ReadOnly)) {
+			continue;
+		}
 		QJsonParseError error{};
-		const auto doc = QJsonDocument::fromJson(data, &error);
+		const auto doc = QJsonDocument::fromJson(file.readAll(), &error);
 		if (error.error == QJsonParseError::NoError) {
-			LOG(("Loading cached AyuGram language: %1").arg(finalLangPackId));
+			LOG(("Whitegram language: %1").arg(candidate));
 			applyLanguageJson(doc);
 		}
+		return;
 	}
 }
 
-void AyuLanguage::saveCachedLanguage(const QByteArray &json, const QString &langId) {
-	const auto cacheDir = getCacheDir();
-	QDir().mkpath(cacheDir);
-
-	const auto cachePath = getCachePath(langId);
-	QFile file(cachePath);
-	if (file.open(QIODevice::WriteOnly)) {
-		file.write(json);
-		file.close();
-		LOG(("Cached AyuGram language: %1").arg(langId));
-	}
+void AyuLanguage::saveCachedLanguage(const QByteArray &, const QString &) {
 }
 
 void AyuLanguage::fetchLanguage(const QString &id, const QString &baseId) {
-	auto finalLangPackId = langMapping.contains(id) ? langMapping[id] : id;
-	_currentLangId = finalLangPackId.isEmpty() ? baseId : finalLangPackId;
-
-	if (Core::App().settings().proxy().isEnabled()) {
-		const auto proxy = Core::App().settings().proxy().selected();
-		if (proxy.type == MTP::ProxyData::Type::Socks5 || proxy.type == MTP::ProxyData::Type::Http) {
-			const auto networkProxy = ToNetworkProxy(ToDirectIpProxy(Core::App().settings().proxy().selected()));
-			networkManager.setProxy(networkProxy);
-		}
-	}
-
-	// using `jsdelivr` since China (...and maybe other?) users have some problems with GitHub
-	// https://crowdin.com/project/ayugram/discussions/6
-	QUrl url;
-	if (!finalLangPackId.isEmpty() && !baseId.isEmpty() && !needFallback) {
-		url.setUrl(qsl("https://cdn.jsdelivr.net/gh/AyuGram/Languages@l10n_main/values/langs/%1/Shared.json").arg(
-			finalLangPackId));
-	} else {
-		url.setUrl(qsl("https://cdn.jsdelivr.net/gh/AyuGram/Languages@l10n_main/values/langs/%1/Shared.json").arg(
-			needFallback ? baseId : finalLangPackId));
-	}
-	_chkReply = networkManager.get(QNetworkRequest(url));
-	connect(_chkReply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(fetchError(QNetworkReply::NetworkError)));
-	connect(_chkReply, SIGNAL(finished()), this, SLOT(fetchFinished()));
+	_currentLangId = id.isEmpty() ? baseId : id;
+	loadEmbeddedLanguage(id, baseId);
 }
 
 void AyuLanguage::fetchFinished() {

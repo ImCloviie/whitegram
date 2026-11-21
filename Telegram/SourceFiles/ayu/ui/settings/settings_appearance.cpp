@@ -11,7 +11,6 @@
 #include "ayu/ayu_ui_settings.h"
 #include "ayu/ui/boxes/font_selector.h"
 #include "ayu/ui/components/avatar_corners_preview.h"
-#include "ayu/ui/components/icon_picker.h"
 #include "ayu/ui/settings/ayu_builder.h"
 #include "ayu/ui/settings/settings_ayu_utils.h"
 #include "ayu/ui/settings/settings_main.h"
@@ -50,22 +49,9 @@ bool HasDrawerBots(not_null<Window::SessionController*> controller) {
 	return false;
 }
 
-void BuildAppIcon(SectionBuilder &builder, AyuSectionBuilder &ayu) {
-	builder.addSubsectionTitle({
-		.id = u"ayu/appIcon"_q,
-		.title = tr::ayu_AppIconHeader(),
-	});
-
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<IconPicker>(ctx.container),
-			.margin = st::settingsButtonNoIcon.padding,
-		};
-	});
-
+// The app icon picker lives in the Whitegram appearance page.
+void BuildNotificationBadge(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 #if defined Q_OS_WIN || defined Q_OS_MAC
-	builder.addDivider();
-	builder.addSkip();
 	ayu.addSettingToggle({
 		.id = u"ayu/hideNotificationBadge"_q,
 		.title = tr::ayu_HideNotificationBadge(),
@@ -76,8 +62,7 @@ void BuildAppIcon(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addDividerText(tr::ayu_HideNotificationBadgeDescription());
 	builder.addSkip();
 #else
-    builder.addDivider();
-    builder.addSkip();
+	ayu.addSectionDivider();
 #endif
 }
 
@@ -272,7 +257,8 @@ void BuildTrayElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 #endif
 
-	ayu.addSectionDivider();
+	// Ends the block with its own divider.
+	BuildNotificationBadge(builder, ayu);
 }
 
 void BuildDrawerElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
@@ -374,45 +360,18 @@ void BuildDrawerElements(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addSkip();
 }
 
-const auto kMeta = BuildHelper({
-	.id = AyuAppearance::Id(),
-	.parentId = AyuMain::Id(),
-	.title = &tr::ayu_CategoryAppearance,
-	.icon = &st::menuIconPalette,
-}, [](SectionBuilder &builder) {
+} // namespace
+
+void BuildAyuAppearanceContent(SectionBuilder &builder) {
 	auto ayu = AyuSectionBuilder(builder);
 
 	builder.addSkip();
-	BuildAppIcon(builder, ayu);
 	BuildAvatarCorners(builder, ayu);
 	BuildAppearance(builder, ayu);
 	BuildChatFolders(builder, ayu);
 	BuildTrayElements(builder, ayu);
 	BuildDrawerElements(builder, ayu);
 	builder.addSkip();
-});
-
-} // namespace
-
-rpl::producer<QString> AyuAppearance::title() {
-	return tr::ayu_CategoryAppearance();
-}
-
-AyuAppearance::AyuAppearance(
-	QWidget *parent,
-	not_null<Window::SessionController*> controller)
-: Section(parent, controller) {
-	setupContent();
-}
-
-void AyuAppearance::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	build(content, kMeta.build);
-	Ui::ResizeFitChild(this, content);
-}
-
-Type AyuAppearanceId() {
-	return AyuAppearance::Id();
 }
 
 } // namespace Settings

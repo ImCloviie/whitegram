@@ -184,14 +184,14 @@ ID getBareID(not_null<PeerData*> peer) {
 	return peer->id.value & PeerId::kChatTypeMask;
 }
 
+// AyuGram / exteraGram developer and supporter badges are not shown in
+// Whitegram: only the Whitegram badges from our backend are.
 bool isExteraPeer(ID peerId) {
-	return RCManager::getInstance().developers().contains(peerId) || RCManager::getInstance().channels().
-		contains(peerId);
+	return false;
 }
 
 bool isSupporterPeer(ID peerId) {
-	return RCManager::getInstance().supporters().contains(peerId) || RCManager::getInstance().supporterChannels().
-		contains(peerId);
+	return false;
 }
 
 bool isWhitegramSponsorPeer(ID peerId) {
@@ -223,7 +223,7 @@ bool isCustomBadgePeer(ID peerId) {
 			return true;
 		}
 	}
-	return RCManager::getInstance().supporterCustomBadges().contains(peerId);
+	return false;
 }
 
 CustomBadge getCustomBadge(ID peerId) {
@@ -237,10 +237,6 @@ CustomBadge getCustomBadge(ID peerId) {
 				? Whitegram::Backend::CustomBadgeText(badge->customId)
 				: badge->text,
 		};
-	}
-	const auto &badges = RCManager::getInstance().supporterCustomBadges();
-	if (const auto it = badges.find(peerId); it != badges.end()) {
-		return it->second;
 	}
 	return {};
 }

@@ -83,7 +83,7 @@ struct DecodeOptionsResult {
 
 struct ResolvedReferrer {
 	QString controlId;
-	Type section = AyuMain::Id();
+	Type section = WhitegramMain::Id();
 };
 
 [[nodiscard]] QString EncodeOptionsToText(const QString &json) {

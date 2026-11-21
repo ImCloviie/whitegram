@@ -54,5 +54,7 @@
         <file alias="icons/ayu/whitegram_team_icon@2x.png">../../icons/ayu/whitegram_team_icon@2x.png</file>
         <file alias="icons/ayu/whitegram_team_icon@3x.png">../../icons/ayu/whitegram_team_icon@3x.png</file>
     </qresource>
+    <qresource prefix="/whitegram">
+        <file alias="langs/ru.json">../../langs/whitegram/ru.json</file>
+    </qresource>
 </RCC>
-

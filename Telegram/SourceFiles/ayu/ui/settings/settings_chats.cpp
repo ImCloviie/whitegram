@@ -445,12 +445,9 @@ void BuildMessageFieldPopups(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 }
 
-const auto kMeta = BuildHelper({
-	.id = AyuChats::Id(),
-	.parentId = AyuMain::Id(),
-	.title = &tr::ayu_CategoryChats,
-	.icon = &st::menuIconChatBubble,
-}, [](SectionBuilder &builder) {
+} // namespace
+
+void BuildAyuChatsContent(SectionBuilder &builder) {
 	auto ayu = AyuSectionBuilder(builder);
 	const auto previewState = std::make_shared<PreviewState>();
 
@@ -463,29 +460,6 @@ const auto kMeta = BuildHelper({
 	BuildMessageFieldElements(builder, ayu);
 	BuildMessageFieldPopups(builder, ayu);
 	builder.addSkip();
-});
-
-} // namespace
-
-rpl::producer<QString> AyuChats::title() {
-	return tr::ayu_CategoryChats();
-}
-
-AyuChats::AyuChats(
-	QWidget *parent,
-	not_null<Window::SessionController*> controller)
-: Section(parent, controller) {
-	setupContent();
-}
-
-void AyuChats::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	build(content, kMeta.build);
-	Ui::ResizeFitChild(this, content);
-}
-
-Type AyuChatsId() {
-	return AyuChats::Id();
 }
 
 } // namespace Settings

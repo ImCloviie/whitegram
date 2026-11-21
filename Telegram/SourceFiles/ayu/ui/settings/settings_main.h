@@ -21,16 +21,6 @@ class SessionController;
 
 namespace Settings {
 
-class AyuMain : public Section<AyuMain> {
-public:
-  AyuMain(QWidget *parent, not_null<Window::SessionController *> controller);
-
-  [[nodiscard]] rpl::producer<QString> title() override;
-
-private:
-  void setupContent();
-};
-
 class WhitegramMain : public Section<WhitegramMain> {
 public:
   WhitegramMain(QWidget *parent,
@@ -185,6 +175,17 @@ private:
   void setupContent();
 };
 
+class WhitegramChats : public Section<WhitegramChats> {
+public:
+  WhitegramChats(QWidget *parent,
+                 not_null<Window::SessionController *> controller);
+
+  [[nodiscard]] rpl::producer<QString> title() override;
+
+private:
+  void setupContent();
+};
+
 class WhitegramPlugins : public Section<WhitegramPlugins> {
 public:
   WhitegramPlugins(QWidget *parent,
@@ -196,7 +197,6 @@ private:
   void setupContent();
 };
 
-[[nodiscard]] Type AyuMainId();
 [[nodiscard]] Type WhitegramMainId();
 [[nodiscard]] Type WhitegramGeneralId();
 [[nodiscard]] Type WhitegramUpdatesId();

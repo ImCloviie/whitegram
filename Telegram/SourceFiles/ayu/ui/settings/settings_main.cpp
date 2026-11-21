@@ -30,7 +30,6 @@
 #include "ayu/ui/settings/settings_chats.h"
 #include "ayu/ui/settings/settings_filters.h"
 #include "ayu/ui/settings/settings_general.h"
-#include "ayu/ui/settings/settings_other.h"
 #include "core/version.h"
 #include "core/update_checker.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
@@ -137,94 +136,6 @@ void BuildLogo(SectionBuilder &builder) {
 	});
 }
 
-void BuildVersionInfo(SectionBuilder &builder) {
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				rpl::single(
-					QString("AyuGram Desktop v")
-					+ QString::fromLatin1(AppVersionStr)),
-				st::boxTitle),
-			.align = style::al_top,
-		};
-	});
-
-	builder.addSkip();
-
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				tr::ayu_SettingsDescription(),
-				st::centeredBoxLabel),
-			.align = style::al_top,
-		};
-	});
-}
-
-void BuildAyuCategories(SectionBuilder &builder) {
-	builder.addSkip();
-	builder.addSkip();
-	builder.addSkip();
-	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
-
-	builder.addSubsectionTitle(tr::ayu_CategoriesHeader());
-
-	builder.addSectionButton({
-		.title = rpl::single(QString("AyuGram")),
-		.targetSection = AyuGhost::Id(),
-		.icon = { &st::menuIconGroupReactions },
-		.keywords = { u"ghost"_q, u"ayugram"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryFilters(),
-		.targetSection = AyuFilters::Id(),
-		.icon = { &st::menuIconTagFilter },
-		.keywords = { u"filters"_q, u"regex"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryGeneral(),
-		.targetSection = AyuGeneral::Id(),
-		.icon = { &st::menuIconShowAll },
-		.keywords = { u"general"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryAppearance(),
-		.targetSection = AyuAppearance::Id(),
-		.icon = { &st::menuIconPalette },
-		.keywords = { u"appearance"_q, u"theme"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryChats(),
-		.targetSection = AyuChats::Id(),
-		.icon = { &st::menuIconChatBubble },
-		.keywords = { u"chats"_q, u"messages"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryOther(),
-		.targetSection = AyuOther::Id(),
-		.icon = { &st::menuIconFave },
-		.keywords = { u"other"_q, u"donate"_q },
-	});
-}
-
-const auto kAyuMeta = BuildHelper({
-	.id = AyuMain::Id(),
-	.parentId = MainId(),
-	.title = &tr::ayu_AyuPreferences,
-	.icon = &st::menuIconPremium,
-}, [](SectionBuilder &builder) {
-	BuildLogo(builder);
-	builder.addSkip();
-	BuildVersionInfo(builder);
-	BuildAyuCategories(builder);
-	builder.addSkip();
-});
-
-
 // Whitegram
 
 void BuildWhitegramVersionInfo(SectionBuilder &builder) {
@@ -259,8 +170,8 @@ void BuildWhitegramVersionInfo(SectionBuilder &builder) {
 			.widget = object_ptr<Ui::FlatLabel>(
 				ctx.container,
 				trWhitegram(
-					QString::fromUtf8("Улучшенный форк AyuGram с дополнительными функциями, эксклюзивной кастомизацией и уникальными возможностями."),
-					QString("An enhanced fork of AyuGram with additional features, exclusive customization, and unique capabilities.")),
+					QString::fromUtf8("Telegram Desktop с дополнительными функциями и настройками."),
+					QString("Telegram Desktop with extra features and settings.")),
 				st::centeredBoxLabel),
 			.align = style::al_top,
 		};
@@ -1441,6 +1352,40 @@ const auto kWhitegramUpdatesMeta = BuildHelper({
 	builder.addSkip();
 });
 
+void BuildWhitegramCrashReports(SectionBuilder &builder) {
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
+	auto ayu = AyuSectionBuilder(builder);
+	builder.addDivider();
+	builder.addSkip();
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Отчёты о сбоях"),
+		QString("Crash reports")));
+	ayu.addSettingToggle({
+		.id = u"ayu/crashReporting"_q,
+		.altIds = { u"ayu/crashlytics"_q },
+		.title = trWhitegram(
+			QString::fromUtf8("Предлагать отправку отчёта"),
+			QString("Offer to send a report")),
+		.getter = &AyuSettings::crashReporting,
+		.setter = &AyuSettings::setCrashReporting,
+		.icon = { &st::menuIconReport },
+	});
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Если Whitegram аварийно закроется, при следующем запуске он "
+			"предложит отправить отчёт разработчикам. В отчёт входят "
+			"технический лог и дамп памяти приложения. Без вашего "
+			"согласия ничего не отправляется."),
+		QString(
+			"If Whitegram crashes, it offers to send a report to the "
+			"developers on the next launch. The report contains the "
+			"technical log and the app memory dump. Nothing is sent "
+			"without your consent.")));
+	builder.addSkip();
+#endif // !TDESKTOP_DISABLE_AUTOUPDATE
+}
+
 const auto kWhitegramGeneralMeta = BuildHelper({
 	.id = WhitegramGeneral::Id(),
 	.parentId = WhitegramMain::Id(),
@@ -1455,11 +1400,11 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 				ctx.container,
 				trWhitegram(
 					QString::fromUtf8(
-						"Обновления, виджеты бокового меню и настройки "
-						"нескольких аккаунтов в одном окне."),
+						"Обновления, аккаунты, приватность и мелкие "
+						"удобства клиента."),
 					QString(
-						"Updates, side menu widgets, and multi-account "
-						"profiles in one window.")),
+						"Updates, accounts, privacy and everyday "
+						"conveniences.")),
 				st::boxDividerLabel),
 		};
 	});
@@ -1721,6 +1666,9 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 			"The 'On hover' mode is a Whitegram extension: the number shows "
 			"while the cursor is over it.")));
 	builder.addSkip();
+
+	BuildAyuGeneralContent(builder);
+	BuildWhitegramCrashReports(builder);
 });
 
 void BuildWhitegramStartupSound(SectionBuilder &builder) {
@@ -2495,6 +2443,10 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 		.targetSection = WhitegramStartupAnim::Id(),
 		.icon = { &st::menuIconShowAll },
 	});
+
+	builder.addSkip();
+	builder.addDivider();
+	BuildAyuAppearanceContent(builder);
 	// "Фон профиля" lives on the "My Profile" page (settings_information.cpp),
 	// next to the photo and the bio, so it is not listed here.
 });
@@ -2518,7 +2470,7 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 				ctx.container,
 				trWhitegram(
 					QString::fromUtf8(
-						"Свой фон для твоего профиля: шапка, весь профиль "
+						"Свой фон для вашего профиля: шапка, весь профиль "
 						"или блок «Информация». Поддерживаются фото и видео."),
 					QString(
 						"Custom background for your profile: header, full "
@@ -3390,8 +3342,8 @@ void ShowBypassCustomMirrorBox(not_null<Ui::GenericBox*> box) {
 
 void ShowBypassAboutBox(not_null<Ui::GenericBox*> box) {
 	box->setTitle(trWhitegram(
-		QString::fromUtf8("Простыми словами"),
-		QString("In simple words")));
+		QString::fromUtf8("Как работает обход"),
+		QString("How bypass works")));
 	box->setWidth(st::boxWideWidth);
 
 	const auto addBlock = [&](
@@ -3406,212 +3358,79 @@ void ShowBypassAboutBox(not_null<Ui::GenericBox*> box) {
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Зачем это нужно"),
-			QString("Why it exists")),
+			QString::fromUtf8("Когда нужен"),
+			QString("When you need it")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Иногда Telegram не открывается: крутится загрузка, "
-				"чаты не приходят, хотя интернет есть и сайты в браузере "
-				"работают. Так бывает, когда сеть (домашний Wi‑Fi, "
-				"мобильный интернет, офис) мешает именно Telegram, "
-				"а остальной интернет не трогает.\n\n"
-				"Обход — это встроенная помощь Whitegram в такой ситуации. "
-				"Ничего устанавливать, покупать и настраивать руками "
-				"не нужно: выбрали режим — и всё."),
+				"Интернет работает, сайты открываются, а Telegram висит "
+				"на «Соединение…». Значит, сеть блокирует именно "
+				"Telegram. Если всё и так работает, обход не нужен."),
 			QString(
-				"Sometimes Telegram will not open: it keeps loading and "
-				"chats do not arrive, even though the internet works and "
-				"websites open. That happens when the network (home Wi‑Fi, "
-				"mobile data, office) interferes with Telegram, but leaves "
-				"the rest of the internet alone.\n\n"
-				"Bypass is Whitegram’s built-in help for that case. You do "
-				"not install, buy, or configure anything by hand: pick a "
-				"mode and you are done.")));
+				"The internet works and websites open, but Telegram "
+				"hangs on \"Connecting…\". The network blocks Telegram "
+				"itself. If everything works, you don't need bypass.")));
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Что делает обход"),
-			QString("What bypass does")),
+			QString::fromUtf8("Что он делает"),
+			QString("What it does")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Обычно Whitegram стучится к Telegram «напрямую». В части "
-				"сетей этот прямой путь режут.\n\n"
-				"Обход отправляет те же сообщения другим путём — так, "
-				"чтобы для сети это выглядело как обычный защищённый "
-				"сайт (как когда вы открываете банк или почту в браузере). "
-				"Содержимое чатов по-прежнему шифруется, как в обычном "
-				"Telegram. Меняется только «дорога» до серверов.\n\n"
-				"Включать обход, если Telegram и так нормально работает, "
-				"не обязательно."),
+				"Подключение к серверам Telegram идёт через WebSocket, "
+				"поэтому для сети оно выглядит как обычный HTTPS-сайт. "
+				"Шифрование сообщений не меняется."),
 			QString(
-				"Normally Whitegram reaches Telegram directly. Some "
-				"networks cut that direct path.\n\n"
-				"Bypass sends the same messages another way, so the "
-				"network sees something closer to a normal secure website "
-				"(like opening a bank or mailbox in a browser). Chat "
-				"contents stay encrypted like in regular Telegram. Only "
-				"the route to the servers changes.\n\n"
-				"You do not need bypass if Telegram already works fine.")));
-
-	addBlock(
-		trWhitegram(
-			QString::fromUtf8("Как именно меняется дорога"),
-			QString("How the route actually changes")),
-		trWhitegram(
-			QString::fromUtf8(
-				"Представьте, что каждое сообщение — это письмо.\n\n"
-				"Обычно Whitegram кладёт письмо в специальный конверт "
-				"«Telegram» и несёт его напрямую в почтовое отделение "
-				"Telegram. В некоторых сетях на входе стоит проверка: "
-				"увидела конверт «Telegram» — и не пускает. Содержимое "
-				"письма она прочитать не может, оно зашифровано, но сам "
-				"конверт узнаёт сразу.\n\n"
-				"Обход кладёт тот же зашифрованный конверт «Telegram» "
-				"внутрь обычного сайтового конверта — такого же, как "
-				"когда вы открываете банк или почту в браузере. Снаружи "
-				"видно только «защищённый сайт», а не Telegram. Проверка "
-				"на такой конверт обычно не смотрит, и письмо проходит.\n\n"
-				"Внутри ничего не меняется: сообщения шифруются тем же "
-				"способом, что и всегда. Меняется только внешняя "
-				"упаковка, по которой сеть узнаёт, куда вы идёте."),
-			QString(
-				"Think of every message as a letter.\n\n"
-				"Normally Whitegram puts the letter in a special "
-				"“Telegram” envelope and carries it straight to the "
-				"Telegram post office. Some networks have a guard at the "
-				"entrance: it sees the “Telegram” envelope and stops it. "
-				"The guard cannot read the letter itself — it is "
-				"encrypted — but it recognizes the envelope at once.\n\n"
-				"Bypass puts the same encrypted “Telegram” envelope "
-				"inside an ordinary website envelope — the same kind you "
-				"get when you open a bank or mailbox in a browser. From "
-				"the outside it looks like just a secure website, not "
-				"Telegram. The guard usually ignores that envelope, and "
-				"the letter goes through.\n\n"
-				"Inside nothing changes: messages are encrypted the same "
-				"way as always. Only the outer packaging changes — the "
-				"part the network uses to tell where you are going.")));
+				"The connection to Telegram servers goes over "
+				"WebSocket, so to the network it looks like a regular "
+				"HTTPS site. Message encryption stays the same.")));
 
 	addBlock(
 		trWhitegram(
 			QString::fromUtf8("Это не VPN"),
-			QString("This is not a VPN")),
+			QString("It is not a VPN")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Обход не прячет вас и не меняет ваш IP-адрес. Провайдер "
-				"по-прежнему видит, что с телефона или компьютера идёт "
-				"интернет.\n\n"
-				"Он не включает VPN на весь компьютер: YouTube, браузер "
-				"и игры обход не касается. Работает только соединение "
-				"самого Whitegram с Telegram.\n\n"
-				"Это не отдельный сервер Whitegram и не «прокси, который "
-				"нужно вписать руками». Всё уже внутри приложения."),
+				"Обход работает только для Whitegram. IP-адрес не "
+				"меняется, браузер и другие программы идут напрямую. "
+				"Ваш прокси из настроек Telegram продолжит работать."),
 			QString(
-				"Bypass does not hide you and does not change your IP "
-				"address. Your provider still sees that this phone or "
-				"computer is using the internet.\n\n"
-				"It does not turn on a VPN for the whole computer: "
-				"YouTube, the browser, and games are unaffected. Only "
-				"Whitegram’s connection to Telegram changes.\n\n"
-				"It is not a Whitegram server and not a proxy you have "
-				"to type in by hand. It is already inside the app.")));
+				"Bypass only affects Whitegram. Your IP address stays "
+				"the same, the browser and other apps connect directly. "
+				"Your proxy from Telegram settings keeps working.")));
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Какой режим выбрать"),
-			QString("Which mode to pick")),
+			QString::fromUtf8("Режимы"),
+			QString("Modes")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Выкл — обычное прямое соединение. Подходит, если "
-				"Telegram открывается без проблем.\n\n"
-				"Авто — сначала пробует напрямую. Если за несколько "
-				"секунд (около 12) так и не подключится, обход включится "
-				"сам. Удобно, если сеть то работает, то нет: в поездке, "
-				"в другой стране, на чужом Wi‑Fi. Пока Telegram "
-				"подключается нормально, обход не трогает соединение. "
-				"Если обход уже включился сам, он останется до смены "
-				"режима или перезапуска приложения.\n\n"
-				"Всегда — обход включён сразу, без ожидания. Выбирайте, "
-				"если Telegram у вас стабильно не открывается, а сайты "
-				"открываются. Это самый надёжный вариант при блокировке."),
+				"Выкл — обычное соединение.\n"
+				"Авто — обход включается сам, если Telegram не "
+				"подключился примерно за 12 секунд.\n"
+				"Всегда — обход включён сразу. Выбирайте, если Telegram "
+				"у вас не открывается постоянно."),
 			QString(
-				"Off — the normal direct connection. Use it if Telegram "
-				"opens without problems.\n\n"
-				"Auto — tries direct first. If it still cannot connect "
-				"for a few seconds (about 12), bypass turns on by itself. "
-				"Handy when the network is hit-or-miss: travel, another "
-				"country, someone else’s Wi‑Fi. While Telegram connects "
-				"normally, bypass stays out of the way. If bypass has "
-				"already turned itself on, it stays until you change the "
-				"mode or restart the app.\n\n"
-				"Always — bypass is on immediately, with no waiting. "
-				"Choose this if Telegram reliably fails to open while "
-				"websites still work. This is the most reliable option "
-				"when Telegram is blocked.")));
+				"Off — regular connection.\n"
+				"Auto — bypass turns on by itself if Telegram doesn't "
+				"connect in about 12 seconds.\n"
+				"Always — bypass is on from the start. Pick it if "
+				"Telegram never opens for you.")));
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Что будет после переключения"),
-			QString("What happens after you switch")),
+			QString::fromUtf8("Если не помогло"),
+			QString("If it didn't help")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Whitegram заново устанавливает соединение. На секунду "
-				"может появиться «подключение…» — это нормально, ничего "
-				"нажимать ещё раз не нужно.\n\n"
-				"Подождите 10–20 секунд. Если чаты ожили — всё получилось. "
-				"Настройки запоминаются: при следующем запуске будет "
-				"тот же режим."),
+				"После смены режима подождите 10–20 секунд. Если чаты "
+				"так и не загрузились, проверьте время на компьютере и "
+				"попробуйте другую сеть, например раздачу с телефона. "
+				"Через обход соединение может быть чуть медленнее."),
 			QString(
-				"Whitegram reconnects. You may briefly see “connecting…” "
-				"— that is normal, do not tap anything again.\n\n"
-				"Wait 10–20 seconds. If chats come back, it worked. The "
-				"setting is remembered: the next launch uses the same "
-				"mode.")));
-
-	addBlock(
-		trWhitegram(
-			QString::fromUtf8("Частые вопросы"),
-			QString("Common questions")),
-		trWhitegram(
-			QString::fromUtf8(
-				"Нужно ли что-то вводить? Нет. Секрет, логин и пароль "
-				"для обхода не нужны.\n\n"
-				"Это платно? Нет, это функция Whitegram.\n\n"
-				"Безопасно ли это? Сообщения шифруются так же, как в "
-				"обычном Telegram. Обход не читает ваши чаты.\n\n"
-				"У меня уже стоит свой прокси в настройках Telegram. "
-				"Можно оставить. Свои SOCKS и HTTP-прокси по-прежнему "
-				"работают. Старые локальные «заглушки» Whitegram при "
-				"включённом обходе убирает сам — это не ваш настоящий "
-				"прокси.\n\n"
-				"Обход включил, а Telegram всё равно не заходит. Тогда "
-				"дело не только в «прямой дороге»: попробуйте другую "
-				"сеть (раздать интернет с телефона), проверьте системное "
-				"время на компьютере и что интернет вообще есть. Обход "
-				"помогает, когда режут именно Telegram, а не весь "
-				"интернет.\n\n"
-				"Стало чуть медленнее. Так бывает: обходный путь длиннее "
-				"прямого. Если Telegram без обхода открывается — можно "
-				"вернуть «Выкл»."),
-			QString(
-				"Do I need to type anything? No. Bypass needs no secret, "
-				"login, or password.\n\n"
-				"Does it cost money? No. It is a Whitegram feature.\n\n"
-				"Is it safe? Messages are encrypted like in regular "
-				"Telegram. Bypass does not read your chats.\n\n"
-				"I already have my own proxy in Telegram settings. You "
-				"can keep it. Your own SOCKS and HTTP proxies still work. "
-				"When bypass is on, Whitegram only removes old local "
-				"dummy proxies — not your real one.\n\n"
-				"I turned bypass on and Telegram still will not connect. "
-				"Then it is not only the “direct road”: try another "
-				"network (phone hotspot), check the computer clock, and "
-				"make sure the internet works at all. Bypass helps when "
-				"Telegram is blocked, not when the whole internet is "
-				"down.\n\n"
-				"It feels a bit slower. That can happen: the bypass route "
-				"is longer than the direct one. If Telegram opens without "
-				"bypass, you can switch back to Off.")));
+				"After switching modes, wait 10–20 seconds. If chats "
+				"still don't load, check the computer clock and try "
+				"another network, like a phone hotspot. The connection "
+				"may be a bit slower through bypass.")));
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
@@ -3643,17 +3462,17 @@ void AddTgWsProxyBlock(not_null<Ui::VerticalLayout*> layout) {
 			card,
 			trWhitegram(
 				QString::fromUtf8(
-					"Встроенный tg-ws-proxy от Flowseal: локальный прокси, "
-					"который держит заранее открытые соединения с Telegram "
-					"и при сбое уходит на Cloudflare. Пробуйте, если первый "
-					"обход не помогает. Включение выключает первый обход, "
-					"ваш прокси вернётся после выключения."),
+					"Запасной способ: встроенный tg-ws-proxy от Flowseal. "
+					"Держит открытые соединения с Telegram, при сбое "
+					"переключается на Cloudflare. Включайте, если обычный "
+					"обход не помог. Пока он работает, обычный обход и ваш "
+					"прокси отключены, после выключения они вернутся."),
 				QString(
-					"Built-in tg-ws-proxy by Flowseal: a local proxy that "
-					"keeps pre-opened connections to Telegram and falls back "
-					"to Cloudflare. Try it if the first bypass does not help. "
-					"Turning it on turns the first bypass off; your own proxy "
-					"comes back when you turn it off.")),
+					"Fallback option: the built-in tg-ws-proxy by Flowseal. "
+					"It keeps connections to Telegram open and switches to "
+					"Cloudflare on failure. Turn it on if the regular bypass "
+					"didn't help. While it runs, the regular bypass and your "
+					"proxy are off; they come back when you turn it off.")),
 			st::whitegramBypassMirrorHint));
 
 	Ui::AddSkip(card, st::settingsCheckboxesSkip);
@@ -4340,15 +4159,15 @@ void AddGhostTargetModeControls(
 void BuildWhitegramGhostMode(SectionBuilder &builder) {
 	builder.addSectionButton({
 		.title = trWhitegram(
-			QString::fromUtf8("Настройки Ghost Mode (AyuGram)"),
-			QString("Ghost Mode settings (AyuGram)")),
+			QString::fromUtf8("Невидимка и сохранение"),
+			QString("Stealth and saving")),
 		.targetSection = AyuGhost::Id(),
 		.icon = { &st::menuIconStealth },
 		.keywords = {
 			u"ghost"_q,
-			u"ayugram"_q,
-			QString::fromUtf8("ghost"),
 			QString::fromUtf8("невидимка"),
+			QString::fromUtf8("удалённые"),
+			QString::fromUtf8("сохранение"),
 		},
 	});
 
@@ -4509,6 +4328,15 @@ const auto kWhitegramGhostModeMeta = BuildHelper({
 	BuildWhitegramGhostMode(builder);
 });
 
+const auto kWhitegramChatsMeta = BuildHelper({
+	.id = WhitegramChats::Id(),
+	.parentId = WhitegramMain::Id(),
+	.title = QString::fromUtf8("Чаты и сообщения"),
+	.icon = &st::menuIconChatBubble,
+}, [](SectionBuilder &builder) {
+	BuildAyuChatsContent(builder);
+});
+
 const auto kWhitegramMeta = BuildHelper({
 	.id = WhitegramMain::Id(),
 	.parentId = MainId(),
@@ -4550,6 +4378,34 @@ const auto kWhitegramMeta = BuildHelper({
 			QString::fromUtf8("область"),
 			QString::fromUtf8("whitelist"),
 			QString::fromUtf8("blacklist"),
+		},
+	});
+
+	builder.addSectionButton({
+		.title = trWhitegram(
+			QString::fromUtf8("Чаты и сообщения"),
+			QString("Chats and messages")),
+		.targetSection = WhitegramChats::Id(),
+		.icon = { &st::menuIconChatBubble },
+		.keywords = {
+			u"chats"_q,
+			u"messages"_q,
+			QString::fromUtf8("стикеры"),
+			QString::fromUtf8("контекстное меню"),
+			QString::fromUtf8("сообщения"),
+		},
+	});
+
+	builder.addSectionButton({
+		.title = trWhitegram(
+			QString::fromUtf8("Фильтры сообщений"),
+			QString("Message filters")),
+		.targetSection = AyuFilters::Id(),
+		.icon = { &st::menuIconTagFilter },
+		.keywords = {
+			u"filters"_q,
+			u"regex"_q,
+			QString::fromUtf8("фильтр"),
 		},
 	});
 
@@ -4870,6 +4726,25 @@ Type WhitegramPluginsId() {
 	return WhitegramPlugins::Id();
 }
 
+rpl::producer<QString> WhitegramChats::title() {
+	return trWhitegram(
+		QString::fromUtf8("Чаты и сообщения"),
+		QString("Chats and messages"));
+}
+
+WhitegramChats::WhitegramChats(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent, controller) {
+	setupContent();
+}
+
+void WhitegramChats::setupContent() {
+	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+	build(content, kWhitegramChatsMeta.build);
+	Ui::ResizeFitChild(this, content);
+}
+
 WhitegramStartupSound::WhitegramStartupSound(QWidget *parent, not_null<Window::SessionController*> controller)
 : Section(parent, controller) {
 	setupContent();
@@ -4947,27 +4822,6 @@ void WhitegramStartupAnim::setupContent() {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 	build(content, kWhitegramStartupAnimMeta.build);
 	Ui::ResizeFitChild(this, content);
-}
-
-rpl::producer<QString> AyuMain::title() {
-	return rpl::single(QString(""));
-}
-
-AyuMain::AyuMain(
-	QWidget *parent,
-	not_null<Window::SessionController*> controller)
-: Section(parent, controller) {
-	setupContent();
-}
-
-void AyuMain::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	build(content, kAyuMeta.build);
-	Ui::ResizeFitChild(this, content);
-}
-
-Type AyuMainId() {
-	return AyuMain::Id();
 }
 
 void ShowConnectionBypassBox(not_null<Ui::GenericBox*> box) {

@@ -174,7 +174,7 @@ void BuildPerDialog(SectionBuilder &builder) {
 
 const auto kMeta = BuildHelper({
 	.id = AyuFilters::Id(),
-	.parentId = AyuMain::Id(),
+	.parentId = WhitegramMain::Id(),
 	.title = &tr::ayu_CategoryFilters,
 	.icon = &st::menuIconTagFilter,
 }, [](SectionBuilder &builder) {

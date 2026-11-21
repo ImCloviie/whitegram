@@ -224,8 +224,6 @@ set(ayugram_files
         ayu/ui/settings/settings_main.h
         ayu/ui/settings/experimental_settings_i18n.cpp
         ayu/ui/settings/experimental_settings_i18n.h
-        ayu/ui/settings/settings_other.cpp
-        ayu/ui/settings/settings_other.h
         ayu/ui/settings/filters/settings_filters_list.cpp
         ayu/ui/settings/filters/settings_filters_list.h
         ayu/ui/settings/filters/per_dialog_filter.cpp

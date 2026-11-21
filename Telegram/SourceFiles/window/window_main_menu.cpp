@@ -949,8 +949,10 @@ void MainMenu::setupMenu() {
 			Settings::trWhitegram(QString::fromUtf8("Музыка"), u"Music"_q),
 			{ &st::menuIconSoundOn }
 		)->setClickedCallback([=] {
-			controller->hideLayer(anim::type::instant);
-			AyuUi::MusicPage::Show(controller);
+			// Hiding the layer destroys this menu and the lambda with it.
+			const auto window = controller;
+			AyuUi::MusicPage::Show(window);
+			window->hideLayer(anim::type::normal);
 		});
 		if (settings.showLReadToggleInDrawer()) {
 			addAction(

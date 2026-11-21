@@ -1497,23 +1497,12 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 	.title = QString::fromUtf8("Основное"),
 	.icon = &st::menuIconShowAll,
 }, [](SectionBuilder &builder) {
-	builder.addSkip();
-
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Обновления, аккаунты и приватность."),
-					QString(
-						"Updates, accounts and privacy.")),
-				st::boxDividerLabel),
-		};
-	});
-
-	builder.addSkip();
-	builder.addDivider();
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Обновления, аккаунты и приватность."),
+			QString(
+				"Updates, accounts and privacy.")));
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
@@ -1675,9 +1664,6 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 			"Profiles let you keep multiple accounts in one window and "
 			"switch between them quickly. The limit is the maximum number "
 			"of profiles you can create.")));
-
-	builder.addSkip();
-	builder.addDivider();
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
@@ -1789,22 +1775,16 @@ void BuildWhitegramStartupSound(SectionBuilder &builder) {
 		.icon = { &st::menuIconSoundOn },
 	});
 
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Короткий звук при запуске Whitegram. Можно выбрать "
-						"свой файл (WAV, MP3, OGG, M4A) или оставить "
-						"стандартный звук Telegram."),
-					QString(
-						"A short sound when Whitegram starts. Pick your own "
-						"file (WAV, MP3, OGG, M4A) or keep the default "
-						"Telegram sound.")),
-				st::boxDividerLabel),
-		};
-	});
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Короткий звук при запуске Whitegram. Можно выбрать "
+				"свой файл (WAV, MP3, OGG, M4A) или оставить "
+				"стандартный звук Telegram."),
+			QString(
+				"A short sound when Whitegram starts. Pick your own "
+				"file (WAV, MP3, OGG, M4A) or keep the default "
+				"Telegram sound.")));
 
 	builder.addSkip();
 
@@ -1825,46 +1805,26 @@ void BuildWhitegramStartupSound(SectionBuilder &builder) {
 		QString::fromUtf8("Файл"),
 		QString("Sound file")));
 
-	builder.add([=](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		const auto label = Ui::CreateChild<Ui::FlatLabel>(
-			ctx.container.get(),
-			rpl::single(QString()),
-			st::boxLabel);
-		label->setAttribute(Qt::WA_TransparentForMouseEvents);
-		label->setTextColorOverride(st::windowActiveTextFg->c);
-
-		AyuSettings::getInstance().startupSoundPathValue(
-		) | rpl::on_next([=](const QString &path) {
-			const auto id = Lang::GetInstance().id();
-			const auto baseId = Lang::GetInstance().baseId();
-			const auto isRu = id.startsWith(u"ru"_q)
-				|| baseId.startsWith(u"ru"_q);
-			const auto missing = !path.isEmpty() && !QFileInfo::exists(path);
-			label->setText(formatCurrentSound(path));
-			label->setTextColorOverride(missing
-				? st::boxTextFgError->c
-				: st::windowActiveTextFg->c);
-			if (missing || !path.isEmpty()) {
-				label->setToolTip(path);
-			} else {
-				label->setToolTip(isRu
-					? QString::fromUtf8("Встроенный звук Telegram")
-					: QString("Built-in Telegram sound"));
-			}
-		}, label->lifetime());
-
-		return {
-			.widget = object_ptr<Ui::FlatLabel>::fromRaw(label),
-			.margin = st::boxRowPadding,
-		};
-	});
-
 	builder.addButton({
 		.id = u"whitegram/startupSoundChoose"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Выбрать файл…"),
-			QString("Choose file…")),
+			QString::fromUtf8("Звук"),
+			QString("Sound")),
 		.icon = { &st::menuIconFile },
+		.label = AyuSettings::getInstance().startupSoundPathValue(
+		) | rpl::map([=](const QString &path) {
+			const auto name = formatCurrentSound(path);
+			const auto missing = !path.isEmpty() && !QFileInfo::exists(path);
+			if (!missing) {
+				return name;
+			}
+			const auto id = Lang::GetInstance().id();
+			const auto isRu = id.startsWith(u"ru"_q)
+				|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+			return name + (isRu
+				? QString::fromUtf8(" (не найден)")
+				: QString(" (not found)"));
+		}),
 		.onClick = [=] {
 			const auto filters = u"Audio files (*.wav *.mp3 *.ogg *.m4a);;"_q
 				+ FileDialog::AllFilesFilter();
@@ -2263,27 +2223,16 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 	.title = QString::fromUtf8("Папки чатов"),
 	.icon = &st::menuIconArchive,
 }, [](SectionBuilder &builder) {
-	builder.addSkip();
-
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Отдельные папки для чатов. Чаты из них можно убрать "
-						"из общего списка, а саму папку закрыть PIN-кодом "
-						"или паролем."),
-					QString(
-						"Separate folders for chats. You can remove their "
-						"chats from the main list and lock the folder with "
-						"a PIN or password.")),
-				st::boxDividerLabel),
-		};
-	});
-
-	builder.addSkip();
-	builder.addDivider();
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Отдельные папки для чатов. Чаты из них можно убрать "
+				"из общего списка, а саму папку закрыть PIN-кодом "
+				"или паролем."),
+			QString(
+				"Separate folders for chats. You can remove their "
+				"chats from the main list and lock the folder with "
+				"a PIN or password.")));
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
@@ -2566,21 +2515,15 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 	const auto controller = builder.controller();
 
 	builder.addSkip();
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Свой фон для вашего профиля: шапка, весь профиль "
-						"или блок «Информация». Поддерживаются фото и видео."),
-					QString(
-						"Custom background for your profile: header, full "
-						"profile or the info block. Photos and videos "
-						"are supported.")),
-				st::boxDividerLabel),
-		};
-	});
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Свой фон для вашего профиля: шапка, весь профиль "
+				"или блок «Информация». Поддерживаются фото и видео."),
+			QString(
+				"Custom background for your profile: header, full "
+				"profile or the info block. Photos and videos "
+				"are supported.")));
 	builder.addSkip();
 
 	auto addZone = [&](
@@ -4354,7 +4297,7 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 							QString::fromUtf8("Интервалов пока нет."),
 							QString("No intervals yet.")),
 						st::boxDividerLabel);
-					holder->widgets.push_back(base::make_unique_q<QWidget>(intervalsList->add(std::move(emptyLabel))));
+					holder->widgets.push_back(base::make_unique_q<QWidget>(intervalsList->add(std::move(emptyLabel), st::boxRowPadding)));
 				} else {
 					for (int i = 0; i < int(entries.size()); ++i) {
 						const auto &entry = entries[i];

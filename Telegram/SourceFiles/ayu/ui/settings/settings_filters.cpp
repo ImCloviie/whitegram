@@ -46,28 +46,19 @@ namespace {
 void BuildFiltersSettings(SectionBuilder &builder) {
 	auto *settings = &AyuSettings::getInstance();
 
-	builder.addSkip();
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Фильтры прячут лишние сообщения: по словам и "
-						"выражениям, от заблокированных пользователей "
-						"или от выбранных людей и каналов. Скрыто будет "
-						"только у вас, остальные видят сообщения как "
-						"обычно."),
-					QString(
-						"Filters hide messages you don't want to see: by "
-						"words and expressions, from blocked users, or "
-						"from chosen people and channels. They are hidden "
-						"only for you, everyone else sees them as usual.")),
-				st::boxDividerLabel),
-		};
-	});
-	builder.addSkip();
-	builder.addDivider();
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Фильтры прячут лишние сообщения: по словам и "
+				"выражениям, от заблокированных пользователей "
+				"или от выбранных людей и каналов. Скрыто будет "
+				"только у вас, остальные видят сообщения как "
+				"обычно."),
+			QString(
+				"Filters hide messages you don't want to see: by "
+				"words and expressions, from blocked users, or "
+				"from chosen people and channels. They are hidden "
+				"only for you, everyone else sees them as usual.")));
 	builder.addSkip();
 	builder.addSubsectionTitle(tr::ayu_RegexFilters());
 

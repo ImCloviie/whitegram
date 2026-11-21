@@ -8,6 +8,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "ayu/features/whitegram_e2ee/whitegram_one_time_view.h"
+#include "ayu/features/whitegram_e2ee/whitegram_view_status.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
+#include "history/history.h"
 #include "history/history_item.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/history_view_element.h"
@@ -23,6 +27,7 @@ namespace Whitegram::E2EE {
 namespace {
 
 constexpr auto kPulsePeriod = crl::time(2400);
+constexpr auto kCountdownTick = crl::time(250);
 
 [[nodiscard]] QString TtlText(int ttl) {
 	if (ttl == 0) {
@@ -89,7 +94,16 @@ std::unique_ptr<HistoryView::Media> OneTimeMedia::createView(
 
 OneTimeView::OneTimeView(not_null<HistoryView::Element*> parent)
 : HistoryView::Media(parent)
-, _open(MakeViewOnceClickHandler(parent->data())) {
+, _open(MakeViewOnceClickHandler(parent->data()))
+, _tick([=] { _parent->repaint(); }) {
+	if (parent->data()->out()) {
+		ViewStatusUpdates(
+		) | rpl::filter([=](const QString &hash) {
+			return (hash == _hash);
+		}) | rpl::on_next([=] {
+			_parent->repaint();
+		}, _lifetime);
+	}
 }
 
 OneTimeView::~OneTimeView() = default;
@@ -98,14 +112,60 @@ QSize OneTimeView::countOptimalSize() {
 	return QSize(style::ConvertScale(264), style::ConvertScale(172));
 }
 
-QString OneTimeView::badgeText() const {
-	const auto item = _parent->data();
-	if (item->out()) {
-		if (const auto content = GetLocalSentMessageById(item->fullId())) {
-			return TtlText(content->ttl);
-		}
+void OneTimeView::resolve() const {
+	if (_resolved) {
+		return;
 	}
-	return u"E2EE"_q;
+	_resolved = true;
+	const auto item = _parent->data();
+	const auto payload = GetEncryptedPayload(item);
+	_hash = PacketHash(payload);
+	if (const auto content = GetLocalSentMessageById(item->fullId())) {
+		_ttl = content->ttl;
+	} else if (auto content = Decrypt(
+			payload,
+			GetOrGenerateIdentityKeyPair().privateKey)) {
+		_ttl = content->ttl;
+		SecureCleanseString(content->text);
+	}
+}
+
+OneTimeView::Status OneTimeView::status() const {
+	const auto item = _parent->data();
+	if (!item->out()) {
+		return { .badge = u"E2EE"_q, .subtitle = u"Нажмите, чтобы открыть"_q };
+	}
+	resolve();
+	const auto session = &item->history()->session();
+	const auto view = ViewStatus(_hash);
+	if (!view) {
+		WatchViewStatus(session, _hash);
+		return { .badge = TtlText(_ttl), .subtitle = u"Ещё не открыто"_q };
+	} else if (view->ttl <= 0) {
+		return {
+			.badge = TtlText(view->ttl),
+			.subtitle = (view->ttl == 0)
+				? u"Открыто · исчезнет после закрытия"_q
+				: u"Открыто"_q,
+		};
+	}
+	const auto left = std::max(view->expiresAt() - ServerNowMs(), int64(0));
+	if (!left && !_revoking) {
+		_revoking = true;
+		const auto id = item->fullId();
+		crl::on_main(session, [=] {
+			if (const auto item = session->data().message(id)) {
+				RevokeOnce(item);
+			}
+		});
+	}
+	_tick.callOnce(kCountdownTick);
+	const auto seconds = (left + 999) / 1000;
+	return {
+		.badge = u"осталось "_q + TtlText(int(seconds)),
+		.subtitle = u"Открыто · исчезнет через "_q + TtlText(int(seconds)),
+		.progress = double(left) / (view->ttl * 1000.),
+	};
 }
 
 bool OneTimeView::hasHeavyPart() const {
@@ -178,6 +238,15 @@ void OneTimeView::draw(
 	p.setPen(QPen(QColor(255, 255, 255, 70), style::ConvertScale(1)));
 	p.setBrush(Qt::NoBrush);
 	p.drawEllipse(circle);
+	const auto current = status();
+	if (current.progress >= 0.) {
+		auto pen = QPen(QColor(255, 255, 255, 230), style::ConvertScale(3));
+		pen.setCapStyle(Qt::RoundCap);
+		p.setPen(pen);
+		const auto arc = circle.marginsAdded(QMargins(1, 1, 1, 1) * style::ConvertScale(4));
+		p.drawArc(arc, 90 * 16, int(360 * 16 * current.progress));
+		p.setPen(Qt::NoPen);
+	}
 	const auto &icon = st::menuIconLock;
 	icon.paint(
 		p,
@@ -203,11 +272,9 @@ void OneTimeView::draw(
 			width(),
 			st::normalFont->height),
 		Qt::AlignHCenter | Qt::AlignTop,
-		_parent->data()->out()
-			? u"Откроется только у получателя"_q
-			: u"Нажмите, чтобы открыть"_q);
+		current.subtitle);
 
-	const auto badge = badgeText();
+	const auto badge = current.badge;
 	const auto padding = st::msgDateImgPadding;
 	const auto badgeWidth = st::normalFont->width(badge) + 2 * padding.x();
 	const auto badgeHeight = st::normalFont->height + 2 * padding.y();

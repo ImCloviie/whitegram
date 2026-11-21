@@ -1126,16 +1126,6 @@ void DropLegacyPayloadsCache() {
 	}
 }
 
-[[nodiscard]] QString PacketHash(const QString &payload) {
-	const auto packet = ExtractPayloadBytes(payload);
-	if (!packet || packet->isEmpty()) {
-		return QString();
-	}
-	return QString::fromLatin1(QCryptographicHash::hash(
-		*packet,
-		QCryptographicHash::Sha256).left(16).toHex());
-}
-
 void EnsureViewedLoaded() {
 	if (gViewedLoaded) {
 		return;
@@ -1271,6 +1261,16 @@ std::optional<MessageContent> GetLocalSentMessage(const QString &text) {
 		}
 	}
 	return std::nullopt;
+}
+
+QString PacketHash(const QString &payload) {
+	const auto packet = ExtractPayloadBytes(payload);
+	if (!packet || packet->isEmpty()) {
+		return QString();
+	}
+	return QString::fromLatin1(QCryptographicHash::hash(
+		*packet,
+		QCryptographicHash::Sha256).left(16).toHex());
 }
 
 QString NoRecipientKeyText() {

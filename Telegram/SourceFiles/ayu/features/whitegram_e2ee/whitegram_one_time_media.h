@@ -6,6 +6,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/timer.h"
 #include "data/data_media_types.h"
 #include "history/view/media/history_view_media.h"
 
@@ -68,10 +69,23 @@ public:
 private:
 	QSize countOptimalSize() override;
 
-	[[nodiscard]] QString badgeText() const;
+	struct Status {
+		QString badge;
+		QString subtitle;
+		double progress = -1.;
+	};
+
+	[[nodiscard]] Status status() const;
+	void resolve() const;
 
 	ClickHandlerPtr _open;
 	mutable std::unique_ptr<Ui::SpoilerAnimation> _spoiler;
+	mutable QString _hash;
+	mutable int _ttl = 0;
+	mutable bool _resolved = false;
+	mutable bool _revoking = false;
+	mutable base::Timer _tick;
+	rpl::lifetime _lifetime;
 
 };
 

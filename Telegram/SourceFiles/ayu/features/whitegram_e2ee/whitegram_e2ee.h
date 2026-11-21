@@ -83,6 +83,7 @@ void SaveLocalSentMessage(const QString &text, const MessageContent &content);
 void SaveLocalSentMessageById(FullMsgId msgId, const MessageContent &content);
 [[nodiscard]] std::optional<MessageContent> GetLocalSentMessageById(FullMsgId msgId);
 
+[[nodiscard]] QString PacketHash(const QString &payload);
 [[nodiscard]] QString NoRecipientKeyText();
 [[nodiscard]] QString TooLongText();
 

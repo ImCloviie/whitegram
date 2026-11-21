@@ -48,6 +48,7 @@
 #include "ayu/ui/components/typing_animation_picker.h"
 #include "ui/toast/toast.h"
 #include "ui/painter.h"
+#include "lottie/lottie_icon.h"
 #include "ui/boxes/single_choice_box.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
@@ -1210,6 +1211,37 @@ void BuildWhitegramUpdatesPage(SectionBuilder &builder) {
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
 }
 
+// One line of a "what will be removed" list: a muted icon and text.
+void AddSelfDestructInfoLine(
+		not_null<Ui::VerticalLayout*> container,
+		const style::icon &icon,
+		rpl::producer<QString> text) {
+	const auto &bst = st::settingsButton;
+	const auto row = container->add(object_ptr<Ui::RpWidget>(container));
+	const auto label = Ui::CreateChild<Ui::FlatLabel>(
+		row,
+		std::move(text),
+		st::whitegramSelfDestructInfoLabel);
+	const auto vskip = st::whitegramSelfDestructInfoSkip;
+	row->widthValue(
+	) | rpl::on_next([=](int width) {
+		const auto left = bst.padding.left();
+		label->resizeToWidth(std::max(width - left - bst.padding.right(), 1));
+		label->moveToLeft(left, vskip);
+		row->resize(
+			width,
+			std::max(label->height(), icon.height()) + 2 * vskip);
+	}, row->lifetime());
+	row->paintOn([=, &icon](QPainter &p) {
+		icon.paint(
+			p,
+			bst.iconLeft,
+			(row->height() - icon.height()) / 2,
+			row->width(),
+			st::windowSubTextFg->c);
+	});
+}
+
 void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 	const auto controller = builder.controller();
 	const auto passwordLabel = [](rpl::producer<bool> has) {
@@ -1227,34 +1259,108 @@ void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 				: (isRu ? QString::fromUtf8("Не задан") : QString("Not set"));
 		});
 	};
+	using InfoLines = std::vector<
+		std::pair<const style::icon*, std::pair<QString, QString>>>;
+	const auto lines = [](InfoLines list) {
+		return [=](const BuildContext &ctx) {
+			v::match(ctx, [&](const WidgetContext &wctx) {
+				for (const auto &[icon, text] : list) {
+					AddSelfDestructInfoLine(
+						wctx.container,
+						*icon,
+						trWhitegram(text.first, text.second));
+				}
+			}, [](const SearchContext &) {
+			});
+		};
+	};
 
+	// Header: a red circle with the auto-delete timer animation.
 	builder.add([](const BuildContext &ctx) {
 		v::match(ctx, [&](const WidgetContext &wctx) {
-			AddDividerTextWithLottie(wctx.container, {
-				.lottie = u"stop"_q,
-				.lottieSize = st::settingsCloudPasswordIconSize,
-				.showFinished = rpl::single(rpl::empty),
-				.about = trWhitegram(
-					QString::fromUtf8(
-						"Быстро удалить Whitegram с этого компьютера, если "
-						"кто-то может получить к нему доступ. Пароль "
-						"задаётся заранее и спрашивается перед удалением."),
-					QString(
-						"Quickly remove Whitegram from this computer if "
-						"someone may get access to it. The password is "
-						"set in advance and asked before removal."))
-					| rpl::map(Ui::Text::WithEntities),
-				.parts = RectPart::Bottom,
+			const auto container = wctx.container;
+			auto icon = CreateLottieIcon(
+				container,
+				{
+					.name = u"ttl"_q,
+					.sizeOverride = st::dialogsSuggestionDeniedAuthLottie,
+				},
+				st::dialogsSuggestionDeniedAuthLottieMargins,
+				[] { return st::windowFgActive->c; });
+			const auto animate = std::move(icon.animate);
+			const auto iconRow = container->add(
+				std::move(icon.widget),
+				st::settingsBlockedListIconPadding,
+				style::al_top);
+			const auto circle = Ui::CreateChild<Ui::RpWidget>(
+				container.get());
+			circle->lower();
+			circle->setAttribute(Qt::WA_TransparentForMouseEvents);
+			circle->paintOn([=](QPainter &p) {
+				auto hq = PainterHighQualityEnabler(p);
+				const auto size = st::dialogsSuggestionDeniedAuthLottieCircle;
+				p.setPen(Qt::NoPen);
+				p.setBrush(st::attentionButtonFg);
+				p.drawEllipse(QRect(
+					QPoint(
+						(circle->width() - size.width()) / 2,
+						(circle->height() - size.height()) / 2),
+					size));
 			});
+			iconRow->geometryValue(
+			) | rpl::on_next([=](const QRect &g) {
+				circle->setGeometry(g);
+			}, circle->lifetime());
+			animate(anim::repeat::once);
+
+			Ui::AddSkip(container);
+			container->add(
+				object_ptr<Ui::FlatLabel>(
+					container,
+					trWhitegram(
+						QString::fromUtf8("Самоуничтожение"),
+						QString("Self-destruct")),
+					st::boxTitle),
+				style::margins(),
+				style::al_top);
+			Ui::AddSkip(container, st::settingsCheckboxesSkip);
+			container->add(
+				object_ptr<Ui::FlatLabel>(
+					container,
+					trWhitegram(
+						QString::fromUtf8(
+							"Удаляет Whitegram за пару секунд, если к "
+							"компьютеру может получить доступ кто-то "
+							"другой. Пароль задаётся заранее."),
+						QString(
+							"Removes Whitegram in seconds if someone else "
+							"may get access to this computer. The password "
+							"is set in advance.")),
+					st::centeredBoxLabel),
+				st::boxRowPadding,
+				style::al_top);
+			Ui::AddSkip(container);
 		}, [](const SearchContext &) {
 		});
 	});
 
+	builder.addDivider();
 	builder.addSkip();
 	builder.addSubsectionTitle(trWhitegram(
 		QString::fromUtf8("Удалить Whitegram"),
 		QString("Remove Whitegram")));
-
+	builder.add(lines({
+		{ &st::menuIconChatBubble, {
+			QString::fromUtf8("Переписка и медиа на этом компьютере"),
+			QString("Chats and media on this computer") } },
+		{ &st::menuIconClear, {
+			QString::fromUtf8("Кэш, логи и временные файлы"),
+			QString("Cache, logs and temporary files") } },
+		{ &st::menuIconShortcut, {
+			QString::fromUtf8("Ярлыки и записи в Windows"),
+			QString("Shortcuts and Windows entries") } },
+	}));
+	builder.addSkip();
 	builder.addButton({
 		.id = u"whitegram/localSelfDestructPassword"_q,
 		.title = trWhitegram(
@@ -1277,23 +1383,31 @@ void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 			Whitegram::SelfDestruct::ShowExecuteBox(controller);
 		},
 	});
-
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Стирает папку Whitegram целиком: переписку на этом "
-			"компьютере, кэш, логи, ярлыки и временные файлы. Аккаунты "
-			"Telegram не затрагиваются."),
+			"Аккаунты Telegram не затрагиваются: на телефоне и других "
+			"устройствах всё останется."),
 		QString(
-			"Erases the whole Whitegram folder: chats stored on this "
-			"computer, cache, logs, shortcuts and temporary files. "
-			"Telegram accounts are not affected.")));
+			"Telegram accounts are not affected: everything stays on "
+			"your phone and other devices.")));
 
 	builder.addSkip();
 	builder.addSubsectionTitle(trWhitegram(
 		QString::fromUtf8("Удалить вместе с аккаунтами"),
 		QString("Remove with accounts")));
-
+	builder.add(lines({
+		{ &st::menuIconProfile, {
+			QString::fromUtf8("Все аккаунты, в которые выполнен вход"),
+			QString("Every account you are logged into") } },
+		{ &st::menuIconChatBubble, {
+			QString::fromUtf8("Их переписка и контакты"),
+			QString("Their chats and contacts") } },
+		{ &st::menuIconDelete, {
+			QString::fromUtf8("Whitegram с этого компьютера"),
+			QString("Whitegram on this computer") } },
+	}));
+	builder.addSkip();
 	builder.addButton({
 		.id = u"whitegram/totalDestructPassword"_q,
 		.title = trWhitegram(
@@ -1317,24 +1431,18 @@ void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 			Whitegram::SelfDestruct::ShowTotalDestructExecuteBox(controller);
 		},
 	});
-
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Сначала удаляет все аккаунты Telegram, в которые выполнен "
-			"вход, затем стирает Whitegram. Переписка и контакты "
-			"пропадут навсегда, созданные вами каналы и группы "
-			"останутся без владельца.\n\n"
-			"Нужен отдельный пароль и облачные пароли аккаунтов. "
-			"Забыли пароль — удалите папку Whitegram вручную."),
+			"Отменить нельзя. Созданные вами каналы и группы останутся "
+			"без владельца.\n\n"
+			"Нужен отдельный пароль и облачные пароли аккаунтов. Забыли "
+			"пароль — удалите папку Whitegram вручную."),
 		QString(
-			"First deletes every Telegram account you are logged into, "
-			"then erases Whitegram. Chats and contacts are gone for "
-			"good, channels and groups you created are left without "
-			"an owner.\n\n"
-			"Needs a separate password and the accounts' cloud "
-			"passwords. Forgot the password? Delete the Whitegram "
-			"folder manually.")));
+			"This can't be undone. Channels and groups you created are "
+			"left without an owner.\n\n"
+			"Needs a separate password and the accounts' cloud passwords. "
+			"Forgot the password? Delete the Whitegram folder manually.")));
 	builder.addSkip();
 }
 

@@ -176,3 +176,9 @@ whitegramPercentInput: InputField(defaultInputField) {
 	textBg: windowBgOver;
 	textBgActive: windowBgOver;
 }
+
+whitegramSelfDestructInfoLabel: FlatLabel(defaultFlatLabel) {
+	textFg: windowSubTextFg;
+	minWidth: 100px;
+}
+whitegramSelfDestructInfoSkip: 7px;

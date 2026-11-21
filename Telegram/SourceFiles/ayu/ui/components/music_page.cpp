@@ -296,13 +296,25 @@ MusicPage::MusicPage(
 
 MusicPage::~MusicPage() = default;
 
+std::vector<QPointer<MusicPage>> &MusicPage::Opened() {
+	static auto result = std::vector<QPointer<MusicPage>>();
+	return result;
+}
+
 void MusicPage::Show(not_null<Window::SessionController*> controller) {
 	const auto host = controller->content();
-	auto page = host->findChild<MusicPage*>(
-		QString(),
-		Qt::FindDirectChildrenOnly);
-	if (!page) {
-		page = Ui::CreateChild<MusicPage>(host.get(), controller);
+	auto &opened = Opened();
+	opened.erase(ranges::remove_if(opened, [](const QPointer<MusicPage> &page) {
+		return !page;
+	}), end(opened));
+	const auto i = ranges::find_if(opened, [&](const QPointer<MusicPage> &page) {
+		return (page->parentWidget() == host.get());
+	});
+	const auto page = (i != end(opened))
+		? i->data()
+		: Ui::CreateChild<MusicPage>(host.get(), controller);
+	if (i == end(opened)) {
+		opened.push_back(page);
 	}
 	page->appear();
 }
@@ -328,6 +340,10 @@ void MusicPage::disappear() {
 		return;
 	}
 	_shown = false;
+	auto &opened = Opened();
+	opened.erase(ranges::remove_if(opened, [&](const QPointer<MusicPage> &page) {
+		return !page || (page.data() == this);
+	}), end(opened));
 	_searchField->hide();
 	_menu = nullptr;
 	_showAnimation.start([=] {
@@ -340,10 +356,10 @@ void MusicPage::disappear() {
 }
 
 void MusicPage::raiseIsland() {
-	for (const auto island : parentWidget()->findChildren<MusicIsland*>(
-			QString(),
-			Qt::FindDirectChildrenOnly)) {
-		island->raise();
+	for (const auto child : parentWidget()->children()) {
+		if (const auto island = dynamic_cast<MusicIsland*>(child)) {
+			island->raise();
+		}
 	}
 }
 

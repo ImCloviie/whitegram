@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 
+#include <QtCore/QPointer>
+
 class QLineEdit;
 
 namespace Data {
@@ -36,6 +38,7 @@ public:
 	~MusicPage();
 
 	static void Show(not_null<Window::SessionController*> controller);
+
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -87,6 +90,8 @@ private:
 		Action action = Action::None;
 		int index = -1;
 	};
+
+	[[nodiscard]] static std::vector<QPointer<MusicPage>> &Opened();
 
 	void appear();
 	void disappear();

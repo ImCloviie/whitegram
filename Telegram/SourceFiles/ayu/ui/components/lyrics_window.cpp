@@ -355,6 +355,29 @@ struct CoverTone {
 			DrawImageToFill(q, full, blurred);
 			q.setOpacity(1.);
 		}
+		if (toned) {
+			// Soft light pools in the cover's colours sit behind the cards, so the glass has something to bend.
+			const auto blob = [&](QPointF center, double radius, QColor color) {
+				auto gradient = QRadialGradient(center, radius);
+				gradient.setColorAt(0., color);
+				color.setAlpha(0);
+				gradient.setColorAt(1., color);
+				q.fillRect(full, gradient);
+			};
+			const auto main = tone.mono
+				? QColor(200, 200, 212, 70)
+				: Shade(tone.main, tone.main.hsvSaturationF(), 0.8, 150);
+			const auto second = tone.mono
+				? QColor(150, 150, 165, 60)
+				: Shade(tone.second, tone.second.hsvSaturationF(), 0.75, 130);
+			const auto light = tone.mono
+				? QColor(255, 255, 255, 45)
+				: Shade(tone.main, tone.main.hsvSaturationF() * 0.5, 1., 90);
+			blob(QPointF(width * 0.2, height * 0.68), side * 0.26, main);
+			blob(QPointF(width * 0.06, height * 0.18), side * 0.2, second);
+			blob(QPointF(width * 0.4, height * 0.95), side * 0.16, light);
+			blob(QPointF(width * 0.78, height * 0.3), side * 0.24, Shade(second, second.hsvSaturationF(), 0.5, 70));
+		}
 		auto corner = QRadialGradient(QPointF(width * 0.92, height * 1.05), side * 0.55);
 		corner.setColorAt(0., cornerColor);
 		corner.setColorAt(1., QColor(0, 0, 0, 0));
@@ -366,8 +389,8 @@ struct CoverTone {
 	}
 	{
 		auto small = background.scaled(
-			std::max(1, background.width() / 8),
-			std::max(1, background.height() / 8),
+			std::max(1, background.width() / 5),
+			std::max(1, background.height() / 5),
 			Qt::IgnoreAspectRatio,
 			Qt::SmoothTransformation);
 		small.setDevicePixelRatio(1.);
@@ -383,7 +406,7 @@ struct CoverTone {
 				line[x] = qRgb(vivid(qRed(pixel)), vivid(qGreen(pixel)), vivid(qBlue(pixel)));
 			}
 		}
-		result.frost = Images::BlurLargeImage(std::move(small), 4);
+		result.frost = Images::BlurLargeImage(std::move(small), 3);
 	}
 	result.background = std::move(background);
 
@@ -891,10 +914,7 @@ void LyricsWindow::setCover(QPixmap art, QPixmap blurred, QColor accent) {
 	_art = std::move(art);
 	_blurred = std::move(blurred);
 	_accent = accent;
-	const auto tone = ExtractTone((_art.isNull() ? _blurred : _art).toImage());
-	_tone = tone.main;
-	_toneSecond = tone.second;
-	_toneMono = tone.mono;
+	updateTone();
 	_cardArt = QPixmap();
 	requestBackdrop(false);
 	update();
@@ -1378,6 +1398,7 @@ void LyricsWindow::setLyricsOffset(std::int64_t offset, bool announce) {
 
 std::uint64_t LyricsWindow::backdropKey() const {
 	auto result = std::uint64_t(_blurred.isNull() ? 0 : _blurred.cacheKey());
+	result = result * 31 + std::uint64_t(_customBlurred.isNull() ? 0 : _customBlurred.cacheKey());
 	result = result * 31 + std::uint64_t(width());
 	result = result * 31 + std::uint64_t(height());
 	result = result * 31 + std::uint64_t(style::DevicePixelRatio());
@@ -1402,7 +1423,11 @@ void LyricsWindow::requestBackdrop(bool sync) {
 	const auto blue = _bluePalette;
 	const auto tone = CoverTone{ .main = _tone, .second = _toneSecond, .mono = _toneMono };
 	const auto bleeding = (_theme == Theme::Health);
-	auto blurred = _blurred.isNull() ? QImage() : _blurred.toImage();
+	auto blurred = !_customBlurred.isNull()
+		? _customBlurred
+		: _blurred.isNull()
+		? QImage()
+		: _blurred.toImage();
 	if (sync) {
 		_backdropPending = 0;
 		auto result = BuildBackdrop(size, ratio, purple, blue, blurred, tone, bleeding);
@@ -1856,7 +1881,8 @@ void LyricsWindow::paintEvent(QPaintEvent *e) {
 		}
 		// WHY: a heavy frame must leave the main thread room for the rest of the app,
 		// otherwise every Telegram animation and scroll stutters while karaoke is open.
-		_nextFrameAt = crl::now() + std::max(crl::time(spent), crl::time(22 - spent));
+		// Measured from the frame start: animation ticks come every 8 ms, so a 14 ms floor lands on the 16 ms tick.
+		_nextFrameAt = started + std::max(crl::time(14), crl::time(std::lround(spent)) + 5);
 		if (started - _statsAt >= 3000) {
 			if (_statsAt) {
 				const auto frames = std::max(1, _paintFrames);
@@ -3945,11 +3971,29 @@ void LyricsWindow::loadCustomCover(const QString &path) {
 			if (image.width() > 2000 || image.height() > 1200) {
 				image = image.scaled(2000, 1200, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 			}
+			_customBlurred = Images::BlurLargeImage(
+				image.scaled(64, 64, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
+					.convertToFormat(QImage::Format_RGB32),
+				6);
 			_customCover = Ui::PixmapFromImage(std::move(image));
 		}
 	}
+	if (_customCover.isNull()) {
+		_customBlurred = QImage();
+	}
 	_cardArt = QPixmap();
+	updateTone();
+	requestBackdrop(false);
 	update();
+}
+
+void LyricsWindow::updateTone() {
+	// The scene follows the cover that is on screen: a custom karaoke cover wins over the track's.
+	const auto &shown = !_customCover.isNull() ? _customCover : !_art.isNull() ? _art : _blurred;
+	const auto tone = ExtractTone(shown.toImage());
+	_tone = tone.main;
+	_toneSecond = tone.second;
+	_toneMono = tone.mono;
 }
 
 void LyricsWindow::paintEqualizer(QPainter &p, const QRectF &rect, std::int64_t position) const {

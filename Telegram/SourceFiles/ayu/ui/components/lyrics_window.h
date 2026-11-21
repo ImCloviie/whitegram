@@ -291,6 +291,7 @@ private:
 	void paintModeIcon(QPainter &p, Control control, const QRectF &rect, QColor color, bool one) const;
 	void paintEqualizer(QPainter &p, const QRectF &rect, std::int64_t position) const;
 	void loadCustomCover(const QString &path);
+	void updateTone();
 	void requestWeather(bool force);
 	void requestTranslation();
 	void prepareTransition();
@@ -380,6 +381,7 @@ private:
 	double _contentHeight = 0.;
 	QPixmap _frost;
 	QImage _frostImage;
+	QImage _customBlurred;
 	QPixmap _customCover;
 	std::vector<float> _eqLevels;
 	QPixmap _backgroundCache;

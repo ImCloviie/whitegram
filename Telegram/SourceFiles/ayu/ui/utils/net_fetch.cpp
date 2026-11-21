@@ -18,6 +18,8 @@
 namespace Ayu::Ui::Net {
 namespace {
 
+constexpr auto kMaxReplyBytes = qint64(8 * 1024 * 1024);
+
 QMutex &RoutesMutex() {
 	static auto result = QMutex();
 	return result;
@@ -90,6 +92,12 @@ Attempt Run(const Request &request, const QNetworkProxy &proxy) {
 	timer.setSingleShot(true);
 	QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
 	QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+	// Lyrics, weather and translation answers are small; a huge body is dropped instead of buffered.
+	QObject::connect(reply, &QNetworkReply::downloadProgress, reply, [=](qint64 received, qint64) {
+		if (received > kMaxReplyBytes) {
+			reply->abort();
+		}
+	});
 	timer.start(request.timeoutMs);
 	loop.exec();
 	const auto timedOut = !timer.isActive();

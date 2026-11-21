@@ -39,6 +39,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "storage/storage_account.h"
 
+// AyuGram includes
+#include "ayu/features/music/music_service.h"
+
+
 namespace Media {
 namespace Player {
 namespace {
@@ -613,7 +617,10 @@ bool Instance::moveInPlaylist(
 		not_null<Data*> data,
 		int delta,
 		bool autonext) {
-	if (moveInItem(data, delta, autonext)) {
+	auto &queue = Whitegram::Music::Queue::Instance();
+	if (data->type == AudioMsgId::Type::Song && queue.active()) {
+		return queue.skip(delta, autonext);
+	} else if (moveInItem(data, delta, autonext)) {
 		return true;
 	} else if (!data->playlistIndex) {
 		return false;
@@ -807,7 +814,10 @@ bool Instance::previousAvailable(AudioMsgId::Type type) const {
 	const auto data = getData(type);
 	Assert(data != nullptr);
 
-	if (trackInItem(data, -1)) {
+	const auto &queue = Whitegram::Music::Queue::Instance();
+	if (type == AudioMsgId::Type::Song && queue.active()) {
+		return queue.canSkip(-1);
+	} else if (trackInItem(data, -1)) {
 		return true;
 	} else if (!data->playlistIndex || !data->playlistSlice) {
 		return false;
@@ -826,7 +836,10 @@ bool Instance::nextAvailable(AudioMsgId::Type type) const {
 	const auto data = getData(type);
 	Assert(data != nullptr);
 
-	if (trackInItem(data, 1)) {
+	const auto &queue = Whitegram::Music::Queue::Instance();
+	if (type == AudioMsgId::Type::Song && queue.active()) {
+		return queue.canSkip(1);
+	} else if (trackInItem(data, 1)) {
 		return true;
 	} else if (!data->playlistIndex || !data->playlistSlice) {
 		return false;

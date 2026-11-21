@@ -27,6 +27,7 @@
 #include "data/data_document.h"
 #include "data/data_saved_music.h"
 #include "data/data_document_media.h"
+#include "ayu/features/music/music_service.h"
 #include "data/data_file_origin.h"
 #include "data/data_session.h"
 #include "history/history_item.h"
@@ -1100,6 +1101,17 @@ void MusicIsland::loadCover() {
 	}
 	_mediaView = document->createMediaView();
 
+	if (const auto external = Whitegram::Music::ExternalTrack(document)) {
+		const auto url = external->artworkUrl;
+		Whitegram::Music::CoverLoaded(
+		) | rpl::filter(rpl::mappers::_1 == url) | rpl::take(
+			1
+		) | rpl::on_next([=](const QString &) {
+			buildCover(Whitegram::Music::Cover(url));
+		}, _coverLifetime);
+		buildCover(Whitegram::Music::Cover(url));
+		return;
+	}
 	const auto ready = [=] {
 		return _mediaView && _mediaView->thumbnail();
 	};
@@ -1310,7 +1322,9 @@ void MusicIsland::showTrackMessage() {
 
 bool MusicIsland::canSaveToProfile() const {
 	const auto document = _songId.audio();
-	if (!document || !document->isMusicForProfile()) {
+	if (!document
+		|| !document->isMusicForProfile()
+		|| Whitegram::Music::IsExternal(document)) {
 		return false;
 	}
 	return !_controller->session().data().savedMusic().has(document);
@@ -1318,7 +1332,9 @@ bool MusicIsland::canSaveToProfile() const {
 
 int MusicIsland::profileMusicState() const {
 	const auto document = _songId.audio();
-	if (!document || !document->isMusicForProfile()) {
+	if (!document
+		|| !document->isMusicForProfile()
+		|| Whitegram::Music::IsExternal(document)) {
 		return -1;
 	}
 	return _controller->session().data().savedMusic().has(document) ? 1 : 0;

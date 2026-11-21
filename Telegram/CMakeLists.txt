@@ -272,6 +272,8 @@ set(ayugram_files
         ayu/ui/components/message_preview.h
         ayu/ui/components/music_island.cpp
         ayu/ui/components/music_island.h
+        ayu/ui/components/music_page.cpp
+        ayu/ui/components/music_page.h
         ayu/ui/components/lyrics_pictograms.cpp
         ayu/ui/components/lyrics_pictograms.h
         ayu/ui/components/lyrics_window.cpp
@@ -340,6 +342,8 @@ set(ayugram_files
         ayu/features/self_destruct/self_destruct.h
         ayu/features/self_destruct/self_destruct_box.cpp
         ayu/features/self_destruct/self_destruct_box.h
+        ayu/features/music/music_service.cpp
+        ayu/features/music/music_service.h
         ayu/features/whitegram_backend/whitegram_backend.cpp
         ayu/features/whitegram_backend/whitegram_backend.h
         ayu/features/whitegram_e2ee/whitegram_e2ee.cpp

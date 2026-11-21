@@ -19,6 +19,8 @@
 
 namespace AyuUi {
 
+[[nodiscard]] std::pair<QColor, QColor> CoverTones(const QImage &cover);
+
 class LyricsWindow final : public Ui::RpWidget {
 public:
 	explicit LyricsWindow(not_null<QWidget*> parent);

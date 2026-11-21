@@ -100,6 +100,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/whitegram_crypto.h"
 #include "ayu/features/whitegram_crypto_charts.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "ayu/ui/components/music_page.h"
 #include "ui/layers/generic_box.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/vertical_layout.h"
@@ -943,6 +944,13 @@ void MainMenu::setupMenu() {
 			{ &st::menuIconSavedMessages }
 		)->setClickedCallback([=] {
 			controller->showPeerHistory(controller->session().user());
+		});
+		addAction(
+			Settings::trWhitegram(QString::fromUtf8("Музыка"), u"Music"_q),
+			{ &st::menuIconSoundOn }
+		)->setClickedCallback([=] {
+			controller->hideLayer(anim::type::instant);
+			AyuUi::MusicPage::Show(controller);
 		});
 		if (settings.showLReadToggleInDrawer()) {
 			addAction(

@@ -699,6 +699,11 @@ const CategoryInfo *FindCategory(int id) {
 
 } // namespace
 
+std::pair<QColor, QColor> CoverTones(const QImage &cover) {
+	const auto tone = ExtractTone(cover);
+	return { tone.main, tone.second };
+}
+
 LyricsWindow::LyricsWindow(not_null<QWidget*> parent)
 : RpWidget(parent)
 , _ecg(kEcgSamples, 0.f)

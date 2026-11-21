@@ -629,7 +629,7 @@ void EditCustomArchiveBox(
 	nameField->setFocus();
 	header->widthValue(
 	) | rpl::on_next([=](int width) {
-		const auto left = photo + rowSt.padding.left();
+		const auto left = photo + st::boxRowPadding.left();
 		nameField->resize(
 			std::max(width - left, st::defaultInputField.widthMin),
 			nameField->height());
@@ -720,20 +720,23 @@ void EditCustomArchiveBox(
 	Ui::PasswordInput *newPasswordField = nullptr;
 	if (isNew) {
 		Ui::AddSkip(container);
-		Ui::AddDividerText(
-			container,
-			rpl::single(QString::fromUtf8(
-				"PIN (4–12 цифр) и/или пароль. При открытии хватит любого.")));
+		Ui::AddDivider(container);
 		Ui::AddSkip(container);
 		Ui::AddSubsectionTitle(
 			container,
 			rpl::single(QString::fromUtf8("Защита")));
 		newPinField = AddPasswordRow(
 			box,
-			rpl::single(QString::fromUtf8("PIN-код"))).get();
+			rpl::single(QString::fromUtf8("PIN-код, 4–12 цифр"))).get();
 		newPasswordField = AddPasswordRow(
 			box,
 			rpl::single(QString::fromUtf8("Пароль"))).get();
+		Ui::AddSkip(container);
+		Ui::AddDividerText(
+			container,
+			rpl::single(QString::fromUtf8(
+				"Необязательно. Можно задать PIN, пароль или оба: "
+				"для открытия папки подойдёт любой из них.")));
 	}
 
 	*applyExisting = [=] {
@@ -1198,6 +1201,13 @@ void CustomArchiveUnlockBox(
 		if (!AyuFeatures::CustomArchives::CheckArchiveSecret(
 				archiveId,
 				entered)) {
+			const auto wait = AyuFeatures::CustomArchives::UnlockLockoutRemaining(
+				archiveId);
+			errorLabel->setText(wait > 0
+				? QString::fromUtf8(
+					"Слишком много попыток. Подождите %1 сек.").arg(
+						(wait + 999) / 1000)
+				: QString::fromUtf8("Неверный PIN или пароль."));
 			errorLabel->show();
 			secretField->showError();
 			secretField->selectAll();

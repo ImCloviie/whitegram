@@ -22,6 +22,8 @@ namespace AyuFeatures::CustomArchives {
 
 [[nodiscard]] bool IsArchiveUnlocked(int archiveId);
 void UnlockArchive(int archiveId);
+// Time left before another unlock attempt is allowed, 0 if none.
+[[nodiscard]] crl::time UnlockLockoutRemaining(int archiveId);
 void LockArchive(int archiveId);
 [[nodiscard]] bool CheckArchiveSecret(int archiveId, const QString &secret);
 [[nodiscard]] bool CheckArchivePin(int archiveId, const QString &pin);

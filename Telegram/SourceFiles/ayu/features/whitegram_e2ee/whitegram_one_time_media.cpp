@@ -28,6 +28,7 @@ namespace {
 
 constexpr auto kPulsePeriod = crl::time(2400);
 constexpr auto kCountdownTick = crl::time(250);
+constexpr auto kWatchRefresh = crl::time(10000);
 
 [[nodiscard]] QString TtlText(int ttl) {
 	if (ttl == 0) {
@@ -140,6 +141,7 @@ OneTimeView::Status OneTimeView::status() const {
 	const auto view = ViewStatus(_hash);
 	if (!view) {
 		WatchViewStatus(session, _hash);
+		_tick.callOnce(kWatchRefresh);
 		return { .badge = TtlText(_ttl), .subtitle = u"Ещё не открыто"_q };
 	} else if (view->ttl <= 0) {
 		return {

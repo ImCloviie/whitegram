@@ -548,7 +548,7 @@ HistoryWidget::HistoryWidget(
 							FullMsgId(_peer->id, nextLocalMessageId),
 							sentContent);
 
-						sendTextWithTags(TextWithTags{ encryptedText }, false, options, nullptr);
+						sendTextWithTags(TextWithTags{ encryptedText, { { 0, Whitegram::E2EE::PlaceholderTitleLength(), Ui::InputField::kTagBold } } }, false, options, nullptr);
 					}
 				};
 

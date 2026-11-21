@@ -4310,9 +4310,9 @@ void ComposeControls::setupSendMenu(
 							sentContent);
 
 						if (_sendWithText) {
-							_sendWithText(TextWithEntities{ encryptedText }, options, nullptr);
+							_sendWithText(TextWithEntities{ encryptedText, { EntityInText(EntityType::Bold, 0, Whitegram::E2EE::PlaceholderTitleLength()) } }, options, nullptr);
 						} else {
-							_field->setTextWithTags(TextWithTags{ encryptedText }, Ui::InputField::HistoryAction::Clear);
+							_field->setTextWithTags(TextWithTags{ encryptedText, { { 0, Whitegram::E2EE::PlaceholderTitleLength(), Ui::InputField::kTagBold } } }, Ui::InputField::HistoryAction::Clear);
 							send(options);
 						}
 					}

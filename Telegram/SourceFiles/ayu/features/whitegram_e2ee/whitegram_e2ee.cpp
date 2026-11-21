@@ -1273,6 +1273,12 @@ QString PacketHash(const QString &payload) {
 		QCryptographicHash::Sha256).left(16).toHex());
 }
 
+int PlaceholderTitleLength() {
+	const auto text = QString::fromUtf8(kPlaceholderText);
+	const auto end = text.indexOf(u'\n');
+	return (end > 0) ? end : 0;
+}
+
 QString NoRecipientKeyText() {
 	return QString::fromUtf8(
 		"Не удалось получить ключ шифрования собеседника. "

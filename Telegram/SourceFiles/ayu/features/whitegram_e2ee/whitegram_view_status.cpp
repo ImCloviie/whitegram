@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QDateTime>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QPointer>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
@@ -24,9 +25,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Whitegram::E2EE {
 namespace {
 
-constexpr auto kPollInterval = crl::time(4000);
-constexpr auto kWatchFor = crl::time(15000);
+constexpr auto kRetryDelay = crl::time(2000);
+constexpr auto kWatchFor = crl::time(30000);
 constexpr auto kTimeout = 15000;
+constexpr auto kWaitTimeout = 35000;
 constexpr auto kMaxHashes = 50;
 
 struct State {
@@ -36,8 +38,11 @@ struct State {
 	base::flat_set<FullMsgId> revoked;
 	base::flat_set<not_null<Main::Session*>> tracked;
 	Main::Session *session = nullptr;
-	std::unique_ptr<base::Timer> timer;
+	std::unique_ptr<base::Timer> retry;
+	QPointer<QNetworkReply> reply;
+	QStringList inFlight;
 	bool polling = false;
+	bool restart = false;
 	int64 offset = 0;
 	rpl::event_stream<QString> updates;
 };
@@ -95,18 +100,31 @@ void Poll() {
 		}
 	}
 	if (hashes.isEmpty()) {
-		state.timer->cancel();
 		return;
 	}
 	state.polling = true;
-	const auto reply = state.network.get(Request(
+	state.restart = false;
+	state.inFlight = hashes;
+	auto request = Request(
 		state.session,
-		u"/api/v1/e2ee/keys/views?h="_q + hashes.join(u',')));
+		u"/api/v1/e2ee/keys/views?wait=1&h="_q + hashes.join(u','));
+	request.setTransferTimeout(kWaitTimeout);
+	const auto reply = state.network.get(request);
+	state.reply = reply;
 	QObject::connect(reply, &QNetworkReply::finished, [=] {
 		reply->deleteLater();
 		auto &state = Get();
 		state.polling = false;
+		state.inFlight.clear();
 		if (reply->error() != QNetworkReply::NoError) {
+			if (state.restart) {
+				crl::on_main([] { Poll(); });
+			} else {
+				if (!state.retry) {
+					state.retry = std::make_unique<base::Timer>([] { Poll(); });
+				}
+				state.retry->callOnce(kRetryDelay);
+			}
 			return;
 		}
 		const auto json = QJsonDocument::fromJson(reply->readAll()).object();
@@ -123,6 +141,7 @@ void Poll() {
 			state.watched.remove(i.key());
 			state.updates.fire_copy(i.key());
 		}
+		crl::on_main([] { Poll(); });
 	});
 }
 
@@ -163,16 +182,12 @@ void WatchViewStatus(not_null<Main::Session*> session, const QString &hash) {
 		return;
 	}
 	Track(session);
-	const auto fresh = !state.watched.contains(hash);
 	state.watched[hash] = crl::now();
-	if (!state.timer) {
-		state.timer = std::make_unique<base::Timer>([] { Poll(); });
-	}
-	if (!state.timer->isActive()) {
-		state.timer->callEach(kPollInterval);
-	}
-	if (fresh) {
+	if (!state.polling) {
 		crl::on_main([] { Poll(); });
+	} else if (!state.inFlight.contains(hash) && state.reply) {
+		state.restart = true;
+		state.reply->abort();
 	}
 }
 

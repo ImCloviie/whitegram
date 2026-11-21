@@ -433,7 +433,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 			state->refreshCheckboxes = std::move(collapsible.refresh);
 			if (wctx.highlights && collapsible.widget) {
 				wctx.highlights->push_back(std::make_pair(
-					u"ayu/ghostModeToggle"_q,
+					u"white/ghostModeToggle"_q,
 					HighlightEntry{ collapsible.widget, {} }));
 			}
 
@@ -444,7 +444,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 			);
 			if (wctx.highlights) {
 				wctx.highlights->push_back(std::make_pair(
-					u"ayu/markReadAfterAction"_q,
+					u"white/markReadAfterAction"_q,
 					HighlightEntry{ markReadButton.get(), {} }));
 			}
 			markReadButton->toggleOn(
@@ -477,7 +477,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 			);
 			if (wctx.highlights) {
 				wctx.highlights->push_back(std::make_pair(
-					u"ayu/useScheduledMessages"_q,
+					u"white/useScheduledMessages"_q,
 					HighlightEntry{ scheduleButton.get(), {} }));
 			}
 			scheduleButton->toggleOn(
@@ -522,7 +522,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 				st::settingsButtonNoIcon);
 			if (wctx.highlights) {
 				wctx.highlights->push_back(std::make_pair(
-					u"ayu/sendWithoutSound"_q,
+					u"white/sendWithoutSound"_q,
 					HighlightEntry{ silentButton.get(), {} }));
 			}
 			silentButton->addClickHandler([=] {
@@ -552,7 +552,7 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 				st::settingsButtonNoIcon);
 			if (wctx.highlights) {
 				wctx.highlights->push_back(std::make_pair(
-					u"ayu/suggestGhostModeBeforeViewingStory"_q,
+					u"white/suggestGhostModeBeforeViewingStory"_q,
 					HighlightEntry{ suggestGhostModeButton.get(), {} }));
 			}
 			suggestGhostModeButton->toggleOn(
@@ -609,27 +609,27 @@ void BuildGhostEssentials(SectionBuilder &builder) {
 			arrow->setClickedCallback(showMenu);
 		}, [&](const SearchContext &sctx) {
 			sctx.entries->push_back({
-				.id = u"ayu/ghostModeToggle"_q,
+				.id = u"white/ghostModeToggle"_q,
 				.title = tr::ayu_GhostModeToggle(tr::now),
 				.section = sctx.sectionId,
 			});
 			sctx.entries->push_back({
-				.id = u"ayu/markReadAfterAction"_q,
+				.id = u"white/markReadAfterAction"_q,
 				.title = tr::ayu_MarkReadAfterAction(tr::now),
 				.section = sctx.sectionId,
 			});
 			sctx.entries->push_back({
-				.id = u"ayu/useScheduledMessages"_q,
+				.id = u"white/useScheduledMessages"_q,
 				.title = tr::ayu_UseScheduledMessages(tr::now),
 				.section = sctx.sectionId,
 			});
 			sctx.entries->push_back({
-				.id = u"ayu/sendWithoutSound"_q,
+				.id = u"white/sendWithoutSound"_q,
 				.title = tr::ayu_SendWithoutSoundByDefault(tr::now),
 				.section = sctx.sectionId,
 			});
 			sctx.entries->push_back({
-				.id = u"ayu/suggestGhostModeBeforeViewingStory"_q,
+				.id = u"white/suggestGhostModeBeforeViewingStory"_q,
 				.title = tr::ayu_SuggestGhostModeBeforeViewingStory(tr::now),
 				.section = sctx.sectionId,
 			});
@@ -641,13 +641,13 @@ void BuildSpyEssentials(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addSubsectionTitle(tr::ayu_SpyEssentialsHeader());
 
 	ayu.addSettingToggle({
-		.id = u"ayu/saveDeletedMessages"_q,
+		.id = u"white/saveDeletedMessages"_q,
 		.title = tr::ayu_SaveDeletedMessages(),
 		.getter = &AyuSettings::saveDeletedMessages,
 		.setter = &AyuSettings::setSaveDeletedMessages,
 	});
 	ayu.addSettingToggle({
-		.id = u"ayu/saveMessagesHistory"_q,
+		.id = u"white/saveMessagesHistory"_q,
 		.title = tr::ayu_SaveMessagesHistory(),
 		.getter = &AyuSettings::saveMessagesHistory,
 		.setter = &AyuSettings::setSaveMessagesHistory,
@@ -656,7 +656,7 @@ void BuildSpyEssentials(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSectionDivider();
 
 	ayu.addSettingToggle({
-		.id = u"ayu/saveForBots"_q,
+		.id = u"white/saveForBots"_q,
 		.title = tr::ayu_MessageSavingSaveForBots(),
 		.getter = &AyuSettings::saveForBots,
 		.setter = &AyuSettings::setSaveForBots,
@@ -667,13 +667,13 @@ void BuildOther(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addSubsectionTitle(tr::ayu_MessageSavingOtherHeader());
 
 	ayu.addSettingToggle({
-		.id = u"ayu/localPremium"_q,
+		.id = u"white/localPremium"_q,
 		.title = tr::ayu_LocalPremium(),
 		.getter = &AyuSettings::localPremium,
 		.setter = &AyuSettings::setLocalPremium,
 	});
 	ayu.addSettingToggle({
-		.id = u"ayu/disableAds"_q,
+		.id = u"white/disableAds"_q,
 		.title = tr::ayu_DisableAds(),
 		.getter = &AyuSettings::disableAds,
 		.setter = &AyuSettings::setDisableAds,

@@ -1361,8 +1361,8 @@ void BuildWhitegramCrashReports(SectionBuilder &builder) {
 		QString::fromUtf8("Отчёты о сбоях"),
 		QString("Crash reports")));
 	ayu.addSettingToggle({
-		.id = u"ayu/crashReporting"_q,
-		.altIds = { u"ayu/crashlytics"_q },
+		.id = u"white/crashReporting"_q,
+		.altIds = { u"white/crashlytics"_q },
 		.title = trWhitegram(
 			QString::fromUtf8("Предлагать отправку отчёта"),
 			QString("Offer to send a report")),

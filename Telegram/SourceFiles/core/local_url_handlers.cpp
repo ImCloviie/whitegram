@@ -2030,11 +2030,11 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
 			AyuUrlHandlers::ResolveChat
 		},
 		{
-			u"^ayusettings/?\\?(.+)(#|$)"_q,
+			u"^(?:ayu|white)settings/?\\?(.+)(#|$)"_q,
 			AyuUrlHandlers::HandleAyuSettings
 		},
 		{
-			u"^ayusettings/?$"_q,
+			u"^(?:ayu|white)settings/?$"_q,
 			AyuUrlHandlers::HandleAyuSettings
 		},
 		{
@@ -2291,8 +2291,8 @@ QString TryConvertUrlToLocal(QString url) {
 			}
 			return base + added + (params.isEmpty() ? QString() : '&' + params);
 		} else if (const auto ayuSettingsMatch = regex_match(
-			u"^(?:ayuSettings|exteraSettings)/?\\?(.+)$"_q, query, matchOptions)) {
-			return u"tg://ayusettings?"_q + ayuSettingsMatch->captured(1);
+			u"^(?:whiteSettings|ayuSettings|exteraSettings)/?\\?(.+)$"_q, query, matchOptions)) {
+			return u"tg://whitesettings?"_q + ayuSettingsMatch->captured(1);
 		} else if (regex_match(u"^getpremium(/|\\?|#|$)"_q, query, matchOptions)) {
 			return GetPremiumLocalUrl(query);
 		} else if (const auto usernameMatch = regex_match(u"^"

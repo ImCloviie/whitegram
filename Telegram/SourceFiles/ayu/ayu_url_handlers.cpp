@@ -194,7 +194,7 @@ bool HandleAyuSettings(
 		controller->showSettings(::Settings::WhitegramMain::Id());
 	} else {
 		const auto resolved = ResolveSetting(
-			u"ayu/"_q + settingName,
+			u"white/"_q + settingName,
 			&controller->session());
 		controller->window().setHighlightControlId(resolved.controlId);
 		controller->showSettings(resolved.section);

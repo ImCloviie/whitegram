@@ -152,17 +152,17 @@ struct ResolvedReferrer {
 [[nodiscard]] QString OptionReferrer(const base::options::option<bool> &option) {
 	const auto &id = option.id();
 	if (id == u"tabbed-panel-show-on-click"_q) {
-		return u"ayu/showEmojiPopup"_q;
+		return u"white/showEmojiPopup"_q;
 	} else if (id == u"show-peer-id-below-about"_q) {
-		return u"ayu/showPeerId"_q;
+		return u"white/showPeerId"_q;
 	} else if (id == u"use-small-msg-bubble-radius"_q) {
-		return u"ayu/messageBubbleRadius"_q;
+		return u"white/messageBubbleRadius"_q;
 	} else if (id == u"unlimited-recent-stickers"_q) {
-		return u"ayu/unlimitedRecentStickers"_q;
+		return u"white/unlimitedRecentStickers"_q;
 	} else if (id == u"hide-ai-button"_q) {
-		return u"ayu/showAiEditorButtonInMessageField"_q;
+		return u"white/showAiEditorButtonInMessageField"_q;
 	} else if (id == u"unlimited-message-width"_q) {
-		return u"ayu/wideMultiplier"_q;
+		return u"white/wideMultiplier"_q;
 	}
 	return QString();
 }

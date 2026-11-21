@@ -16,6 +16,11 @@
 #include "base/bytes.h"
 #include "settings.h"
 #include "storage/localstorage.h"
+#include "core/utils.h"
+
+#ifdef Q_OS_WIN
+#include "platform/win/windows_app_user_model_id.h"
+#endif
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -138,6 +143,23 @@ void DeleteLogFiles(const QString &workingDir) {
 	return true;
 }
 
+// Same name as the single-instance lock in Core::Sandbox.
+[[nodiscard]] QString LockFileName() {
+	const auto d = QFile::encodeName(cExeDir() + cExeName());
+	QByteArray h;
+	h.resize(32);
+	hashMd5Hex(d.constData(), d.size(), h.data());
+	return QString::fromLatin1(h) + u"-"_q + cGUIDStr();
+}
+
+[[nodiscard]] QString AppNotificationsId() {
+#ifdef Q_OS_WIN
+	return QString::fromStdWString(Platform::AppUserModelId::Id());
+#else
+	return QString();
+#endif
+}
+
 [[nodiscard]] QString BuildCleanupScript(qint64 targetPid) {
 	const auto exeName = cExeName();
 	const auto exePath = NativePath(cExeDir() + cExeName());
@@ -148,7 +170,10 @@ void DeleteLogFiles(const QString &workingDir) {
 	const auto safeWipeInstall = IsSafeWipeRoot(cExeDir());
 	const auto safeWipeWorking = (workingDir != installDir) && IsSafeWipeRoot(cWorkingDir());
 
+	// The script is written in UTF-8: without chcp 65001 cmd reads it in
+	// the OEM code page and misses paths with non-ASCII characters.
 	auto s = uR"(@echo off
+chcp 65001 >nul
 setlocal enableextensions enabledelayedexpansion
 
 cd /d "%TEMP%"
@@ -163,7 +188,6 @@ if not "%PID%"=="" (
         goto wait_pid
     )
 )
-taskkill /F /IM "{{EXE_NAME}}" /IM whitegram.exe /IM Telegram.exe /IM AyuGram.exe /IM Updater.exe >nul 2>&1
 powershell -NoProfile -Command "Get-Process | Where-Object { try { $_.Path -and ($_.Path.StartsWith('{{INSTALL_DIR_SLASH}}', [System.StringComparison]::OrdinalIgnoreCase) -or ($_.Path -like '{{INSTALL_DIR}}\*')) } catch {} } | Stop-Process -Force -ErrorAction SilentlyContinue" >nul 2>&1
 timeout /t 1 /nobreak >nul 2>&1
 
@@ -216,8 +240,6 @@ if exist "{{EXE_PATH}}" (
 )
 del /f /q /a "{{INSTALL_DIR}}\{{EXE_NAME}}" >nul 2>&1
 del /f /q /a "{{INSTALL_DIR}}\whitegram.exe" >nul 2>&1
-del /f /q /a "{{INSTALL_DIR}}\Telegram.exe" >nul 2>&1
-del /f /q /a "{{INSTALL_DIR}}\AyuGram.exe" >nul 2>&1
 del /f /q /a "{{INSTALL_DIR}}\Updater.exe" >nul 2>&1
 del /f /q /a "{{INSTALL_DIR}}\TelegramForcePortable" >nul 2>&1
 del /f /q /a "{{INSTALL_DIR}}\log*.txt" >nul 2>&1
@@ -282,26 +304,32 @@ if exist "{{WORKING_DIR}}" (
 	}
 
 	s += uR"(
-reg delete "HKCU\Software\Classes\tg" /f >nul 2>&1
-reg delete "HKCU\Software\Classes\telegram" /f >nul 2>&1
-reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Telegram Desktop" /f >nul 2>&1
-reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Whitegram" /f >nul 2>&1
-reg delete "HKCU\Software\Telegram Desktop" /f >nul 2>&1
+powershell -NoProfile -Command "foreach ($c in 'tg','telegram') { $k = 'HKCU:\Software\Classes\' + $c; $cmd = (Get-ItemProperty -LiteralPath ($k + '\shell\open\command') -ErrorAction SilentlyContinue).'(default)'; if ($cmd -and $cmd.ToLower().Contains('{{EXE_PATH_LOWER}}')) { Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction SilentlyContinue } }" >nul 2>&1
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{53F49750-6209-4FBF-9CA8-7A333C87D666}_is1" /f >nul 2>&1
 reg delete "HKCU\Software\Whitegram" /f >nul 2>&1
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\{{AUMID}}" /f >nul 2>&1
+powershell -NoProfile -Command "try { [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; [Windows.UI.Notifications.ToastNotificationManager]::History.Clear('{{AUMID}}') } catch {}" >nul 2>&1
 
-del /f /q /a "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Telegram Desktop\*.lnk" >nul 2>&1
-rd /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Telegram Desktop" >nul 2>&1
-del /f /q /a "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Whitegram\*.lnk" >nul 2>&1
-rd /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Whitegram" >nul 2>&1
-del /f /q /a "%USERPROFILE%\Desktop\Telegram.lnk" >nul 2>&1
+del /f /q /a "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Whitegram.lnk" >nul 2>&1
+del /f /q /a "%APPDATA%\Microsoft\Windows\Start Menu\Programs\WhitegramAlpha.lnk" >nul 2>&1
+rd /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Whitegram Desktop" >nul 2>&1
+del /f /q /a "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\{{EXE_BASE}}.lnk" >nul 2>&1
+del /f /q /a "%APPDATA%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Whitegram.lnk" >nul 2>&1
 del /f /q /a "%USERPROFILE%\Desktop\Whitegram.lnk" >nul 2>&1
-del /f /q /a "%USERPROFILE%\Desktop\AyuGram.lnk" >nul 2>&1
-del /f /q /a "%PUBLIC%\Desktop\Telegram.lnk" >nul 2>&1
 del /f /q /a "%PUBLIC%\Desktop\Whitegram.lnk" >nul 2>&1
+
+del /f /q /a "%TEMP%\{{LOCK_NAME}}" >nul 2>&1
+del /f /q /a "%TEMP%\tdsticker_*" >nul 2>&1
+rd /s /q "%TEMP%\tdtranscode" >nul 2>&1
+rd /s /q "%TEMP%\tdarchive" >nul 2>&1
 
 del /f /q "%~f0" >nul 2>&1
 exit /b 0
 )"_q;
+	s.replace(u"{{EXE_PATH_LOWER}}"_q, exePath.toLower());
+	s.replace(u"{{AUMID}}"_q, AppNotificationsId());
+	s.replace(u"{{EXE_BASE}}"_q, QFileInfo(exeName).completeBaseName());
+	s.replace(u"{{LOCK_NAME}}"_q, LockFileName());
 
 	return s;
 }
@@ -734,7 +762,7 @@ void ScheduleWipeAndQuit() {
 	{
 		auto file = QFile(scriptPath);
 		if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-			file.write(scriptBody.toLocal8Bit());
+			file.write(scriptBody.toUtf8());
 			file.close();
 			QProcess::startDetached(
 				u"cmd.exe"_q,

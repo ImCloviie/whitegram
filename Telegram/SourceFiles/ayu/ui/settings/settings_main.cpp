@@ -1212,55 +1212,65 @@ void BuildWhitegramUpdatesPage(SectionBuilder &builder) {
 
 void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 	const auto controller = builder.controller();
+	const auto passwordLabel = [](rpl::producer<bool> has) {
+		return rpl::combine(
+			std::move(has),
+			rpl::single(rpl::empty) | rpl::then(
+				Lang::GetInstance().idChanges() | rpl::to_empty)
+		) | rpl::map([](bool has, auto) {
+			const auto id = Lang::GetInstance().id();
+			const auto baseId = Lang::GetInstance().baseId();
+			const auto isRu = id.startsWith(u"ru"_q)
+				|| baseId.startsWith(u"ru"_q);
+			return has
+				? (isRu ? QString::fromUtf8("Задан") : QString("Set"))
+				: (isRu ? QString::fromUtf8("Не задан") : QString("Not set"));
+		});
+	};
 
-	// =========================================================================
-	// SECTION 1: Локальное самоуничтожение (Whitegram)
-	// =========================================================================
+	builder.add([](const BuildContext &ctx) {
+		v::match(ctx, [&](const WidgetContext &wctx) {
+			AddDividerTextWithLottie(wctx.container, {
+				.lottie = u"stop"_q,
+				.lottieSize = st::settingsCloudPasswordIconSize,
+				.showFinished = rpl::single(rpl::empty),
+				.about = trWhitegram(
+					QString::fromUtf8(
+						"Быстро удалить Whitegram с этого компьютера, если "
+						"кто-то может получить к нему доступ. Пароль "
+						"задаётся заранее и спрашивается перед удалением."),
+					QString(
+						"Quickly remove Whitegram from this computer if "
+						"someone may get access to it. The password is "
+						"set in advance and asked before removal."))
+					| rpl::map(Ui::Text::WithEntities),
+				.parts = RectPart::Bottom,
+			});
+		}, [](const SearchContext &) {
+		});
+	});
+
 	builder.addSkip();
 	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Локальное самоуничтожение Whitegram"),
-		QString("Local Whitegram self-destruct")));
-	builder.addDividerText(trWhitegram(
-		QString::fromUtf8(
-			"Удаляет всю папку с Whitegram на этом компьютере — клиент, "
-			"кэш, модули, tdata и логи. Ваши аккаунты Telegram останутся "
-			"нетронутыми на серверах. Для выполнения требуется пароль."),
-		QString(
-			"Removes the entire Whitegram folder on this computer — client, "
-			"cache, modules, tdata, and logs. Your Telegram accounts remain "
-			"untouched on servers. Requires a password to execute.")));
-	builder.addSkip();
+		QString::fromUtf8("Удалить Whitegram"),
+		QString("Remove Whitegram")));
 
 	builder.addButton({
 		.id = u"whitegram/localSelfDestructPassword"_q,
 		.title = trWhitegram(
 			QString::fromUtf8("Пароль"),
 			QString("Password")),
-		.icon = { &st::menuIconPermissions },
-		.label = rpl::combine(
-			Whitegram::SelfDestruct::HasPasswordValue(),
-			rpl::single(rpl::empty) | rpl::then(
-				Lang::GetInstance().idChanges() | rpl::to_empty)
-		) | rpl::map([](bool has, auto) {
-			const auto id = Lang::GetInstance().id();
-			const auto baseId = Lang::GetInstance().baseId();
-			const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
-			return has
-				? (isRu ? QString::fromUtf8("Задан") : QString("Configured"))
-				: (isRu ? QString::fromUtf8("Не задан") : QString("Not set"));
-		}),
+		.icon = { &st::menuIconLock },
+		.label = passwordLabel(Whitegram::SelfDestruct::HasPasswordValue()),
 		.onClick = [=] {
 			Whitegram::SelfDestruct::ShowSettings(controller);
 		},
 	});
-
-	builder.addSkip();
-
 	builder.addButton({
 		.id = u"whitegram/localSelfDestructExecute"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Уничтожить Whitegram"),
-			QString("Destroy Whitegram")),
+			QString::fromUtf8("Удалить Whitegram"),
+			QString("Remove Whitegram")),
 		.st = &st::settingsAttentionButtonWithIcon,
 		.icon = { &st::menuIconDeleteAttention },
 		.onClick = [=] {
@@ -1269,58 +1279,38 @@ void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 	});
 
 	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
-
-	// =========================================================================
-	// SECTION 2: Тотальное уничтожение (Whitegram + Аккаунты Telegram)
-	// =========================================================================
-	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Тотальное уничтожение (Whitegram + Аккаунты)"),
-		QString("Total destruction (Whitegram + Accounts)")));
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Экстренный режим: безвозвратно удаляет ВСЕ авторизованные "
-			"аккаунты Telegram с серверов (включая каналы, чаты, группы и данные), "
-			"после чего стирает Whitegram с ПК.\n\n"
-			"Для включения задаётся отдельный пароль и подтверждаются 2FA-пароли аккаунтов."),
+			"Стирает папку Whitegram целиком: переписку на этом "
+			"компьютере, кэш, логи, ярлыки и временные файлы. Аккаунты "
+			"Telegram не затрагиваются."),
 		QString(
-			"Emergency mode: permanently deletes ALL authorized "
-			"Telegram accounts from servers (including channels, chats, groups, data), "
-			"then erases Whitegram from this PC.\n\n"
-			"Requires a separate password and confirming 2FA passwords for accounts.")));
+			"Erases the whole Whitegram folder: chats stored on this "
+			"computer, cache, logs, shortcuts and temporary files. "
+			"Telegram accounts are not affected.")));
+
 	builder.addSkip();
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Удалить вместе с аккаунтами"),
+		QString("Remove with accounts")));
 
 	builder.addButton({
 		.id = u"whitegram/totalDestructPassword"_q,
 		.title = trWhitegram(
 			QString::fromUtf8("Пароль"),
 			QString("Password")),
-		.icon = { &st::menuIconPermissions },
-		.label = rpl::combine(
-			Whitegram::SelfDestruct::HasTotalDestructPasswordValue(),
-			rpl::single(rpl::empty) | rpl::then(
-				Lang::GetInstance().idChanges() | rpl::to_empty)
-		) | rpl::map([](bool has, auto) {
-			const auto id = Lang::GetInstance().id();
-			const auto baseId = Lang::GetInstance().baseId();
-			const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
-			return has
-				? (isRu ? QString::fromUtf8("Задан") : QString("Configured"))
-				: (isRu ? QString::fromUtf8("Не задан") : QString("Not set"));
-		}),
+		.icon = { &st::menuIconLock },
+		.label = passwordLabel(
+			Whitegram::SelfDestruct::HasTotalDestructPasswordValue()),
 		.onClick = [=] {
 			Whitegram::SelfDestruct::ShowTotalDestructSettingsBox(controller);
 		},
 	});
-
-	builder.addSkip();
-
 	builder.addButton({
 		.id = u"whitegram/totalDestructExecute"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Уничтожить Whitegram и удалить аккаунты"),
-			QString("Destroy Whitegram & delete accounts")),
+			QString::fromUtf8("Удалить Whitegram и аккаунты"),
+			QString("Remove Whitegram and accounts")),
 		.st = &st::settingsAttentionButtonWithIcon,
 		.icon = { &st::menuIconDeleteAttention },
 		.onClick = [=] {
@@ -1331,13 +1321,20 @@ void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Внимание: удаление аккаунтов Telegram необратимо. Восстановление "
-			"каналов, переписок и прав владельца будет невозможно. "
-			"Забыли пароль? Удалите папку с Whitegram вручную."),
+			"Сначала удаляет все аккаунты Telegram, в которые выполнен "
+			"вход, затем стирает Whitegram. Переписка и контакты "
+			"пропадут навсегда, созданные вами каналы и группы "
+			"останутся без владельца.\n\n"
+			"Нужен отдельный пароль и облачные пароли аккаунтов. "
+			"Забыли пароль — удалите папку Whitegram вручную."),
 		QString(
-			"Warning: Telegram account deletion is irreversible. Restoring "
-			"channels, messages, and ownership will be impossible. "
-			"Forgot the password? Delete the Whitegram folder manually.")));
+			"First deletes every Telegram account you are logged into, "
+			"then erases Whitegram. Chats and contacts are gone for "
+			"good, channels and groups you created are left without "
+			"an owner.\n\n"
+			"Needs a separate password and the accounts' cloud "
+			"passwords. Forgot the password? Delete the Whitegram "
+			"folder manually.")));
 	builder.addSkip();
 }
 
@@ -2182,8 +2179,8 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Основное"),
-		QString("General")));
+		QString::fromUtf8("Настройки"),
+		QString("Settings")));
 
 	auto ayu = AyuSectionBuilder(builder);
 	ayu.addSettingToggle({

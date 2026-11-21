@@ -1668,6 +1668,7 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 	builder.addSkip();
 
 	BuildAyuGeneralContent(builder);
+	BuildAyuOtherToggles(builder);
 	BuildWhitegramCrashReports(builder);
 });
 
@@ -4157,23 +4158,13 @@ void AddGhostTargetModeControls(
 }
 
 void BuildWhitegramGhostMode(SectionBuilder &builder) {
-	builder.addSectionButton({
-		.title = trWhitegram(
-			QString::fromUtf8("Невидимка и сохранение"),
-			QString("Stealth and saving")),
-		.targetSection = AyuGhost::Id(),
-		.icon = { &st::menuIconStealth },
-		.keywords = {
-			u"ghost"_q,
-			QString::fromUtf8("невидимка"),
-			QString::fromUtf8("удалённые"),
-			QString::fromUtf8("сохранение"),
-		},
-	});
+	builder.addSkip();
+	BuildAyuGhostEssentials(builder);
 
 	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Где работает"),
+		QString("Where it works")));
 
 	builder.add([](const BuildContext &ctx) {
 		v::match(ctx, [&](const WidgetContext &wctx) {
@@ -4203,8 +4194,8 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Расписание Ghost Mode"),
-		QString("Ghost Mode Schedule")));
+		QString::fromUtf8("Расписание"),
+		QString("Schedule")));
 
 	builder.add([](const BuildContext &ctx) {
 		v::match(ctx, [&](const WidgetContext &wctx) {
@@ -4235,8 +4226,8 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 
 			AddSkip(container);
 			AddDividerText(container, trWhitegram(
-				QString::fromUtf8("Ghost Mode будет автоматически включаться и выключаться по заданным интервалам времени и дням недели."),
-				QString("Ghost Mode will automatically turn on and off based on scheduled time intervals and days of the week.")));
+				QString::fromUtf8("Режим призрака сам включается в выбранные часы и дни недели и выключается вне их."),
+				QString("Ghost mode turns on by itself during the chosen hours and days and turns off outside them.")));
 
 			const auto scheduleWrap = container->add(
 				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -4259,8 +4250,8 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 					auto emptyLabel = object_ptr<Ui::FlatLabel>(
 						intervalsList,
 						trWhitegram(
-							QString::fromUtf8("Нет интервалов (нажмите «Добавить интервал»)"),
-							QString("No intervals (click \"Add interval\")")),
+							QString::fromUtf8("Интервалов пока нет."),
+							QString("No intervals yet.")),
 						st::boxDividerLabel);
 					holder->widgets.push_back(base::make_unique_q<QWidget>(intervalsList->add(std::move(emptyLabel))));
 				} else {
@@ -4294,9 +4285,9 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 			const auto addIntervalBtn = AddButtonWithIcon(
 				scheduleInner,
 				trWhitegram(
-					QString::fromUtf8("+ Добавить интервал"),
-					QString("+ Add interval")),
-				st::settingsButtonNoIcon);
+					QString::fromUtf8("Добавить интервал"),
+					QString("Add interval")),
+				st::settingsButtonLightNoIcon);
 			addIntervalBtn->addClickHandler([=] {
 				ShowGhostScheduleIntervalBox(controller, userId, std::nullopt);
 			});
@@ -4312,17 +4303,23 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 		}, [&](const SearchContext &sctx) {
 			sctx.entries->push_back({
 				.id = u"whitegram/ghostSchedule"_q,
-				.title = QString::fromUtf8("Расписание Ghost Mode"),
+				.title = QString::fromUtf8("Расписание режима призрака"),
 				.section = sctx.sectionId,
 			});
 		});
 	});
+
+	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
+	BuildAyuSpyContent(builder);
+	builder.addSkip();
 }
 
 const auto kWhitegramGhostModeMeta = BuildHelper({
 	.id = WhitegramGhostMode::Id(),
 	.parentId = WhitegramMain::Id(),
-	.title = QString::fromUtf8("Ghost Mode"),
+	.title = QString::fromUtf8("Режим призрака"),
 	.icon = &st::menuIconStealth,
 }, [](SectionBuilder &builder) {
 	BuildWhitegramGhostMode(builder);
@@ -4356,7 +4353,7 @@ const auto kWhitegramMeta = BuildHelper({
 
 	builder.addSectionButton({
 		.title = trWhitegram(
-			QString::fromUtf8("Общие"),
+			QString::fromUtf8("Основное"),
 			QString("General")),
 		.targetSection = WhitegramGeneral::Id(),
 		.icon = { &st::menuIconShowAll },
@@ -4364,7 +4361,7 @@ const auto kWhitegramMeta = BuildHelper({
 
 	builder.addSectionButton({
 		.title = trWhitegram(
-			QString::fromUtf8("Ghost Mode"),
+			QString::fromUtf8("Режим призрака"),
 			QString("Ghost Mode")),
 		.targetSection = WhitegramGhostMode::Id(),
 		.icon = { &st::menuIconStealth },
@@ -4566,7 +4563,9 @@ Type WhitegramUpdatesId() {
 }
 
 rpl::producer<QString> WhitegramGhostMode::title() {
-	return rpl::single(QString("Ghost Mode"));
+	return trWhitegram(
+		QString::fromUtf8("Режим призрака"),
+		QString("Ghost Mode"));
 }
 
 WhitegramGhostMode::WhitegramGhostMode(

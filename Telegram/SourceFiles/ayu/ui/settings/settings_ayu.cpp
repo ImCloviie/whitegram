@@ -680,49 +680,23 @@ void BuildOther(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 }
 
-const auto kMeta = BuildHelper({
-	.id = AyuGhost::Id(),
-	.parentId = WhitegramGhostMode::Id(),
-	.title = QString::fromUtf8("Невидимка и сохранение"),
-	.icon = &st::menuIconGroupReactions,
-}, [](SectionBuilder &builder) {
-	auto ayu = AyuSectionBuilder(builder);
-
-	builder.addSkip();
-	BuildGhostEssentials(builder);
-
-	builder.addSkip();
-	BuildSpyEssentials(builder, ayu);
-
-	ayu.addSectionDivider();
-	BuildOther(builder, ayu);
-	builder.addSkip();
-});
-
 } // namespace
 
-rpl::producer<QString> AyuGhost::title() {
-	return trWhitegram(
-		QString::fromUtf8("Невидимка и сохранение"),
-		QString("Stealth and saving"));
+void BuildAyuGhostEssentials(SectionBuilder &builder) {
+	BuildGhostEssentials(builder);
 }
 
-AyuGhost::AyuGhost(
-	QWidget *parent,
-	not_null<Window::SessionController*> controller)
-: Section(parent, controller)
-, _controller(controller) {
-	setupContent();
+void BuildAyuSpyContent(SectionBuilder &builder) {
+	auto ayu = AyuSectionBuilder(builder);
+	BuildSpyEssentials(builder, ayu);
 }
 
-void AyuGhost::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	build(content, kMeta.build);
-	Ui::ResizeFitChild(this, content);
-}
-
-Type AyuGhostId() {
-	return AyuGhost::Id();
+void BuildAyuOtherToggles(SectionBuilder &builder) {
+	auto ayu = AyuSectionBuilder(builder);
+	builder.addDivider();
+	builder.addSkip();
+	BuildOther(builder, ayu);
+	builder.addSkip();
 }
 
 } // namespace Settings

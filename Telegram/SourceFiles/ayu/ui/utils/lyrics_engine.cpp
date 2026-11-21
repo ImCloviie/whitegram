@@ -674,6 +674,11 @@ QByteArray Inflate(const QByteArray &data) {
 			return {};
 		}
 		result.append(buffer, int(sizeof(buffer) - stream.avail_out));
+		// A lyric file is a few kilobytes; a reply that inflates past this is a zip bomb.
+		if (result.size() > 4 * 1024 * 1024) {
+			inflateEnd(&stream);
+			return {};
+		}
 		if (code == Z_STREAM_END || (stream.avail_in == 0 && stream.avail_out != 0)) {
 			break;
 		}

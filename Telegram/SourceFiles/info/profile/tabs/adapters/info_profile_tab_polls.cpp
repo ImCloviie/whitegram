@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/tabs/adapters/info_profile_tab_polls.h"
 
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 #include "data/data_forum_topic.h"
 #include "data/data_peer.h"
 #include "data/data_saved_sublist.h"
@@ -46,7 +46,7 @@ public:
 	, _host(context.parent) {
 		const auto host = _host.data();
 		// On a profile with a background the chat wallpaper is not shown.
-		AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+		WhiteFeatures::CustomProfileBackground::BackgroundShownValue(
 			host
 		) | rpl::on_next([this](bool shown) {
 			_backgroundShown = shown;

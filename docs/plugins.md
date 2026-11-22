@@ -7,7 +7,7 @@
 ## Как это работает
 
 - В `Whitegram.exe` вкомпилирован движок `Whitegram::Plugins`
-  (`Telegram/SourceFiles/ayu/features/whitegram_plugins/`).
+  (`Telegram/SourceFiles/white/features/whitegram_plugins/`).
 - При запуске клиент поднимает встроенный интерпретатор Python из папки
   `python/` рядом с `Whitegram.exe` и загружает хост `whitegram_host.py`.
 - Каждый плагин — это один файл `*.plugin`: обычный Python-скрипт, в котором

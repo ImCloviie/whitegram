@@ -29,7 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
-#include "ayu/features/streamer_mode/streamer_mode.h"
+#include "white/features/streamer_mode/streamer_mode.h"
 #include "core/core_settings.h"
 #include "window/window_controller.h"
 #include "mainwindow.h"
@@ -40,7 +40,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 
 // AyuGram includes
-#include "ayu/features/music/music_service.h"
+#include "white/features/music/music_service.h"
 
 
 namespace Media {
@@ -1498,8 +1498,8 @@ void Instance::emitUpdate(AudioMsgId::Type type, CheckCallback check) {
 			}();
 		if (activelyPlayingTTL) {
 			if (!_viewOnceGuard) {
-				_viewOnceGuard = std::make_unique<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
-					AyuFeatures::StreamerMode::RequireViewOnceGuard());
+				_viewOnceGuard = std::make_unique<WhiteFeatures::StreamerMode::ScopedViewOnceGuard>(
+					WhiteFeatures::StreamerMode::RequireViewOnceGuard());
 			}
 		} else {
 			_viewOnceGuard = nullptr;

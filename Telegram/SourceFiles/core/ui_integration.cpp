@@ -40,10 +40,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QLocale>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/ayu_url_handlers.h"
-#include "ayu/features/streamer_mode/streamer_mode.h"
-#include "ayu/features/whitegram_e2ee/whitegram_one_time_view.h"
+#include "white/white_settings.h"
+#include "white/white_url_handlers.h"
+#include "white/features/streamer_mode/streamer_mode.h"
+#include "white/features/whitegram_e2ee/whitegram_one_time_view.h"
 
 
 namespace Core {
@@ -499,7 +499,7 @@ bool UiIntegration::handleUrlClick(
 		}
 	}
 
-	if (AyuUrlHandlers::TryHandleSpotify(url)) {
+	if (WhiteUrlHandlers::TryHandleSpotify(url)) {
 		return true;
 	}
 
@@ -536,8 +536,8 @@ rpl::producer<> UiIntegration::forcePopupMenuHideRequests() {
 }
 
 void UiIntegration::preparePopupMenu(not_null<QWidget*> widget) {
-	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
-		AyuFeatures::StreamerMode::hideWidgetWindow(widget);
+	if (WhiteFeatures::StreamerMode::isStreamerModeActive()) {
+		WhiteFeatures::StreamerMode::hideWidgetWindow(widget);
 	}
 }
 

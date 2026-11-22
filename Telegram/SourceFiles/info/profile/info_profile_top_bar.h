@@ -15,7 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "ui/userpic_view.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 
 namespace Data {
 class ForumTopic;
@@ -151,7 +151,7 @@ public:
 
 	rpl::producer<std::optional<QColor>> edgeColor() const;
 	void setFullProfileBackground(
-		base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> renderer);
+		base::weak_ptr<WhiteFeatures::CustomProfileBackground::Renderer> renderer);
 	rpl::producer<int> desiredHeightValue() const override;
 
 protected:
@@ -407,8 +407,8 @@ private:
 	std::optional<DocumentId> _localPatternEmojiId;
 	std::shared_ptr<Data::EmojiStatusCollectible> _localCollectible;
 
-	AyuFeatures::CustomProfileBackground::Renderer _customBackground;
-	base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> _fullBackground;
+	WhiteFeatures::CustomProfileBackground::Renderer _customBackground;
+	base::weak_ptr<WhiteFeatures::CustomProfileBackground::Renderer> _fullBackground;
 
 };
 

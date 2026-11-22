@@ -4,7 +4,7 @@
 #   WG_PY_ABI    - e.g. "314" (major+minor)
 #   WG_PY_STDLIB - standard library directory (Lib)
 #   WG_PY_DEST   - destination python/ folder next to the binary
-#   WG_PY_SDK    - SourceFiles/ayu/features/whitegram_plugins/python
+#   WG_PY_SDK    - SourceFiles/white/features/whitegram_plugins/python
 #
 # The runtime copy happens only once (when it is missing); the SDK scripts
 # are small, so they refresh on every build.

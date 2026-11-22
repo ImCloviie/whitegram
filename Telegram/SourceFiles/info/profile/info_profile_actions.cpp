@@ -6,10 +6,10 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_actions.h"
-#include "ayu/ui/ghost_profile_box.h"
-#include "ayu/data/ayu_database.h"
-#include "ayu/ayu_settings.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/ui/ghost_profile_box.h"
+#include "white/data/white_database.h"
+#include "white/white_settings.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 
 #include "api/api_blocked_peers.h"
 #include "api/api_chat_participants.h"
@@ -124,10 +124,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 
 // AyuGram includes
-#include "ayu/ui/utils/ayu_profile_values.h"
-#include "ayu/utils/telegram_helpers.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
-#include "styles/style_ayu_styles.h"
+#include "white/ui/utils/white_profile_values.h"
+#include "white/utils/telegram_helpers.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
+#include "styles/style_white_styles.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/text/text_entity.h"
 
@@ -144,7 +144,7 @@ constexpr auto kPeerIdLinkIndex = uint16(1);
 // spoiler is only revealed by a click, like in vanilla Telegram.
 void SetupPhoneSpoilerRevealOnHover(not_null<Ui::FlatLabel*> label) {
 	base::install_event_filter(label, [=](not_null<QEvent*> e) {
-		if (AyuSettings::getInstance().phoneRevealMode()
+		if (WhiteSettings::getInstance().phoneRevealMode()
 			!= PhoneRevealMode::OnHover) {
 			return base::EventFilterResult::Continue;
 		}
@@ -1054,7 +1054,7 @@ auto AddActionButton(
 		object_ptr<Ui::SettingsButton>(
 			parent,
 			std::move(text),
-			AyuFeatures::CustomProfileBackground::AdaptiveStyle(parent, st)))
+			WhiteFeatures::CustomProfileBackground::AdaptiveStyle(parent, st)))
 	);
 	result->setDuration(
 		st::infoSlideDuration
@@ -1530,13 +1530,13 @@ Section DetailsFiller::makeInfo() {
 	// long as the widget, so the peer has to be captured by value.
 	const auto infoBackgroundPeer = _peer;
 	auto infoBackgroundPainted
-		= AyuFeatures::CustomProfileBackground::AttachInfoBackgroundLayer(
+		= WhiteFeatures::CustomProfileBackground::AttachInfoBackgroundLayer(
 			result,
 			[=] { return infoBackgroundPeer.get(); });
 	{
 		// The rows of this block see through to its own background as well
 		// as to the one under the whole profile, while they are painted.
-		using namespace AyuFeatures::CustomProfileBackground;
+		using namespace WhiteFeatures::CustomProfileBackground;
 		using namespace rpl::mappers;
 		MarkBackgroundHost(result, rpl::combine(
 			BackgroundShownValue(result),
@@ -1897,7 +1897,7 @@ Section DetailsFiller::makeInfo() {
 			// and on every later change.
 			auto triggers = rpl::merge(
 				rpl::single(rpl::empty),
-				AyuSettings::getInstance().timeSpentValue(rowUserId)
+				WhiteSettings::getInstance().timeSpentValue(rowUserId)
 					| rpl::to_empty,
 				Whitegram::Backend::timeSpentUpdates(
 				) | rpl::filter([=](uint64 updatedId) {
@@ -1907,9 +1907,9 @@ Section DetailsFiller::makeInfo() {
 				) | rpl::filter([=](uint64 updatedId) {
 					return updatedId == rowUserId;
 				}) | rpl::to_empty,
-				AyuSettings::getInstance().timeSpentFormatValue(
+				WhiteSettings::getInstance().timeSpentFormatValue(
 				) | rpl::to_empty,
-				AyuSettings::getInstance().showTimeSpentInProfileChanges(
+				WhiteSettings::getInstance().showTimeSpentInProfileChanges(
 				) | rpl::to_empty);
 			addInfoOneLine(
 				TextWithEntities{
@@ -1927,16 +1927,16 @@ Section DetailsFiller::makeInfo() {
 					// Hidden: the backend answers 0, and the local
 					// flag decides for the own row.
 					const auto visible = isSelf
-						? AyuSettings::getInstance().showTimeSpentInProfile()
+						? WhiteSettings::getInstance().showTimeSpentInProfile()
 						: Whitegram::Backend::CachedTimeSpentVisible(
 							rowUserId);
 					if (!visible) {
 						return TextWithEntities();
 					}
 					const auto minutes = isSelf
-						? AyuSettings::getInstance().getTimeSpentFor(rowUserId)
+						? WhiteSettings::getInstance().getTimeSpentFor(rowUserId)
 						: Whitegram::Backend::CachedTimeSpent(rowUserId);
-					const auto format = AyuSettings::getInstance()
+					const auto format = WhiteSettings::getInstance()
 						.timeSpentFormat();
 					return TextWithEntities{
 						::formatTimeSpent(minutes, format),
@@ -2024,7 +2024,7 @@ Section DetailsFiller::makeInfo() {
 			auto idInfo = addInfoOneLine(
 				rpl::single(idLabel),
 				std::move(idDrawableText),
-				tr::ayu_ContextCopyID(tr::now)
+				tr::white_ContextCopyID(tr::now)
 			);
 
 			idInfo.text->setClickHandlerFilter([=](auto &&...)
@@ -2032,7 +2032,7 @@ Section DetailsFiller::makeInfo() {
 				const auto idText = IDString(user);
 				if (!idText.isEmpty()) {
 					QGuiApplication::clipboard()->setText(idText);
-					controller->showToast(tr::ayu_IDCopiedToast(tr::now));
+					controller->showToast(tr::white_IDCopiedToast(tr::now));
 				}
 				return false;
 			});
@@ -2140,7 +2140,7 @@ Section DetailsFiller::makeInfo() {
 			auto idInfo = addInfoOneLine(
 				idLabel,
 				std::move(idDrawableText),
-				tr::ayu_ContextCopyID(tr::now)
+				tr::white_ContextCopyID(tr::now)
 			);
 
 			idInfo.text->setClickHandlerFilter([=, peer = _peer](auto &&...)
@@ -2148,7 +2148,7 @@ Section DetailsFiller::makeInfo() {
 				const auto idText = IDString(peer);
 				if (!idText.isEmpty()) {
 					QGuiApplication::clipboard()->setText(idText);
-					controller->showToast(tr::ayu_IDCopiedToast(tr::now));
+					controller->showToast(tr::white_IDCopiedToast(tr::now));
 				}
 				return false;
 			});
@@ -2165,7 +2165,7 @@ Section DetailsFiller::makeInfo() {
 			auto idInfo = addInfoOneLine(
 				rpl::single(u"ID"_q),
 				std::move(idDrawableText),
-				tr::ayu_ContextCopyID(tr::now)
+				tr::white_ContextCopyID(tr::now)
 			);
 
 			idInfo.text->setClickHandlerFilter([=, peer = _peer](auto &&...)
@@ -2173,7 +2173,7 @@ Section DetailsFiller::makeInfo() {
 				const auto idText = IDString(peer->forumTopicFor(topicRootId)->topicRootId());
 				if (!idText.isEmpty()) {
 					QGuiApplication::clipboard()->setText(idText);
-					controller->showToast(tr::ayu_IDCopiedToast(tr::now));
+					controller->showToast(tr::white_IDCopiedToast(tr::now));
 				}
 				return false;
 			});
@@ -2628,7 +2628,7 @@ Section DetailsFiller::makeBotPermissions(not_null<UserData*> user) {
 		object_ptr<Ui::SettingsButton>(
 			inner,
 			tr::lng_profile_bot_emoji_status_access(),
-			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 				inner,
 				st::infoSharedMediaButton)));
 	object_ptr<Profile::FloatingIcon>(
@@ -3153,7 +3153,7 @@ void ActionsFiller::addAffiliateProgram(not_null<UserData*> user) {
 		tr::lng_manage_peer_bot_star_ref(),
 		rpl::duplicate(commission),
 		recipients->open,
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			inner,
 			st::infoSharedMediaCountButton),
 		{ .icon = &st::menuIconSharing }));
@@ -3167,7 +3167,7 @@ void ActionsFiller::addAffiliateProgram(not_null<UserData*> user) {
 			rpl::duplicate(commission) | rpl::map(tr::marked),
 			tr::rich),
 		st::defaultBoxDividerLabelPadding,
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			inner,
 			st::defaultDividerLabel));
 	Ui::AddSkip(inner);
@@ -3192,7 +3192,7 @@ void ActionsFiller::addBalanceActions(not_null<UserData*> user) {
 	Ui::AddSkip(inner);
 	Ui::AddDivider(
 		inner,
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			inner,
 			st::defaultDividerBar));
 	Ui::AddSkip(inner);
@@ -3225,7 +3225,7 @@ void ActionsFiller::addInviteToGroupAction(not_null<UserData*> user) {
 		about->entity(),
 		InviteToChatAbout(user) | rpl::filter(notEmpty),
 		st::defaultBoxDividerLabelPadding,
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			about->entity(),
 			st::defaultDividerLabel));
 	Ui::AddSkip(about->entity());
@@ -3275,7 +3275,7 @@ void ActionsFiller::addFastButtonsMode(not_null<UserData*> user) {
 	const auto button = _wrap->add(object_ptr<Ui::SettingsButton>(
 		_wrap,
 		rpl::single(u"Fast buttons mode"_q),
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			_wrap.data(),
 			st::infoSharedMediaButton)));
 	object_ptr<Info::Profile::FloatingIcon>(
@@ -3286,7 +3286,7 @@ void ActionsFiller::addFastButtonsMode(not_null<UserData*> user) {
 	AddSkip(_wrap);
 	AddDivider(
 		_wrap,
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			_wrap.data(),
 			st::defaultDividerBar));
 	AddSkip(_wrap);
@@ -3393,7 +3393,7 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 }
 
 void ActionsFiller::addGhostProfileAction(not_null<UserData*> user) {
-	auto cachedUser = AyuDatabase::getCachedUser(user->id.value);
+	auto cachedUser = WhiteDatabase::getCachedUser(user->id.value);
 	if (!cachedUser) {
 		// FALLBACK FOR TESTING: If the user was already deleted before this feature, mock the data
 		CachedUser dummy;
@@ -3406,7 +3406,7 @@ void ActionsFiller::addGhostProfileAction(not_null<UserData*> user) {
 	}
 	const auto controller = _controller->parentController();
 	auto showProfile = [=] {
-		controller->uiShow()->showBox(Box<Ayu::Ui::GhostProfileBox>(*cachedUser));
+		controller->uiShow()->showBox(Box<White::Ui::GhostProfileBox>(*cachedUser));
 	};
 	
 	AddActionButton(

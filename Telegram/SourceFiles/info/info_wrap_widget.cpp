@@ -59,13 +59,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/filters/filters_cache_controller.h"
-#include "ayu/ui/settings/filters/edit_filter.h"
-#include "ayu/ui/settings/filters/settings_filters_list.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/features/filters/filters_cache_controller.h"
+#include "white/ui/settings/filters/edit_filter.h"
+#include "white/ui/settings/filters/settings_filters_list.h"
+#include "white/utils/telegram_helpers.h"
 #include "inline_bots/bot_attach_web_view.h"
-#include "styles/style_ayu_settings.h"
+#include "styles/style_white_settings.h"
 #include "window/window_peer_menu.h"
 
 
@@ -568,7 +568,7 @@ void WrapWidget::setupTopBarMenuToggle() {
 					Ui::DefaultShowFillPeerQrBoxCallback(show, self);
 				});
 			}
-		} else if (section.settingsType() == ::Settings::AyuFiltersList::Id()) {
+		} else if (section.settingsType() == ::Settings::WhiteFiltersList::Id()) {
 			const auto controller = _controller->parentController();
 			const auto &st = st::filtersAddIcon;
 			const auto button = _topBar->addButton(base::make_unique_q<Ui::IconButton>(_topBar, st));
@@ -588,10 +588,10 @@ void WrapWidget::setupTopBarMenuToggle() {
 							const auto peer = thread->peer();
 							const auto realId = getDialogIdFromPeer(peer);
 
-							AyuSettings::getInstance().addShadowBan(realId);
+							WhiteSettings::getInstance().addShadowBan(realId);
 							return true;
 						},
-						tr::ayu_FiltersMenuSelectChat(),
+						tr::white_FiltersMenuSelectChat(),
 						nullptr,
 						types
 					);
@@ -612,7 +612,7 @@ void WrapWidget::setupTopBarMenuToggle() {
 				{
 					// open new
 					controller->showExclude = false;
-					controller->showSettings(::Settings::AyuFiltersList::Id());
+					controller->showSettings(::Settings::WhiteFiltersList::Id());
 				});
 			}
 		}

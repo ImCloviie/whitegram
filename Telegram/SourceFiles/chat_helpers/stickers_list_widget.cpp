@@ -61,9 +61,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/glass_effect/glass_effect.h"
-#include "styles/style_ayu_styles.h"
+#include "white/white_settings.h"
+#include "white/features/glass_effect/glass_effect.h"
+#include "styles/style_white_styles.h"
 
 
 namespace ChatHelpers {
@@ -262,7 +262,7 @@ StickersListWidget::StickersListWidget(
 , _searchRequestTimer([=] { sendSearchRequest(); }) {
 	setMouseTracking(true);
 	if (st().bg->c.alpha() > 0
-		&& !AyuFeatures::GlassEffect::CreateTranslucent()) {
+		&& !WhiteFeatures::GlassEffect::CreateTranslucent()) {
 		setAttribute(Qt::WA_OpaquePaintEvent);
 	}
 
@@ -883,7 +883,7 @@ void StickersListWidget::fillLocalSearchShortcuts(const QString &query) {
 }
 
 bool StickersListWidget::addSearchShortcut(not_null<StickersSet*> set) {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.showOnlyAddedEmojisAndStickers()
 		&& !SetInMyList(set->flags)) {
 		return false;
@@ -2999,7 +2999,7 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 				&& (e->modifiers() & Qt::ControlModifier)) {
 				showStickerSetBox(document, set.id);
 			} else {
-				const auto &settings = AyuSettings::getInstance();
+				const auto &settings = WhiteSettings::getInstance();
 				auto from = messageSentAnimationInfo(
 					sticker->section,
 					sticker->index,
@@ -3019,7 +3019,7 @@ void StickersListWidget::mouseReleaseEvent(QMouseEvent *e) {
 
 				if (settings.stickerConfirmation() && (_mode == Mode::Full || _mode == Mode::ChatIntro) && _requireConfirmation) {
 					_show->showBox(Ui::MakeConfirmBox({
-						.text = tr::ayu_ConfirmationSticker(),
+						.text = tr::white_ConfirmationSticker(),
 						.confirmed = sendStickerCallback,
 						.confirmText = tr::lng_send_button()
 					}));
@@ -3505,7 +3505,7 @@ auto StickersListWidget::collectRecentStickers() -> std::vector<Sticker> {
 
 	auto add = [&](not_null<DocumentData*> document, bool custom) {
 		if (result.size() >= kRecentDisplayLimit
-			&& !AyuSettings::getInstance().unlimitedRecentStickers()) {
+			&& !WhiteSettings::getInstance().unlimitedRecentStickers()) {
 			return;
 		}
 		const auto i = ranges::find(result, document, &Sticker::document);

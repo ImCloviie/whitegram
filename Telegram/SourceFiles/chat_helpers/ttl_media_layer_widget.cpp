@@ -41,8 +41,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/streamer_mode/streamer_mode.h"
+#include "white/white_settings.h"
+#include "white/features/streamer_mode/streamer_mode.h"
 
 
 namespace ChatHelpers {
@@ -203,7 +203,7 @@ PreviewWrap::PreviewWrap(
 		}
 	}, lifetime());
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	{
 		const auto close = Ui::CreateChild<Ui::RoundButton>(
@@ -241,8 +241,8 @@ PreviewWrap::PreviewWrap(
 					) | rpl::map(tr::rich),
 					tr::rich)
 			: (isRound
-				? settings.saveDeletedMessages() ? tr::ayu_ExpiringVideoMessageNote : tr::lng_ttl_round_tooltip_in
-				: settings.saveDeletedMessages() ? tr::ayu_ExpiringVoiceMessageNote : tr::lng_ttl_voice_tooltip_in)(tr::rich);
+				? settings.saveDeletedMessages() ? tr::white_ExpiringVideoMessageNote : tr::lng_ttl_round_tooltip_in
+				: settings.saveDeletedMessages() ? tr::white_ExpiringVoiceMessageNote : tr::lng_ttl_voice_tooltip_in)(tr::rich);
 		const auto tooltip = Ui::CreateChild<Ui::ImportantTooltip>(
 			this,
 			object_ptr<Ui::PaddingWrap<Ui::FlatLabel>>(
@@ -391,8 +391,8 @@ void ShowTTLMediaLayerWidget(
 		parent,
 		std::move(preview));
 	layer->lifetime().add([] { ::Media::Player::instance()->stop(); });
-	layer->lifetime().make_state<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
-		AyuFeatures::StreamerMode::RequireViewOnceGuard());
+	layer->lifetime().make_state<WhiteFeatures::StreamerMode::ScopedViewOnceGuard>(
+		WhiteFeatures::StreamerMode::RequireViewOnceGuard());
 	Core::App().screenshotProtection().addContentReason(
 		controller->widget(),
 		rpl::single(true),

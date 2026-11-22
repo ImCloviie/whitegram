@@ -43,8 +43,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_manager.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace {
@@ -141,7 +141,7 @@ void ChannelData::setName(
 		const QString &newName,
 		const QString &newUsername) {
 	auto filteredName = newName;
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.filterZalgo()) {
 		filteredName = filterZalgo(filteredName);
 	}
@@ -784,7 +784,7 @@ bool ChannelData::canAddAdmins() const {
 }
 
 bool ChannelData::isAyuNoForwards() const {
-	return flags() & Flag::AyuNoForwards;
+	return flags() & Flag::WhiteNoForwards;
 }
 
 bool ChannelData::allowsForwarding() const {

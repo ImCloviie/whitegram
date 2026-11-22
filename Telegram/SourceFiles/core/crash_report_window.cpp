@@ -29,8 +29,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QTimer>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "white/white_settings.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
 
 
 namespace {
@@ -323,7 +323,7 @@ LastCrashedWindow::LastCrashedWindow(
 	excludeReportUsername();
 
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (!settings.crashReporting()) {
 #else
 	if (true) {
@@ -498,7 +498,7 @@ LastCrashedWindow::LastCrashedWindow(
 	connect(&_saveReport, &QPushButton::clicked, [=] { saveReport(); });
 	_getApp.setText(u"GET THE LATEST VERSION OF Whitegram Desktop"_q);
 	connect(&_getApp, &QPushButton::clicked, [=] {
-		QDesktopServices::openUrl(u"https://github.com/ImCloviie"_q);
+		QDesktopServices::openUrl(u"https://github.com/ImCloviie/whitegram"_q);
 	});
 
 	_send.setText(u"SEND CRASH REPORT"_q);

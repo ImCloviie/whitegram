@@ -64,7 +64,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ui/widgets/menu/menu_multiline_action.h"
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace SendMenu {
@@ -789,11 +789,11 @@ FillMenuResult FillSendMenu(
 
 	if (sending && type != Type::Reminder) {
 		const auto &ghost = maybeShow
-			? AyuSettings::ghost(&maybeShow->session())
-			: AyuSettings::ghost();
+			? WhiteSettings::ghost(&maybeShow->session())
+			: WhiteSettings::ghost();
 		const auto sendWithoutSound = ghost.shouldSendWithoutSound();
 		menu->addAction(
-			sendWithoutSound ? tr::ayu_SendWithSound(tr::now) : tr::lng_send_silent_message(tr::now),
+			sendWithoutSound ? tr::white_SendWithSound(tr::now) : tr::lng_send_silent_message(tr::now),
 			[=] { action({ Api::SendOptions{ .silent = true } }, details); },
 			sendWithoutSound ? &icons.menuUnmute : &icons.menuMute);
 	}

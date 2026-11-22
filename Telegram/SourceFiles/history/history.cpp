@@ -86,9 +86,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/ayu_state.h"
-#include "ayu/features/custom_archives/custom_archives.h"
+#include "white/white_settings.h"
+#include "white/white_state.h"
+#include "white/features/custom_archives/custom_archives.h"
 
 
 namespace {
@@ -2913,7 +2913,7 @@ Dialogs::UnreadState History::computeUnreadState() const {
 	result.marks = mark ? 1 : 0;
 	result.mentions = unreadMentions().has() ? 1 : 0;
 	const auto peer = this->peer.get();
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	const auto hideReactions = (peer->isChannel() && !peer->isMegagroup() && !settings.showChannelReactions())
 		|| (peer->isMegagroup() && !settings.showGroupReactions())
 		|| (peer->isUser() && !settings.showPrivateChatReactions());
@@ -3493,7 +3493,7 @@ bool History::shouldBeInChatList() const {
 	if (peer->migrateTo() || !folderKnown()) {
 		return false;
 	} else if (!folder()
-		&& AyuFeatures::CustomArchives::ShouldHidePeerFromMainList(
+		&& WhiteFeatures::CustomArchives::ShouldHidePeerFromMainList(
 			peer->id.value)) {
 		return false;
 	} else if (const auto community = peer->asChannel()

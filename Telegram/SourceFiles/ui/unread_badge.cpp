@@ -22,9 +22,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
+#include "white/utils/telegram_helpers.h"
 #include "styles/style_info.h"
 
 
@@ -257,7 +257,7 @@ PeerBadge::~PeerBadge() = default;
 int PeerBadge::drawGetWidth(Painter &p, Descriptor &&descriptor) {
 	Expects(descriptor.customEmojiRepaint != nullptr);
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	const auto hidePremiumStatuses = settings.hidePremiumStatuses();
 
 	const auto peer = descriptor.peer;
@@ -617,110 +617,48 @@ int PeerBadge::drawExteraSupporter(Painter &p, const Descriptor &descriptor) {
 }
 
 int PeerBadge::drawWhitegramSponsor(Painter &p, const Descriptor &descriptor) {
-	// A server variant icon wins over the bundled one.
 	const auto admin = Whitegram::Backend::AdminBadgeFor(
 		getBareID(descriptor.peer));
-	if (admin && !admin->variant.isEmpty()) {
-		const auto image = Whitegram::Backend::VariantIcon(admin->variant);
-		if (!image.isNull()) {
-			const auto rectForName = descriptor.rectForName;
-			const auto size = rectForName.height();
-			const auto px = rectForName.x()
-				+ qMin(descriptor.nameWidth, rectForName.width() - size);
-			p.drawImage(QRect(px, rectForName.y(), size, size), image);
-			return size;
-		}
-	}
-	const auto icon = descriptor.whitegramSponsor ? descriptor.whitegramSponsor : descriptor.exteraSupporter;
-	const auto iconw = icon->width();
-	const auto rectForName = descriptor.rectForName;
-	const auto nameWidth = descriptor.nameWidth;
-	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
-	const auto py = rectForName.y();
-	
-	static const auto image = MakeWhitegramSponsorBadgeImage();
-	if (!image.isNull()) {
-		p.drawImage(
-			QRect(px, py, iconw, icon->height()),
-			image);
-	} else {
-		icon->paint(
-			p,
-			px,
-			py,
-			descriptor.outerWidth);
-	}
-	
-	return iconw;
+	static const auto bundled = MakeWhitegramSponsorBadgeImage();
+	const auto server = (admin && !admin->variant.isEmpty())
+		? Whitegram::Backend::VariantIcon(admin->variant)
+		: QImage();
+	return drawBadgeImage(
+		p,
+		descriptor,
+		descriptor.whitegramSponsor
+			? descriptor.whitegramSponsor
+			: descriptor.exteraSupporter,
+		server.isNull() ? bundled : server);
 }
 
 int PeerBadge::drawWhitegramDeveloper(Painter &p, const Descriptor &descriptor) {
 	const auto isTeam = isWhitegramTeamPeer(getBareID(descriptor.peer));
-	// A server variant icon wins over the bundled one.
 	const auto admin = Whitegram::Backend::AdminBadgeFor(
 		getBareID(descriptor.peer));
-	if (!isTeam && admin && !admin->variant.isEmpty()) {
-		const auto image = Whitegram::Backend::VariantIcon(admin->variant);
-		if (!image.isNull()) {
-			const auto rectForName = descriptor.rectForName;
-			const auto size = rectForName.height();
-			const auto px = rectForName.x()
-				+ qMin(descriptor.nameWidth, rectForName.width() - size);
-			p.drawImage(QRect(px, rectForName.y(), size, size), image);
-			return size;
-		}
-	}
-	const auto icon = descriptor.whitegramDeveloper
-		? descriptor.whitegramDeveloper
-		: descriptor.exteraSupporter;
-	const auto iconw = icon->width();
-	const auto rectForName = descriptor.rectForName;
-	const auto nameWidth = descriptor.nameWidth;
-	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
-	const auto py = rectForName.y();
-
 	static const auto developerImage = MakeWhitegramDeveloperBadgeImage();
 	static const auto teamImage = MakeWhitegramTeamBadgeImage();
-	const auto &image = isTeam ? teamImage : developerImage;
-	if (!image.isNull()) {
-		p.drawImage(
-			QRect(px, py, iconw, icon->height()),
-			image);
-	} else {
-		icon->paint(
-			p,
-			px,
-			py,
-			descriptor.outerWidth);
-	}
-
-	return iconw;
+	const auto server = (!isTeam && admin && !admin->variant.isEmpty())
+		? Whitegram::Backend::VariantIcon(admin->variant)
+		: QImage();
+	return drawBadgeImage(
+		p,
+		descriptor,
+		descriptor.whitegramDeveloper
+			? descriptor.whitegramDeveloper
+			: descriptor.exteraSupporter,
+		!server.isNull() ? server : isTeam ? teamImage : developerImage);
 }
 
 int PeerBadge::drawWhitegramUser(Painter &p, const Descriptor &descriptor) {
-	const auto icon = descriptor.whitegramUser
-		? descriptor.whitegramUser
-		: descriptor.exteraSupporter;
-	const auto iconw = icon->width();
-	const auto rectForName = descriptor.rectForName;
-	const auto nameWidth = descriptor.nameWidth;
-	const auto px = rectForName.x() + qMin(nameWidth, rectForName.width() - iconw);
-	const auto py = rectForName.y();
-
 	static const auto image = MakeWhitegramUserBadgeImage();
-	if (!image.isNull()) {
-		p.drawImage(
-			QRect(px, py, iconw, icon->height()),
-			image);
-	} else {
-		icon->paint(
-			p,
-			px,
-			py,
-			descriptor.outerWidth);
-	}
-
-	return iconw;
+	return drawBadgeImage(
+		p,
+		descriptor,
+		descriptor.whitegramUser
+			? descriptor.whitegramUser
+			: descriptor.exteraSupporter,
+		image);
 }
 
 int PeerBadge::drawWhitegramCustom(Painter &p, const Descriptor &descriptor) {
@@ -729,18 +667,34 @@ int PeerBadge::drawWhitegramCustom(Painter &p, const Descriptor &descriptor) {
 	const auto image = (admin && admin->isCustom())
 		? Whitegram::Backend::CustomBadgeIcon(admin->customId)
 		: QImage();
+	// Sized as the other badges; the space stays reserved while it downloads.
+	return drawBadgeImage(
+		p,
+		descriptor,
+		descriptor.whitegramDeveloper
+			? descriptor.whitegramDeveloper
+			: descriptor.exteraSupporter,
+		image,
+		false);
+}
+
+int PeerBadge::drawBadgeImage(
+		Painter &p,
+		const Descriptor &descriptor,
+		const style::icon *icon,
+		const QImage &image,
+		bool paintFallback) {
+	const auto size = QSize(icon->width(), icon->height());
 	const auto rectForName = descriptor.rectForName;
-	const auto size = rectForName.height();
 	const auto px = rectForName.x()
-		+ qMin(descriptor.nameWidth, rectForName.width() - size);
+		+ qMin(descriptor.nameWidth, rectForName.width() - size.width());
 	const auto py = rectForName.y();
 	if (!image.isNull()) {
-		p.drawImage(QRect(px, py, size, size), image);
-	} else {
-		// The icon is still downloading: reserve the space so the name
-		// does not jump when it arrives.
+		p.drawImage(QRect(QPoint(px, py), size), FitBadgeImage(image, size));
+	} else if (paintFallback) {
+		icon->paint(p, px, py, descriptor.outerWidth);
 	}
-	return size;
+	return size.width();
 }
 
 QRect PeerBadge::emojiStatusRect() const {

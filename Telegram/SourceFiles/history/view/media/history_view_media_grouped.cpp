@@ -29,8 +29,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/message_shot/message_shot.h"
+#include "white/white_settings.h"
+#include "white/features/message_shot/message_shot.h"
 
 
 namespace HistoryView {
@@ -441,7 +441,7 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 	const auto subpartHighlight = IsSubGroupSelection(highlight);
 
 	auto anyDeleted = false;
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	const auto perItemOpacityEnabled = settings.semiTransparentDeletedMessages();
 	if (!perItemOpacityEnabled) {
 		for (const auto &part : _parts) {
@@ -492,7 +492,7 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 				&& !part.deletedAnimation.animating()) {
 				part.deletedAnimation.start(
 					[parent = _parent] {
-						if (!AyuSettings::getInstance().semiTransparentDeletedMessages()) {
+						if (!WhiteSettings::getInstance().semiTransparentDeletedMessages()) {
 							return false;
 						}
 						parent->repaint();
@@ -554,7 +554,7 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 	if (_parent->media() == this && (!_parent->hasBubble() || isBubbleBottom())) {
 		auto fullRight = width();
 		auto fullBottom = height();
-		if (needInfoDisplay() && !AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Date)) {
+		if (needInfoDisplay() && !WhiteFeatures::MessageShot::ignoreRender(WhiteFeatures::MessageShot::RenderPart::Date)) {
 			_parent->drawInfo(
 				p,
 				context,
@@ -1020,7 +1020,7 @@ bool GroupedMedia::computeNeedBubble() const {
 }
 
 bool GroupedMedia::needInfoDisplay() const {
-	if (AyuFeatures::MessageShot::isTakingShot()) {
+	if (WhiteFeatures::MessageShot::isTakingShot()) {
 		return (_mode != Mode::Column);
 	}
 	const auto item = _parent->data();

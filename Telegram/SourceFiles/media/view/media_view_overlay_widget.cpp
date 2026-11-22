@@ -138,9 +138,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <kurlmimedata.h>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/ayu_state.h"
-#include "ayu/features/streamer_mode/streamer_mode.h"
+#include "white/white_settings.h"
+#include "white/white_state.h"
+#include "white/features/streamer_mode/streamer_mode.h"
 
 
 namespace Media {
@@ -4588,10 +4588,10 @@ void OverlayWidget::activate() {
 	QApplication::setActiveWindow(_window);
 	setFocus();
 
-	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
-		AyuFeatures::StreamerMode::hideWidgetWindow(_window);
+	if (WhiteFeatures::StreamerMode::isStreamerModeActive()) {
+		WhiteFeatures::StreamerMode::hideWidgetWindow(_window);
 	} else {
-		AyuFeatures::StreamerMode::showWidgetWindow(_window);
+		WhiteFeatures::StreamerMode::showWidgetWindow(_window);
 	}
 }
 
@@ -6176,16 +6176,16 @@ void OverlayWidget::refreshScreenshotProtection() {
 	const auto isViewOnce = _message && (_message->isTtlCoveredMedia() || (media && media->ttlSeconds() > 0));
 	if (isViewOnce) {
 		if (!_viewOnceGuard) {
-			_viewOnceGuard = std::make_unique<AyuFeatures::StreamerMode::ScopedViewOnceGuard>(
-				AyuFeatures::StreamerMode::RequireViewOnceGuard());
+			_viewOnceGuard = std::make_unique<WhiteFeatures::StreamerMode::ScopedViewOnceGuard>(
+				WhiteFeatures::StreamerMode::RequireViewOnceGuard());
 		}
-		if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
-			AyuFeatures::StreamerMode::hideWidgetWindow(_window);
+		if (WhiteFeatures::StreamerMode::isStreamerModeActive()) {
+			WhiteFeatures::StreamerMode::hideWidgetWindow(_window);
 		}
 	} else {
 		_viewOnceGuard = nullptr;
-		if (!AyuFeatures::StreamerMode::isStreamerModeActive()) {
-			AyuFeatures::StreamerMode::showWidgetWindow(_window);
+		if (!WhiteFeatures::StreamerMode::isStreamerModeActive()) {
+			WhiteFeatures::StreamerMode::showWidgetWindow(_window);
 		}
 	}
 }
@@ -8986,7 +8986,7 @@ Window::SessionController *OverlayWidget::findWindow(bool switchTo) const {
 // #TODO unite and check
 void OverlayWidget::clearBeforeHide() {
 	_viewOnceGuard = nullptr;
-	AyuState::disableGhostModeOnStoryClose(_storiesSession);
+	WhiteState::disableGhostModeOnStoryClose(_storiesSession);
 	checkSingleViewMediaBurn();
 	_message = nullptr;
 	_sharedMedia = nullptr;

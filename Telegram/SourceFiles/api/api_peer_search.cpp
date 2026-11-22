@@ -14,7 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Api {
@@ -107,7 +107,7 @@ void PeerSearch::requestSponsored() {
 	).done([=](
 			const MTPcontacts_SponsoredPeers &result,
 			mtpRequestId requestId) {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (settings.disableAds()) {
 			finishSponsored(requestId, PeerSearchResult{});
 			return;

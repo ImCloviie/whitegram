@@ -39,7 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeDatabase>
 
 // AyuGram includes
-#include "ayu/ui/boxes/plugin_info_box.h"
+#include "white/ui/boxes/plugin_info_box.h"
 #include <QtCore/QFile>
 
 

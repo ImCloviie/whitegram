@@ -39,7 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/mac/global_menu_mac.h"
 #endif // Q_OS_MAC
 
-#include "ayu/features/tg_ws_proxy/tg_ws_proxy.h"
+#include "white/features/tg_ws_proxy/tg_ws_proxy.h"
 
 #include <QtCore/QLockFile>
 #include <QtGui/QSessionManager>
@@ -498,7 +498,7 @@ void Sandbox::singleInstanceChecked() {
 	// WHY: an orphaned tg-ws-proxy from 2.3.0-2.3.1 holds tdata/working,
 	// which made the next launch fail; stop it and try once more.
 	const auto retryAfterOrphans = [] {
-		return AyuFeatures::TgWsProxy::KillOrphans()
+		return WhiteFeatures::TgWsProxy::KillOrphans()
 			&& (CrashReports::Restart() != CrashReports::CantOpen);
 	};
 	const auto result = CrashReports::Start();

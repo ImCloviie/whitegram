@@ -64,8 +64,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/white_settings.h"
+#include "white/features/glass_effect/glass_effect.h"
 
 
 namespace ChatHelpers {
@@ -524,7 +524,7 @@ EmojiListWidget::EmojiListWidget(
 , _previewTimer([=] { showPreview(); }) {
 	setMouseTracking(true);
 	if (st().bg->c.alpha() > 0
-		&& !AyuFeatures::GlassEffect::CreateTranslucent()) {
+		&& !WhiteFeatures::GlassEffect::CreateTranslucent()) {
 		setAttribute(Qt::WA_OpaquePaintEvent);
 	}
 
@@ -3573,7 +3573,7 @@ void EmojiListWidget::refreshCustom() {
 		&& (allCustomEmojiPremium || !_allowWithoutPremium);
 	const auto owner = &session->data();
 	const auto &sets = owner->stickers().sets();
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	const auto push = [&](uint64 setId, bool installed) {
 		const auto megagroup = _megagroupSet
 			&& (setId == Data::Stickers::MegagroupSetId);

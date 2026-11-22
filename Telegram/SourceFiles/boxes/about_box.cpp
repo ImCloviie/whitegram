@@ -42,7 +42,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 rpl::producer<TextWithEntities> Text() {
-	const auto github = u"https://github.com/ImCloviie"_q;
+	const auto github = u"https://github.com/ImCloviie/whitegram"_q;
 	const auto ruPrefix = QString::fromUtf8("Whitegram Desktop — клиент Telegram с дополнительными функциями и настройками. Основан на открытом коде Telegram Desktop. Распространяется под лицензией ");
 	const auto enPrefix = QString("Whitegram Desktop is a Telegram client with extra features and settings. Based on the open source code of Telegram Desktop. Distributed under the ");
 	const auto ruMiddle = QString::fromUtf8(". Исходный код — на ");
@@ -100,12 +100,12 @@ void AboutBox(not_null<Ui::GenericBox*> box, Window::SessionController* controll
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 	box->addLeftButton(
-		rpl::single(QString("@ImCloviie")),
+		rpl::single(QString("@whitegramReleases")),
 		[box, controller]
 		{
 			box->closeBox();
 			controller->showPeerByLink(Window::PeerByLinkInfo{
-				.usernameOrId = QString("ImCloviie"),
+				.usernameOrId = QString("whitegramReleases"),
 			});
 		});
 

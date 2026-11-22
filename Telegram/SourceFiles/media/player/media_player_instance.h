@@ -46,7 +46,7 @@ namespace base {
 class PowerSaveBlocker;
 } // namespace base
 
-namespace AyuFeatures::StreamerMode {
+namespace WhiteFeatures::StreamerMode {
 class ScopedViewOnceGuard;
 } // namespace AyuFeatures::StreamerMode
 
@@ -352,7 +352,7 @@ private:
 	Data _voiceData;
 	std::unique_ptr<MusicListenTracker> _listenTracker;
 	bool _roundPlaying = false;
-	std::unique_ptr<AyuFeatures::StreamerMode::ScopedViewOnceGuard> _viewOnceGuard;
+	std::unique_ptr<WhiteFeatures::StreamerMode::ScopedViewOnceGuard> _viewOnceGuard;
 
 	rpl::event_stream<Switch> _switchToNext;
 	rpl::event_stream<AudioMsgId::Type> _tracksFinished;

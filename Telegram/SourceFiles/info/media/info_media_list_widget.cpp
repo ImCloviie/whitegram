@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/media/info_media_list_widget.h"
 
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 #include "info/global_media/info_global_media_provider.h"
 #include "info/media/info_media_common.h"
 #include "info/media/info_media_provider.h"
@@ -200,7 +200,7 @@ void ListWidget::start() {
 
 	// The cached rows are filled with the list background, so they can't
 	// be used while a profile background is painted under the list.
-	AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+	WhiteFeatures::CustomProfileBackground::BackgroundShownValue(
 		this
 	) | rpl::on_next([=](bool shown) {
 		_backgroundShown = shown;

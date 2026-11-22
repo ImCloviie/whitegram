@@ -1,0 +1,1949 @@
+// This is the source code of AyuGram for Desktop.
+//
+// We do not and cannot prevent the use of our code,
+// but be respectful and credit the original author.
+//
+// Copyright @Radolyn, 2026
+#pragma once
+
+#include "white/libs/json.hpp"
+#include "white/libs/json_ext.hpp"
+#include "crl/crl_time.h"
+#include "rpl/lifetime.h"
+#include "rpl/producer.h"
+#include "rpl/variable.h"
+#include <map>
+#include <memory>
+#include <unordered_set>
+#include <vector>
+
+
+namespace base {
+class Timer;
+}
+
+namespace Main {
+class Session;
+}
+
+namespace Media::Audio {
+class Track;
+}
+
+enum class AccountProfilesVisualVariant {
+  Folders = 0,
+  Tabs = 1,
+  Dropdown = 2,
+};
+
+struct AccountProfile {
+  int id = 0;
+  QString name;
+  QString icon;
+  std::vector<uint64> accountIds;
+};
+
+inline void to_json(nlohmann::json &j, const AccountProfile &p) {
+  j = nlohmann::json{
+    {"id", p.id},
+    {"name", p.name.toStdString()},
+    {"icon", p.icon.toStdString()},
+    {"accountIds", p.accountIds}
+  };
+}
+inline void from_json(const nlohmann::json &j, AccountProfile &p) {
+  p.id = j.value("id", 0);
+  p.name = QString::fromStdString(j.value("name", ""));
+  p.icon = QString::fromStdString(j.value("icon", ""));
+  p.accountIds = j.value("accountIds", std::vector<uint64>{});
+}
+
+struct CustomArchive {
+  int id = 0;
+  QString name;
+  QString icon;
+  std::vector<uint64> peerIds;
+  std::vector<uint64> pinnedPeerIds;
+  bool muted = true;
+  bool hideFromMainList = true;
+  bool showInMainMenu = false;
+  bool showInChatList = true;
+  bool collapsed = false;
+  int order = 0;
+  QString pinSalt;
+  QString pinHash;
+  QString passwordSalt;
+  QString passwordHash;
+
+  [[nodiscard]] bool hasPin() const {
+    return !pinHash.isEmpty() && !pinSalt.isEmpty();
+  }
+  [[nodiscard]] bool hasPassword() const {
+    return !passwordHash.isEmpty() && !passwordSalt.isEmpty();
+  }
+  [[nodiscard]] bool isLocked() const {
+    return hasPin() || hasPassword();
+  }
+};
+
+inline void to_json(nlohmann::json &j, const CustomArchive &a) {
+  j = nlohmann::json{
+    {"id", a.id},
+    {"name", a.name.toStdString()},
+    {"icon", a.icon.toStdString()},
+    {"peerIds", a.peerIds},
+    {"pinnedPeerIds", a.pinnedPeerIds},
+    {"muted", a.muted},
+    {"hideFromMainList", a.hideFromMainList},
+    {"useTelegramArchive", a.hideFromMainList},
+    {"showInMainMenu", a.showInMainMenu},
+    {"showInChatList", a.showInChatList},
+    {"collapsed", a.collapsed},
+    {"order", a.order},
+    {"pinSalt", a.pinSalt.toStdString()},
+    {"pinHash", a.pinHash.toStdString()},
+    {"passwordSalt", a.passwordSalt.toStdString()},
+    {"passwordHash", a.passwordHash.toStdString()},
+  };
+}
+inline void from_json(const nlohmann::json &j, CustomArchive &a) {
+  a.id = j.value("id", 0);
+  a.name = QString::fromStdString(j.value("name", ""));
+  a.icon = QString::fromStdString(j.value("icon", ""));
+  a.peerIds = j.value("peerIds", std::vector<uint64>{});
+  a.pinnedPeerIds = j.value("pinnedPeerIds", std::vector<uint64>{});
+  a.muted = j.value("muted", true);
+  a.hideFromMainList = j.value(
+	  "hideFromMainList",
+	  j.value("useTelegramArchive", true));
+  a.showInMainMenu = j.value("showInMainMenu", false);
+  a.showInChatList = j.value("showInChatList", true);
+  a.collapsed = j.value("collapsed", false);
+  a.order = j.value("order", 0);
+  a.pinSalt = QString::fromStdString(j.value("pinSalt", ""));
+  a.pinHash = QString::fromStdString(j.value("pinHash", ""));
+  a.passwordSalt = QString::fromStdString(j.value("passwordSalt", ""));
+  a.passwordHash = QString::fromStdString(j.value("passwordHash", ""));
+}
+
+struct CustomProfileBackground {
+  enum class Zone {
+    Top = 0,
+    Bottom = 1,
+    Full = 2,
+  };
+
+  uint64 peerId = 0;
+  Zone zone = Zone::Full;
+  QString path;
+  bool isVideo = false;
+};
+
+inline void to_json(nlohmann::json &j, const CustomProfileBackground &b) {
+  j = nlohmann::json{
+    {"peerId", b.peerId},
+    {"zone", int(b.zone)},
+    {"path", b.path.toStdString()},
+    {"isVideo", b.isVideo},
+  };
+}
+inline void from_json(const nlohmann::json &j, CustomProfileBackground &b) {
+  b.peerId = j.value("peerId", uint64(0));
+  b.path = QString::fromStdString(j.value("path", ""));
+  b.isVideo = j.value("isVideo", false);
+  b.zone = j.contains("zone")
+    ? CustomProfileBackground::Zone(j.value("zone", int(CustomProfileBackground::Zone::Full)))
+    : CustomProfileBackground::Zone::Full;
+}
+
+NLOHMANN_JSON_SERIALIZE_ENUM(AccountProfilesVisualVariant, {
+                                                {AccountProfilesVisualVariant::Folders, 0},
+                                                {AccountProfilesVisualVariant::Tabs, 1},
+                                                {AccountProfilesVisualVariant::Dropdown, 2},
+                                            })
+
+
+enum class PeerIdDisplay {
+  Hidden = 0,
+  TelegramApi = 1,
+  BotApi = 2,
+};
+
+enum class ChannelBottomButton {
+  Hidden = 0,
+  MuteUnmute = 1,
+  DiscussWithFallback = 2,
+};
+
+enum class PhoneRevealMode {
+  OnClick = 0,
+  OnHover = 1,
+};
+
+enum class ContextMenuVisibility {
+  Hidden = 0,
+  Visible = 1,
+  VisibleWithModifier = 2,
+};
+
+enum class TranslationProvider {
+  Telegram = 0,
+  Google = 1,
+  Yandex = 2,
+  Native = 3,
+};
+
+enum class SendWithoutSoundOption {
+  Never = 0,
+  InGhostMode = 1,
+  Always = 2,
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(PeerIdDisplay, {
+                                                {PeerIdDisplay::Hidden, 0},
+                                                {PeerIdDisplay::TelegramApi, 1},
+                                                {PeerIdDisplay::BotApi, 2},
+                                            })
+
+NLOHMANN_JSON_SERIALIZE_ENUM(ChannelBottomButton,
+                             {
+                                 {ChannelBottomButton::Hidden, 0},
+                                 {ChannelBottomButton::MuteUnmute, 1},
+                                 {ChannelBottomButton::DiscussWithFallback, 2},
+                             })
+
+NLOHMANN_JSON_SERIALIZE_ENUM(PhoneRevealMode,
+                             {
+                                 {PhoneRevealMode::OnClick, 0},
+                                 {PhoneRevealMode::OnHover, 1},
+                             })
+
+NLOHMANN_JSON_SERIALIZE_ENUM(ContextMenuVisibility,
+                             {
+                                 {ContextMenuVisibility::Hidden, 0},
+                                 {ContextMenuVisibility::Visible, 1},
+                                 {ContextMenuVisibility::VisibleWithModifier,
+                                  2},
+                             })
+
+NLOHMANN_JSON_SERIALIZE_ENUM(TranslationProvider,
+                             {
+                                 {TranslationProvider::Telegram, "telegram"},
+                                 {TranslationProvider::Google, "google"},
+                                 {TranslationProvider::Yandex, "yandex"},
+                                 {TranslationProvider::Native, "native"},
+                             })
+
+NLOHMANN_JSON_SERIALIZE_ENUM(SendWithoutSoundOption,
+                             {
+                                 {SendWithoutSoundOption::Never, 0},
+                                 {SendWithoutSoundOption::InGhostMode, 1},
+                                 {SendWithoutSoundOption::Always, 2},
+                             })
+
+enum class GhostTargetMode {
+  Global = 0,
+  Whitelist = 1,
+  Blacklist = 2,
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(GhostTargetMode,
+                             {
+                                 {GhostTargetMode::Global, 0},
+                                 {GhostTargetMode::Whitelist, 1},
+                                 {GhostTargetMode::Blacklist, 2},
+                             })
+
+struct GhostScheduleEntry {
+  int from = 540;
+  int to = 1080;
+  int weekdays = 0x7F;
+};
+
+inline void to_json(nlohmann::json &j, const GhostScheduleEntry &e) {
+  j = nlohmann::json{
+    {"from", e.from},
+    {"to", e.to},
+    {"weekdays", e.weekdays}
+  };
+}
+inline void from_json(const nlohmann::json &j, GhostScheduleEntry &e) {
+  e.from = j.value("from", 540);
+  e.to = j.value("to", 1080);
+  e.weekdays = j.value("weekdays", 0x7F);
+}
+
+enum class ConnectionBypassMode {
+  Off = 0,
+  Auto = 1,
+  Always = 2,
+};
+
+NLOHMANN_JSON_SERIALIZE_ENUM(ConnectionBypassMode,
+                             {
+                                 {ConnectionBypassMode::Off, 0},
+                                 {ConnectionBypassMode::Auto, 1},
+                                 {ConnectionBypassMode::Always, 2},
+                             })
+
+class GhostModeAccountSettings {
+public:
+  GhostModeAccountSettings();
+  ~GhostModeAccountSettings();
+
+  GhostModeAccountSettings(const GhostModeAccountSettings &) = delete;
+  GhostModeAccountSettings &operator=(const GhostModeAccountSettings &) = delete;
+  GhostModeAccountSettings(GhostModeAccountSettings &&) = default;
+  GhostModeAccountSettings &operator=(GhostModeAccountSettings &&) = default;
+
+  [[nodiscard]] bool sendReadMessages() const {
+    return _sendReadMessages.current();
+  }
+  [[nodiscard]] bool sendReadStories() const {
+    return _sendReadStories.current();
+  }
+  [[nodiscard]] bool sendOnlinePackets() const {
+    return _sendOnlinePackets.current();
+  }
+  [[nodiscard]] bool sendUploadProgress() const {
+    return _sendUploadProgress.current();
+  }
+  [[nodiscard]] bool sendOfflinePacketAfterOnline() const {
+    return _sendOfflinePacketAfterOnline.current();
+  }
+  [[nodiscard]] bool markReadAfterAction() const {
+    return _markReadAfterAction.current();
+  }
+  [[nodiscard]] bool useScheduledMessages() const {
+    return _useScheduledMessages.current();
+  }
+  [[nodiscard]] SendWithoutSoundOption sendWithoutSound() const {
+    return _sendWithoutSound.current();
+  }
+  [[nodiscard]] bool shouldSendWithoutSound() const;
+  [[nodiscard]] bool suggestGhostModeBeforeViewingStory() const {
+    return _suggestGhostModeBeforeViewingStory.current();
+  }
+  [[nodiscard]] bool isGhostModeActive() const {
+    return _ghostModeActive.current();
+  }
+  [[nodiscard]] bool isUseScheduledMessages() const {
+    return isGhostModeActive() && useScheduledMessages();
+  }
+
+  [[nodiscard]] bool sendReadMessagesLocked() const {
+    return _sendReadMessagesLocked.current();
+  }
+  [[nodiscard]] bool sendReadStoriesLocked() const {
+    return _sendReadStoriesLocked.current();
+  }
+  [[nodiscard]] bool sendOnlinePacketsLocked() const {
+    return _sendOnlinePacketsLocked.current();
+  }
+  [[nodiscard]] bool sendUploadProgressLocked() const {
+    return _sendUploadProgressLocked.current();
+  }
+  [[nodiscard]] bool sendOfflinePacketAfterOnlineLocked() const {
+    return _sendOfflinePacketAfterOnlineLocked.current();
+  }
+
+  void setSendReadMessages(bool val);
+  void setSendReadStories(bool val);
+  void setSendOnlinePackets(bool val);
+  void setSendUploadProgress(bool val);
+  void setSendOfflinePacketAfterOnline(bool val);
+  void setMarkReadAfterAction(bool val);
+  void setUseScheduledMessages(bool val);
+  void setSendWithoutSound(SendWithoutSoundOption val);
+  void setSuggestGhostModeBeforeViewingStory(bool val);
+  void setGhostModeEnabled(bool val);
+
+  void setSendReadMessagesLocked(bool val);
+  void setSendReadStoriesLocked(bool val);
+  void setSendOnlinePacketsLocked(bool val);
+  void setSendUploadProgressLocked(bool val);
+  void setSendOfflinePacketAfterOnlineLocked(bool val);
+
+  [[nodiscard]] rpl::producer<bool> sendReadMessagesValue() const {
+    return _sendReadMessages.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendReadMessagesChanges() const {
+    return _sendReadMessages.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> sendReadStoriesValue() const {
+    return _sendReadStories.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendReadStoriesChanges() const {
+    return _sendReadStories.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> sendOnlinePacketsValue() const {
+    return _sendOnlinePackets.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendOnlinePacketsChanges() const {
+    return _sendOnlinePackets.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> sendUploadProgressValue() const {
+    return _sendUploadProgress.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendUploadProgressChanges() const {
+    return _sendUploadProgress.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> sendOfflinePacketAfterOnlineValue() const {
+    return _sendOfflinePacketAfterOnline.value();
+  }
+  [[nodiscard]] rpl::producer<bool>
+  sendOfflinePacketAfterOnlineChanges() const {
+    return _sendOfflinePacketAfterOnline.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> markReadAfterActionValue() const {
+    return _markReadAfterAction.value();
+  }
+  [[nodiscard]] rpl::producer<bool> markReadAfterActionChanges() const {
+    return _markReadAfterAction.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> useScheduledMessagesValue() const {
+    return _useScheduledMessages.value();
+  }
+  [[nodiscard]] rpl::producer<bool> useScheduledMessagesChanges() const {
+    return _useScheduledMessages.changes();
+  }
+  [[nodiscard]] rpl::producer<SendWithoutSoundOption>
+  sendWithoutSoundValue() const {
+    return _sendWithoutSound.value();
+  }
+  [[nodiscard]] rpl::producer<SendWithoutSoundOption>
+  sendWithoutSoundChanges() const {
+    return _sendWithoutSound.changes();
+  }
+  [[nodiscard]] rpl::producer<bool>
+  suggestGhostModeBeforeViewingStoryValue() const {
+    return _suggestGhostModeBeforeViewingStory.value();
+  }
+  [[nodiscard]] rpl::producer<bool>
+  suggestGhostModeBeforeViewingStoryChanges() const {
+    return _suggestGhostModeBeforeViewingStory.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> ghostModeActiveValue() const {
+    return _ghostModeActive.value();
+  }
+  [[nodiscard]] rpl::producer<bool> ghostModeActiveChanges() const {
+    return _ghostModeActive.changes();
+  }
+
+  [[nodiscard]] GhostTargetMode ghostTargetMode() const {
+    return _ghostTargetMode.current();
+  }
+  [[nodiscard]] const std::vector<uint64> &ghostTargetPeers() const {
+    return _ghostTargetPeers.current();
+  }
+  [[nodiscard]] const std::vector<uint64> &ghostExcludedPeers() const {
+    return _ghostExcludedPeers.current();
+  }
+
+  void setGhostTargetMode(GhostTargetMode mode);
+  void setGhostTargetPeers(const std::vector<uint64> &peers);
+  void setGhostExcludedPeers(const std::vector<uint64> &peers);
+
+  [[nodiscard]] bool isPeerInTargetList(uint64 peerId) const;
+  [[nodiscard]] bool isPeerInExcludedList(uint64 peerId) const;
+  void togglePeerInTargetList(uint64 peerId);
+  void togglePeerInExcludedList(uint64 peerId);
+
+  [[nodiscard]] bool isGhostActiveForPeer(uint64 peerId) const;
+
+  [[nodiscard]] bool ghostScheduleEnabled() const {
+    return _ghostScheduleEnabled.current();
+  }
+  [[nodiscard]] const std::vector<GhostScheduleEntry> &ghostScheduleEntries() const {
+    return _ghostScheduleEntries;
+  }
+  void setGhostScheduleEnabled(bool val);
+  void setGhostScheduleEntries(const std::vector<GhostScheduleEntry> &entries);
+  void addGhostScheduleEntry(const GhostScheduleEntry &entry);
+  void removeGhostScheduleEntry(int index);
+  void updateGhostScheduleEntry(int index, const GhostScheduleEntry &entry);
+  [[nodiscard]] bool isInScheduleWindow() const;
+  void checkSchedule();
+  void startScheduleTimer();
+  void stopScheduleTimer();
+  [[nodiscard]] rpl::producer<bool> ghostScheduleEnabledValue() const {
+    return _ghostScheduleEnabled.value();
+  }
+  [[nodiscard]] rpl::producer<bool> ghostScheduleEnabledChanges() const {
+    return _ghostScheduleEnabled.changes();
+  }
+  [[nodiscard]] rpl::producer<> ghostScheduleEntriesChanges() const {
+    return _ghostScheduleEntriesChanges.events();
+  }
+  [[nodiscard]] bool shouldSendReadMessagesForPeer(uint64 peerId) const;
+  [[nodiscard]] bool shouldSendReadStoriesForPeer(uint64 peerId) const;
+  [[nodiscard]] bool shouldSendUploadProgressForPeer(uint64 peerId) const;
+
+  [[nodiscard]] rpl::producer<GhostTargetMode> ghostTargetModeValue() const {
+    return _ghostTargetMode.value();
+  }
+  [[nodiscard]] rpl::producer<GhostTargetMode> ghostTargetModeChanges() const {
+    return _ghostTargetMode.changes();
+  }
+  [[nodiscard]] rpl::producer<std::vector<uint64>> ghostTargetPeersValue() const {
+    return _ghostTargetPeers.value();
+  }
+  [[nodiscard]] rpl::producer<std::vector<uint64>> ghostTargetPeersChanges() const {
+    return _ghostTargetPeers.changes();
+  }
+  [[nodiscard]] rpl::producer<std::vector<uint64>> ghostExcludedPeersValue() const {
+    return _ghostExcludedPeers.value();
+  }
+  [[nodiscard]] rpl::producer<std::vector<uint64>> ghostExcludedPeersChanges() const {
+    return _ghostExcludedPeers.changes();
+  }
+
+  [[nodiscard]] rpl::producer<bool> sendReadMessagesLockedValue() const {
+    return _sendReadMessagesLocked.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendReadMessagesLockedChanges() const {
+    return _sendReadMessagesLocked.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> sendReadStoriesLockedValue() const {
+    return _sendReadStoriesLocked.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendReadStoriesLockedChanges() const {
+    return _sendReadStoriesLocked.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> sendOnlinePacketsLockedValue() const {
+    return _sendOnlinePacketsLocked.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendOnlinePacketsLockedChanges() const {
+    return _sendOnlinePacketsLocked.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> sendUploadProgressLockedValue() const {
+    return _sendUploadProgressLocked.value();
+  }
+  [[nodiscard]] rpl::producer<bool> sendUploadProgressLockedChanges() const {
+    return _sendUploadProgressLocked.changes();
+  }
+  [[nodiscard]] rpl::producer<bool>
+  sendOfflinePacketAfterOnlineLockedValue() const {
+    return _sendOfflinePacketAfterOnlineLocked.value();
+  }
+  [[nodiscard]] rpl::producer<bool>
+  sendOfflinePacketAfterOnlineLockedChanges() const {
+    return _sendOfflinePacketAfterOnlineLocked.changes();
+  }
+
+  friend void to_json(nlohmann::json &j, const GhostModeAccountSettings &s);
+  friend void from_json(const nlohmann::json &j, GhostModeAccountSettings &s);
+
+private:
+  friend class WhiteSettings;
+
+  rpl::variable<bool> _sendReadMessages = true;
+  rpl::variable<bool> _sendReadStories = true;
+  rpl::variable<bool> _sendOnlinePackets = true;
+  rpl::variable<bool> _sendUploadProgress = true;
+  rpl::variable<bool> _sendOfflinePacketAfterOnline = false;
+  rpl::variable<bool> _markReadAfterAction = true;
+  rpl::variable<bool> _useScheduledMessages = false;
+  rpl::variable<SendWithoutSoundOption> _sendWithoutSound =
+      SendWithoutSoundOption::Never;
+  rpl::variable<bool> _suggestGhostModeBeforeViewingStory = true;
+  rpl::variable<bool> _ghostModeActive = false;
+
+  rpl::variable<bool> _sendReadMessagesLocked = false;
+  rpl::variable<bool> _sendReadStoriesLocked = false;
+  rpl::variable<bool> _sendOnlinePacketsLocked = false;
+  rpl::variable<bool> _sendUploadProgressLocked = false;
+  rpl::variable<bool> _sendOfflinePacketAfterOnlineLocked = false;
+
+  rpl::variable<GhostTargetMode> _ghostTargetMode = GhostTargetMode::Global;
+  rpl::variable<std::vector<uint64>> _ghostTargetPeers;
+  rpl::variable<std::vector<uint64>> _ghostExcludedPeers;
+
+  rpl::variable<bool> _ghostScheduleEnabled = false;
+  std::vector<GhostScheduleEntry> _ghostScheduleEntries;
+  rpl::event_stream<> _ghostScheduleEntriesChanges;
+  std::unique_ptr<base::Timer> _scheduleTimer;
+  bool _scheduleAppliedGhost = false;
+};
+
+void to_json(nlohmann::json &j, const GhostModeAccountSettings &s);
+void from_json(const nlohmann::json &j, GhostModeAccountSettings &s);
+
+class AccountNotificationSettings {
+public:
+  AccountNotificationSettings();
+
+  [[nodiscard]] bool enabled() const {
+    return _enabled.current();
+  }
+  void setEnabled(bool val);
+  [[nodiscard]] rpl::producer<bool> enabledValue() const {
+    return _enabled.value();
+  }
+  [[nodiscard]] rpl::producer<bool> enabledChanges() const {
+    return _enabled.changes();
+  }
+
+  [[nodiscard]] bool soundEnabled() const {
+    return _soundEnabled.current();
+  }
+  void setSoundEnabled(bool val);
+  [[nodiscard]] rpl::producer<bool> soundEnabledValue() const {
+    return _soundEnabled.value();
+  }
+  [[nodiscard]] rpl::producer<bool> soundEnabledChanges() const {
+    return _soundEnabled.changes();
+  }
+
+  [[nodiscard]] bool includeInUnreadCounter() const {
+    return _includeInUnreadCounter.current();
+  }
+  void setIncludeInUnreadCounter(bool val);
+  [[nodiscard]] rpl::producer<bool> includeInUnreadCounterValue() const {
+    return _includeInUnreadCounter.value();
+  }
+  [[nodiscard]] rpl::producer<bool> includeInUnreadCounterChanges() const {
+    return _includeInUnreadCounter.changes();
+  }
+
+  [[nodiscard]] bool showUnreadBadge() const {
+    return _showUnreadBadge.current();
+  }
+  void setShowUnreadBadge(bool val);
+  [[nodiscard]] rpl::producer<bool> showUnreadBadgeValue() const {
+    return _showUnreadBadge.value();
+  }
+  [[nodiscard]] rpl::producer<bool> showUnreadBadgeChanges() const {
+    return _showUnreadBadge.changes();
+  }
+
+  [[nodiscard]] bool completelyMute() const {
+    return _completelyMute.current();
+  }
+  void setCompletelyMute(bool val);
+  [[nodiscard]] rpl::producer<bool> completelyMuteValue() const {
+    return _completelyMute.value();
+  }
+  [[nodiscard]] rpl::producer<bool> completelyMuteChanges() const {
+    return _completelyMute.changes();
+  }
+
+  friend void to_json(nlohmann::json &j, const AccountNotificationSettings &s);
+  friend void from_json(const nlohmann::json &j, AccountNotificationSettings &s);
+
+private:
+  friend class WhiteSettings;
+
+  rpl::variable<bool> _enabled = true;
+  rpl::variable<bool> _soundEnabled = true;
+  rpl::variable<bool> _includeInUnreadCounter = true;
+  rpl::variable<bool> _showUnreadBadge = true;
+  rpl::variable<bool> _completelyMute = false;
+};
+
+void to_json(nlohmann::json &j, const AccountNotificationSettings &s);
+void from_json(const nlohmann::json &j, AccountNotificationSettings &s);
+
+class MessageShotSettings {
+public:
+  [[nodiscard]] bool showBackground() const {
+    return _showBackground.current();
+  }
+  [[nodiscard]] bool showDate() const { return _showDate.current(); }
+  [[nodiscard]] bool showReactions() const { return _showReactions.current(); }
+  [[nodiscard]] bool showHeaderDecorations() const {
+    return _showHeaderDecorations.current();
+  }
+  [[nodiscard]] bool showColorfulReplies() const {
+    return _showColorfulReplies.current();
+  }
+  [[nodiscard]] bool revealSpoilers() const {
+    return _revealSpoilers.current();
+  }
+  [[nodiscard]] int embeddedThemeType() const {
+    return _embeddedThemeType.current();
+  }
+  [[nodiscard]] uint32 embeddedThemeAccentColor() const {
+    return _embeddedThemeAccentColor.current();
+  }
+  [[nodiscard]] uint64 cloudThemeId() const { return _cloudThemeId.current(); }
+  [[nodiscard]] uint64 cloudThemeAccessHash() const {
+    return _cloudThemeAccessHash.current();
+  }
+  [[nodiscard]] uint64 cloudThemeDocumentId() const {
+    return _cloudThemeDocumentId.current();
+  }
+  [[nodiscard]] const QString &cloudThemeTitle() const {
+    return _cloudThemeTitle.current();
+  }
+  [[nodiscard]] uint64 cloudThemeAccountId() const {
+    return _cloudThemeAccountId.current();
+  }
+
+  void setShowBackground(bool val);
+  void setShowDate(bool val);
+  void setShowReactions(bool val);
+  void setShowHeaderDecorations(bool val);
+  void setShowColorfulReplies(bool val);
+  void setRevealSpoilers(bool val);
+
+  void setEmbeddedTheme(int type, uint32 accentColor = 0);
+  void setCloudTheme(uint64 accountId, uint64 id, uint64 accessHash,
+                     uint64 documentId, const QString &title);
+  void clearTheme();
+
+  friend void to_json(nlohmann::json &j, const MessageShotSettings &s);
+  friend void from_json(const nlohmann::json &j, MessageShotSettings &s);
+
+private:
+  friend class WhiteSettings;
+  [[nodiscard]] bool isCloudThemeEmpty() const;
+  void clearCloudThemeData();
+
+  rpl::variable<bool> _showBackground = true;
+  rpl::variable<bool> _showDate = false;
+  rpl::variable<bool> _showReactions = false;
+  rpl::variable<bool> _showHeaderDecorations = true;
+  rpl::variable<bool> _showColorfulReplies = true;
+  rpl::variable<bool> _revealSpoilers = true;
+
+  rpl::variable<int> _embeddedThemeType = -1;
+  rpl::variable<uint32> _embeddedThemeAccentColor = 0;
+
+  rpl::variable<uint64> _cloudThemeId = 0;
+  rpl::variable<uint64> _cloudThemeAccessHash = 0;
+  rpl::variable<uint64> _cloudThemeDocumentId = 0;
+  rpl::variable<QString> _cloudThemeTitle;
+  rpl::variable<uint64> _cloudThemeAccountId = 0;
+};
+
+void to_json(nlohmann::json &j, const MessageShotSettings &s);
+void from_json(const nlohmann::json &j, MessageShotSettings &s);
+
+class WhiteSettings {
+public:
+  WhiteSettings(const WhiteSettings &) = delete;
+  WhiteSettings &operator=(const WhiteSettings &) = delete;
+  WhiteSettings(WhiteSettings &&) noexcept = default;
+  WhiteSettings &operator=(WhiteSettings &&) noexcept = default;
+
+  [[nodiscard]] static WhiteSettings &getInstance();
+
+  static void load();
+  static void save();
+  static void reset();
+  static void initTimeSpentTracker();
+
+  [[nodiscard]] static GhostModeAccountSettings &
+  ghost(not_null<Main::Session *> session);
+  [[nodiscard]] static GhostModeAccountSettings &ghost(uint64 userId);
+  [[nodiscard]] static GhostModeAccountSettings &ghost();
+
+  [[nodiscard]] static AccountNotificationSettings &
+  accountNotifications(not_null<Main::Session *> session);
+  [[nodiscard]] static AccountNotificationSettings &accountNotifications(uint64 userId);
+  [[nodiscard]] static AccountNotificationSettings &accountNotifications();
+
+  [[nodiscard]] bool useGlobalGhostMode() const {
+    return _useGlobalGhostMode.current();
+  }
+  void setUseGlobalGhostMode(bool val);
+
+  [[nodiscard]] MessageShotSettings &messageShotSettings() {
+    return _messageShotSettings;
+  }
+  [[nodiscard]] const MessageShotSettings &messageShotSettings() const {
+    return _messageShotSettings;
+  }
+
+  void addShadowBan(int64 id);
+  void removeShadowBan(int64 id);
+  [[nodiscard]] bool isShadowBanned(const int64 id) const {
+    return _shadowBanIds.contains(id);
+  }
+  [[nodiscard]] const std::unordered_set<int64> &shadowBanIds() const {
+    return _shadowBanIds;
+  }
+
+  void validate();
+
+  [[nodiscard]] bool saveDeletedMessages() const {
+    return _saveDeletedMessages.current();
+  }
+  [[nodiscard]] bool saveMessagesHistory() const {
+    return _saveMessagesHistory.current();
+  }
+  [[nodiscard]] bool saveForBots() const { return _saveForBots.current(); }
+  [[nodiscard]] bool filtersEnabled() const {
+    return _filtersEnabled.current();
+  }
+  [[nodiscard]] bool filtersEnabledInChats() const {
+    return _filtersEnabledInChats.current();
+  }
+  [[nodiscard]] bool hideFromBlocked() const {
+    return _hideFromBlocked.current();
+  }
+  [[nodiscard]] bool semiTransparentDeletedMessages() const {
+    return _semiTransparentDeletedMessages.current();
+  }
+  [[nodiscard]] bool disableAds() const { return _disableAds.current(); }
+  [[nodiscard]] bool disableStories() const {
+    return _disableStories.current();
+  }
+  [[nodiscard]] bool disableCustomBackgrounds() const {
+    return _disableCustomBackgrounds.current();
+  }
+  [[nodiscard]] bool hidePremiumStatuses() const {
+    return _hidePremiumStatuses.current();
+  }
+  [[nodiscard]] bool showOnlyAddedEmojisAndStickers() const {
+    return _showOnlyAddedEmojisAndStickers.current();
+  }
+  [[nodiscard]] bool collapseSimilarChannels() const {
+    return _collapseSimilarChannels.current();
+  }
+  [[nodiscard]] bool hideSimilarChannels() const {
+    return _hideSimilarChannels.current();
+  }
+
+  // Account Profiles
+  [[nodiscard]] bool enableAccountProfiles() const {
+    return _enableAccountProfiles.current();
+  }
+  void setEnableAccountProfiles(bool val);
+  [[nodiscard]] rpl::producer<bool> enableAccountProfilesValue() const {
+    return _enableAccountProfiles.value();
+  }
+  [[nodiscard]] rpl::producer<bool> enableAccountProfilesChanges() const {
+    return _enableAccountProfiles.changes();
+  }
+
+  [[nodiscard]] bool accountProfilesEnabled() const {
+    return enableAccountProfiles();
+  }
+  void setAccountProfilesEnabled(bool val) {
+    setEnableAccountProfiles(val);
+  }
+  [[nodiscard]] rpl::producer<bool> accountProfilesEnabledChanges() const {
+    return enableAccountProfilesChanges();
+  }
+
+  [[nodiscard]] bool enableCustomArchives() const {
+    return _enableCustomArchives.current();
+  }
+  void setEnableCustomArchives(bool val);
+  [[nodiscard]] rpl::producer<bool> enableCustomArchivesValue() const {
+    return _enableCustomArchives.value();
+  }
+  [[nodiscard]] rpl::producer<bool> enableCustomArchivesChanges() const {
+    return _enableCustomArchives.changes();
+  }
+  [[nodiscard]] bool customArchivesEnabled() const {
+    return enableCustomArchives();
+  }
+  void setCustomArchivesEnabled(bool val) {
+    setEnableCustomArchives(val);
+  }
+  [[nodiscard]] bool confirmFolderChanges() const {
+    return _confirmFolderChanges.current();
+  }
+  void setConfirmFolderChanges(bool val);
+  [[nodiscard]] const std::vector<CustomArchive> &customArchives() const {
+    return _customArchives;
+  }
+  void setCustomArchives(const std::vector<CustomArchive> &val);
+  void addCustomArchive(const CustomArchive &val);
+  void addCustomArchive(const QString &name);
+  void removeCustomArchive(int id);
+  void updateCustomArchive(const CustomArchive &val);
+  void setCustomArchiveIcon(int id, const QString &icon);
+  [[nodiscard]] CustomArchive *findCustomArchive(int id);
+  [[nodiscard]] const CustomArchive *findCustomArchive(int id) const;
+  [[nodiscard]] int findCustomArchiveIdForPeer(uint64 peerId) const;
+  [[nodiscard]] bool isPeerInCustomArchive(uint64 peerId) const;
+  void addPeerToCustomArchive(int archiveId, uint64 peerId);
+  void removePeerFromCustomArchive(int archiveId, uint64 peerId);
+  void removePeerFromAllCustomArchives(uint64 peerId);
+  void setPeerPinnedInCustomArchive(int archiveId, uint64 peerId, bool pinned);
+  [[nodiscard]] rpl::producer<> customArchivesChanges() const {
+    return _customArchivesChanges.events();
+  }
+
+  [[nodiscard]] const CustomProfileBackground *customProfileBackground(
+      uint64 peerId,
+      CustomProfileBackground::Zone zone) const;
+  void setCustomProfileBackground(
+      uint64 peerId,
+      CustomProfileBackground::Zone zone,
+      const QString &path,
+      bool isVideo);
+  void clearCustomProfileBackground(
+      uint64 peerId,
+      CustomProfileBackground::Zone zone);
+  void clearAllCustomProfileBackgrounds(uint64 peerId);
+  [[nodiscard]] rpl::producer<> customProfileBackgroundChanges() const {
+    return _customProfileBackgroundChanges.events();
+  }
+
+	[[nodiscard]] int messageBubbleRadius() const { return _messageBubbleRadius.current(); }
+	[[nodiscard]] bool disableOpenLinkWarning() const { return _disableOpenLinkWarning.current(); }
+	[[nodiscard]] double wideMultiplier() const { return _wideMultiplier.current(); }
+	[[nodiscard]] bool spoofWebviewAsAndroid() const { return _spoofWebviewAsAndroid.current(); }
+	[[nodiscard]] bool increaseWebviewHeight() const { return _increaseWebviewHeight.current(); }
+	[[nodiscard]] bool increaseWebviewWidth() const { return _increaseWebviewWidth.current(); }
+	[[nodiscard]] bool materialSwitches() const { return _materialSwitches.current(); }
+	[[nodiscard]] bool removeMessageTail() const { return _removeMessageTail.current(); }
+	[[nodiscard]] bool disableNotificationsDelay() const { return _disableNotificationsDelay.current(); }
+	[[nodiscard]] bool localPremium() const { return _localPremium.current(); }
+	[[nodiscard]] bool showChannelReactions() const { return _showChannelReactions.current(); }
+	[[nodiscard]] bool showGroupReactions() const { return _showGroupReactions.current(); }
+	[[nodiscard]] bool showPrivateChatReactions() const { return _showPrivateChatReactions.current(); }
+	[[nodiscard]] const QString &appIcon() const { return _appIcon.current(); }
+	[[nodiscard]] bool simpleQuotesAndReplies() const { return _simpleQuotesAndReplies.current(); }
+	[[nodiscard]] bool hideFastShare() const { return _hideFastShare.current(); }
+	[[nodiscard]] bool replaceBottomInfoWithIcons() const { return _replaceBottomInfoWithIcons.current(); }
+	[[nodiscard]] const QString &deletedMark() const { return _deletedMark.current(); }
+	[[nodiscard]] const QString &editedMark() const { return _editedMark.current(); }
+	[[nodiscard]] bool unlimitedRecentStickers() const { return _unlimitedRecentStickers.current(); }
+	[[nodiscard]] ContextMenuVisibility showReactionsPanelInContextMenu() const { return _showReactionsPanelInContextMenu.current(); }
+	[[nodiscard]] ContextMenuVisibility showViewsPanelInContextMenu() const { return _showViewsPanelInContextMenu.current(); }
+	[[nodiscard]] ContextMenuVisibility showHideMessageInContextMenu() const { return _showHideMessageInContextMenu.current(); }
+	[[nodiscard]] ContextMenuVisibility showUserMessagesInContextMenu() const { return _showUserMessagesInContextMenu.current(); }
+	[[nodiscard]] ContextMenuVisibility showMessageDetailsInContextMenu() const { return _showMessageDetailsInContextMenu.current(); }
+	[[nodiscard]] ContextMenuVisibility showRepeatMessageInContextMenu() const { return _showRepeatMessageInContextMenu.current(); }
+	[[nodiscard]] ContextMenuVisibility showAddFilterInContextMenu() const { return _showAddFilterInContextMenu.current(); }
+	[[nodiscard]] bool showAttachButtonInMessageField() const { return _showAttachButtonInMessageField.current(); }
+	[[nodiscard]] bool showCommandsButtonInMessageField() const { return _showCommandsButtonInMessageField.current(); }
+	[[nodiscard]] bool showEmojiButtonInMessageField() const { return _showEmojiButtonInMessageField.current(); }
+	[[nodiscard]] bool showMicrophoneButtonInMessageField() const { return _showMicrophoneButtonInMessageField.current(); }
+	[[nodiscard]] bool showAutoDeleteButtonInMessageField() const { return _showAutoDeleteButtonInMessageField.current(); }
+	[[nodiscard]] bool showGiftButtonInMessageField() const { return _showGiftButtonInMessageField.current(); }
+	[[nodiscard]] bool showAiEditorButtonInMessageField() const { return _showAiEditorButtonInMessageField.current(); }
+	[[nodiscard]] bool showAttachPopup() const { return _showAttachPopup.current(); }
+	[[nodiscard]] bool showEmojiPopup() const { return _showEmojiPopup.current(); }
+	[[nodiscard]] bool showMyProfileInDrawer() const { return _showMyProfileInDrawer.current(); }
+	[[nodiscard]] bool showBotsInDrawer() const { return _showBotsInDrawer.current(); }
+	[[nodiscard]] bool showNewGroupInDrawer() const { return _showNewGroupInDrawer.current(); }
+	[[nodiscard]] bool showNewChannelInDrawer() const { return _showNewChannelInDrawer.current(); }
+	[[nodiscard]] bool showContactsInDrawer() const { return _showContactsInDrawer.current(); }
+	[[nodiscard]] bool showCallsInDrawer() const { return _showCallsInDrawer.current(); }
+	[[nodiscard]] bool showSavedMessagesInDrawer() const { return _showSavedMessagesInDrawer.current(); }
+	[[nodiscard]] bool showLReadToggleInDrawer() const { return _showLReadToggleInDrawer.current(); }
+	[[nodiscard]] bool showSReadToggleInDrawer() const { return _showSReadToggleInDrawer.current(); }
+	[[nodiscard]] bool showNightModeToggleInDrawer() const { return _showNightModeToggleInDrawer.current(); }
+	[[nodiscard]] bool showGhostToggleInDrawer() const { return _showGhostToggleInDrawer.current(); }
+	[[nodiscard]] bool showStreamerToggleInDrawer() const { return _showStreamerToggleInDrawer.current(); }
+	[[nodiscard]] bool showGhostToggleInTray() const { return _showGhostToggleInTray.current(); }
+	[[nodiscard]] bool showStreamerToggleInTray() const { return _showStreamerToggleInTray.current(); }
+	[[nodiscard]] const QString &monoFont() const { return _monoFont.current(); }
+	[[nodiscard]] bool hideNotificationCounters() const { return _hideNotificationCounters.current(); }
+	[[nodiscard]] bool hideNotificationBadge() const { return _hideNotificationBadge.current(); }
+	[[nodiscard]] bool hideAllChatsFolder() const { return _hideAllChatsFolder.current(); }
+	[[nodiscard]] ChannelBottomButton channelBottomButton() const { return _channelBottomButton.current(); }
+	[[nodiscard]] bool quickAdminShortcuts() const { return _quickAdminShortcuts.current(); }
+	[[nodiscard]] bool disableGreetingSticker() const { return _disableGreetingSticker.current(); }
+	[[nodiscard]] PeerIdDisplay showPeerId() const { return _showPeerId.current(); }
+	[[nodiscard]] bool showMessageSeconds() const { return _showMessageSeconds.current(); }
+	[[nodiscard]] bool showMessageShot() const { return _showMessageShot.current(); }
+	[[nodiscard]] bool filterZalgo() const { return _filterZalgo.current(); }
+	[[nodiscard]] bool stickerConfirmation() const { return _stickerConfirmation.current(); }
+	[[nodiscard]] bool gifConfirmation() const { return _gifConfirmation.current(); }
+	[[nodiscard]] bool voiceConfirmation() const { return _voiceConfirmation.current(); }
+	[[nodiscard]] bool roundConfirmation() const { return _roundConfirmation.current(); }
+	[[nodiscard]] TranslationProvider translationProvider() const { return _translationProvider.current(); }
+	[[nodiscard]] bool adaptiveCoverColor() const { return _adaptiveCoverColor.current(); }
+	[[nodiscard]] bool improveLinkPreviews() const { return _improveLinkPreviews.current(); }
+	[[nodiscard]] bool crashReporting() const { return _crashReporting.current(); }
+	[[nodiscard]] int avatarCorners() const { return _avatarCorners.current(); }
+	[[nodiscard]] int typingAnimation() const { return _typingAnimation.current(); }
+	[[nodiscard]] bool singleCornerRadius() const { return _singleCornerRadius.current(); }
+	[[nodiscard]] bool streamerMode() const { return _streamerMode.current(); }
+	[[nodiscard]] bool hideTelegramOnViewOnce() const { return _hideTelegramOnViewOnce.current(); }
+	[[nodiscard]] bool hidePhoneNumber() const { return _hidePhoneNumber.current(); }
+	[[nodiscard]] PhoneRevealMode phoneRevealMode() const { return _phoneRevealMode.current(); }
+	[[nodiscard]] bool musicIslandEnabled() const { return _musicIslandEnabled.current(); }
+	[[nodiscard]] int musicIslandPosition() const { return _musicIslandPosition.current(); }
+	[[nodiscard]] bool musicIslandHideTopBar() const { return _musicIslandHideTopBar.current(); }
+	[[nodiscard]] int musicIslandExpandMode() const { return _musicIslandExpandMode.current(); }
+	[[nodiscard]] bool musicIslandCoverColors() const { return _musicIslandCoverColors.current(); }
+	[[nodiscard]] bool musicIslandBlurCover() const { return _musicIslandBlurCover.current(); }
+	[[nodiscard]] bool musicIslandEqualizer() const { return _musicIslandEqualizer.current(); }
+	[[nodiscard]] bool musicIslandClickOpensTrack() const { return _musicIslandClickOpensTrack.current(); }
+	[[nodiscard]] bool musicIslandLocked() const { return _musicIslandLocked.current(); }
+	[[nodiscard]] int musicIslandFreeX() const { return _musicIslandFreeX.current(); }
+	[[nodiscard]] int musicIslandFreeY() const { return _musicIslandFreeY.current(); }
+	[[nodiscard]] bool musicIslandCustomBackgroundEnabled() const { return _musicIslandCustomBackgroundEnabled.current(); }
+	[[nodiscard]] const QString &musicIslandCustomBackgroundPath() const { return _musicIslandCustomBackgroundPath.current(); }
+	[[nodiscard]] const QString &musicKaraokeCoverPath() const { return _musicKaraokeCoverPath.current(); }
+	[[nodiscard]] const QString &musicWeatherCity() const { return _musicWeatherCity.current(); }
+	[[nodiscard]] int musicIslandCustomBackgroundOpacity() const { return _musicIslandCustomBackgroundOpacity.current(); }
+	[[nodiscard]] bool musicIslandCustomBackgroundBlur() const { return _musicIslandCustomBackgroundBlur.current(); }
+	[[nodiscard]] int musicIslandCustomBackgroundDim() const { return _musicIslandCustomBackgroundDim.current(); }
+	[[nodiscard]] int musicIslandCustomBackgroundMode() const { return _musicIslandCustomBackgroundMode.current(); }
+	[[nodiscard]] bool musicLyricsEnabled() const { return _musicLyricsEnabled.current(); }
+	[[nodiscard]] bool musicLyricsShowInIsland() const { return _musicLyricsShowInIsland.current(); }
+	[[nodiscard]] bool musicLyricsFloatingLine() const { return _musicLyricsFloatingLine.current(); }
+	[[nodiscard]] bool musicLyricsKaraokeButton() const { return _musicLyricsKaraokeButton.current(); }
+	[[nodiscard]] int musicLyricsAnimation() const { return _musicLyricsAnimation.current(); }
+	[[nodiscard]] bool musicLyricsArtScatter() const { return _musicLyricsArtScatter.current(); }
+	[[nodiscard]] bool musicLyricsKeyword() const { return _musicLyricsKeyword.current(); }
+	[[nodiscard]] bool musicLyricsBassPulse() const { return _musicLyricsBassPulse.current(); }
+	[[nodiscard]] bool musicLyricsChorus() const { return _musicLyricsChorus.current(); }
+	[[nodiscard]] bool musicLyricsTranslate() const { return _musicLyricsTranslate.current(); }
+	[[nodiscard]] bool musicLyricsBlur() const { return _musicLyricsBlur.current(); }
+	[[nodiscard]] int musicLyricsFontScale() const { return _musicLyricsFontScale.current(); }
+	[[nodiscard]] int profileBackgroundDim() const { return _profileBackgroundDim.current(); }
+
+	[[nodiscard]] ConnectionBypassMode connectionBypassMode() const {
+		return _connectionBypassMode.current();
+	}
+	[[nodiscard]] const QString &connectionBypassSecret() const {
+		return _connectionBypassSecret.current();
+	}
+	[[nodiscard]] bool tgWsProxyEnabled() const {
+		return _tgWsProxyEnabled.current();
+	}
+	[[nodiscard]] const QString &tgWsProxySecret() const {
+		return _tgWsProxySecret;
+	}
+
+	void setSaveDeletedMessages(bool val);
+	void setSaveMessagesHistory(bool val);
+	void setSaveForBots(bool val);
+	void setFiltersEnabled(bool val);
+	void setFiltersEnabledInChats(bool val);
+	void setHideFromBlocked(bool val);
+	void setSemiTransparentDeletedMessages(bool val);
+	void setDisableAds(bool val);
+	void setDisableStories(bool val);
+	void setDisableCustomBackgrounds(bool val);
+	void setHidePremiumStatuses(bool val);
+	void setShowOnlyAddedEmojisAndStickers(bool val);
+	void setCollapseSimilarChannels(bool val);
+	void setHideSimilarChannels(bool val);
+	void setMessageBubbleRadius(int val);
+	void setDisableOpenLinkWarning(bool val);
+	void setWideMultiplier(double val);
+	void setSpoofWebviewAsAndroid(bool val);
+	void setIncreaseWebviewHeight(bool val);
+	void setIncreaseWebviewWidth(bool val);
+	void setMaterialSwitches(bool val);
+	void setRemoveMessageTail(bool val);
+	void setDisableNotificationsDelay(bool val);
+	void setLocalPremium(bool val);
+	void setShowChannelReactions(bool val);
+	void setShowGroupReactions(bool val);
+	void setShowPrivateChatReactions(bool val);
+	void setAppIcon(const QString &val);
+	void setSimpleQuotesAndReplies(bool val);
+	void setHideFastShare(bool val);
+	void setReplaceBottomInfoWithIcons(bool val);
+	void setDeletedMark(const QString &val);
+	void setEditedMark(const QString &val);
+	void setUnlimitedRecentStickers(bool val);
+	void setShowReactionsPanelInContextMenu(ContextMenuVisibility val);
+	void setShowViewsPanelInContextMenu(ContextMenuVisibility val);
+	void setShowHideMessageInContextMenu(ContextMenuVisibility val);
+	void setShowUserMessagesInContextMenu(ContextMenuVisibility val);
+	void setShowMessageDetailsInContextMenu(ContextMenuVisibility val);
+	void setShowRepeatMessageInContextMenu(ContextMenuVisibility val);
+	void setShowAddFilterInContextMenu(ContextMenuVisibility val);
+	void setShowAttachButtonInMessageField(bool val);
+	void setShowCommandsButtonInMessageField(bool val);
+	void setShowEmojiButtonInMessageField(bool val);
+	void setShowMicrophoneButtonInMessageField(bool val);
+	void setShowAutoDeleteButtonInMessageField(bool val);
+	void setShowGiftButtonInMessageField(bool val);
+	void setShowAiEditorButtonInMessageField(bool val);
+	void setShowAttachPopup(bool val);
+	void setShowEmojiPopup(bool val);
+	void setShowMyProfileInDrawer(bool val);
+	void setShowBotsInDrawer(bool val);
+	void setShowNewGroupInDrawer(bool val);
+	void setShowNewChannelInDrawer(bool val);
+	void setShowContactsInDrawer(bool val);
+	void setShowCallsInDrawer(bool val);
+	void setShowSavedMessagesInDrawer(bool val);
+	void setShowLReadToggleInDrawer(bool val);
+	void setShowSReadToggleInDrawer(bool val);
+	void setShowNightModeToggleInDrawer(bool val);
+	void setShowGhostToggleInDrawer(bool val);
+	void setShowStreamerToggleInDrawer(bool val);
+	void setShowGhostToggleInTray(bool val);
+	void setShowStreamerToggleInTray(bool val);
+	void setMonoFont(const QString &val);
+	void setHideNotificationCounters(bool val);
+	void setHideNotificationBadge(bool val);
+	void setHideAllChatsFolder(bool val);
+	void setChannelBottomButton(ChannelBottomButton val);
+	void setQuickAdminShortcuts(bool val);
+	void setDisableGreetingSticker(bool val);
+	void setShowPeerId(PeerIdDisplay val);
+	void setShowMessageSeconds(bool val);
+	void setShowMessageShot(bool val);
+	void setFilterZalgo(bool val);
+	void setStickerConfirmation(bool val);
+	void setGifConfirmation(bool val);
+	void setVoiceConfirmation(bool val);
+	void setRoundConfirmation(bool val);
+	void setTranslationProvider(TranslationProvider val);
+	void setAdaptiveCoverColor(bool val);
+	void setImproveLinkPreviews(bool val);
+	void setCrashReporting(bool val);
+	void setAvatarCorners(int val);
+	void setTypingAnimation(int val);
+	void setSingleCornerRadius(bool val);
+	void setStreamerMode(bool val);
+	void setHideTelegramOnViewOnce(bool val);
+	void setHidePhoneNumber(bool val);
+	void setPhoneRevealMode(PhoneRevealMode val);
+	void setMusicIslandEnabled(bool val);
+	void setMusicIslandPosition(int val);
+	void setMusicIslandHideTopBar(bool val);
+	void setMusicIslandExpandMode(int val);
+	void setMusicIslandCoverColors(bool val);
+	void setMusicIslandBlurCover(bool val);
+	void setMusicIslandEqualizer(bool val);
+	void setMusicIslandClickOpensTrack(bool val);
+	void setMusicIslandLocked(bool val);
+	void setMusicIslandFreeX(int val);
+	void setMusicIslandFreeY(int val);
+	void setMusicIslandCustomBackgroundEnabled(bool val);
+	void setMusicIslandCustomBackgroundPath(const QString &val);
+	void setMusicKaraokeCoverPath(const QString &val);
+	void setMusicWeatherCity(const QString &val);
+	void setMusicIslandCustomBackgroundOpacity(int val);
+	void setMusicIslandCustomBackgroundBlur(bool val);
+	void setMusicIslandCustomBackgroundDim(int val);
+	void setMusicIslandCustomBackgroundMode(int val);
+	void setMusicLyricsEnabled(bool val);
+	void setMusicLyricsShowInIsland(bool val);
+	void setMusicLyricsFloatingLine(bool val);
+	void setMusicLyricsKaraokeButton(bool val);
+	void setMusicLyricsAnimation(int val);
+	void setMusicLyricsArtScatter(bool val);
+	void setMusicLyricsKeyword(bool val);
+	void setMusicLyricsBassPulse(bool val);
+	void setMusicLyricsChorus(bool val);
+	void setMusicLyricsTranslate(bool val);
+	void setMusicLyricsBlur(bool val);
+	void setMusicLyricsFontScale(int val);
+	void setProfileBackgroundDim(int val);
+  void setConnectionBypassMode(ConnectionBypassMode val);
+  void setConnectionBypassSecret(const QString &val);
+  void setTgWsProxyEnabled(bool val);
+  void setTgWsProxySecret(const QString &val);
+
+  [[nodiscard]] QString bypassLastGoodHost() const;
+  void setBypassLastGoodHost(const QString &host);
+  [[nodiscard]] crl::time bypassBadHostUntil(const QString &host) const;
+  [[nodiscard]] std::map<QString, crl::time> bypassBadHostsSnapshot() const;
+  void markBypassBadHost(const QString &host, crl::time untilUnixMs);
+  void clearBypassBadHost(const QString &host);
+  [[nodiscard]] std::vector<QString> bypassServerMirrors() const;
+  void setBypassServerMirrors(const std::vector<QString> &mirrors);
+  [[nodiscard]] std::vector<QString> bypassServerMirrorHosts() const;
+  void setBypassServerMirrorHosts(const std::vector<QString> &hosts);
+
+  [[nodiscard]] rpl::producer<ConnectionBypassMode> connectionBypassModeValue() const {
+		return _connectionBypassMode.value();
+	}
+  [[nodiscard]] rpl::producer<ConnectionBypassMode> connectionBypassModeChanges() const {
+		return _connectionBypassMode.changes();
+	}
+  [[nodiscard]] rpl::producer<QString> connectionBypassSecretValue() const {
+		return _connectionBypassSecret.value();
+	}
+  [[nodiscard]] rpl::producer<bool> tgWsProxyEnabledValue() const {
+		return _tgWsProxyEnabled.value();
+	}
+
+	[[nodiscard]] rpl::producer<bool> useGlobalGhostModeValue() const { return _useGlobalGhostMode.value(); }
+	[[nodiscard]] rpl::producer<bool> useGlobalGhostModeChanges() const { return _useGlobalGhostMode.changes(); }
+	[[nodiscard]] rpl::producer<bool> saveDeletedMessagesValue() const { return _saveDeletedMessages.value(); }
+	[[nodiscard]] rpl::producer<bool> saveDeletedMessagesChanges() const { return _saveDeletedMessages.changes(); }
+	[[nodiscard]] rpl::producer<bool> saveMessagesHistoryValue() const { return _saveMessagesHistory.value(); }
+	[[nodiscard]] rpl::producer<bool> saveMessagesHistoryChanges() const { return _saveMessagesHistory.changes(); }
+	[[nodiscard]] rpl::producer<bool> saveForBotsValue() const { return _saveForBots.value(); }
+	[[nodiscard]] rpl::producer<bool> saveForBotsChanges() const { return _saveForBots.changes(); }
+	[[nodiscard]] rpl::producer<bool> filtersEnabledValue() const { return _filtersEnabled.value(); }
+	[[nodiscard]] rpl::producer<bool> filtersEnabledChanges() const { return _filtersEnabled.changes(); }
+	[[nodiscard]] rpl::producer<bool> filtersEnabledInChatsValue() const { return _filtersEnabledInChats.value(); }
+	[[nodiscard]] rpl::producer<bool> filtersEnabledInChatsChanges() const { return _filtersEnabledInChats.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideFromBlockedValue() const { return _hideFromBlocked.value(); }
+	[[nodiscard]] rpl::producer<bool> hideFromBlockedChanges() const { return _hideFromBlocked.changes(); }
+	[[nodiscard]] rpl::producer<bool> semiTransparentDeletedMessagesValue() const { return _semiTransparentDeletedMessages.value(); }
+	[[nodiscard]] rpl::producer<bool> semiTransparentDeletedMessagesChanges() const { return _semiTransparentDeletedMessages.changes(); }
+	[[nodiscard]] rpl::producer<bool> disableAdsValue() const { return _disableAds.value(); }
+	[[nodiscard]] rpl::producer<bool> disableAdsChanges() const { return _disableAds.changes(); }
+	[[nodiscard]] rpl::producer<bool> disableStoriesValue() const { return _disableStories.value(); }
+	[[nodiscard]] rpl::producer<bool> disableStoriesChanges() const { return _disableStories.changes(); }
+	[[nodiscard]] rpl::producer<bool> disableCustomBackgroundsValue() const { return _disableCustomBackgrounds.value(); }
+	[[nodiscard]] rpl::producer<bool> disableCustomBackgroundsChanges() const { return _disableCustomBackgrounds.changes(); }
+	[[nodiscard]] rpl::producer<bool> hidePremiumStatusesValue() const { return _hidePremiumStatuses.value(); }
+	[[nodiscard]] rpl::producer<bool> hidePremiumStatusesChanges() const { return _hidePremiumStatuses.changes(); }
+	[[nodiscard]] rpl::producer<bool> showOnlyAddedEmojisAndStickersValue() const { return _showOnlyAddedEmojisAndStickers.value(); }
+	[[nodiscard]] rpl::producer<bool> showOnlyAddedEmojisAndStickersChanges() const { return _showOnlyAddedEmojisAndStickers.changes(); }
+	[[nodiscard]] rpl::producer<bool> collapseSimilarChannelsValue() const { return _collapseSimilarChannels.value(); }
+	[[nodiscard]] rpl::producer<bool> collapseSimilarChannelsChanges() const { return _collapseSimilarChannels.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideSimilarChannelsValue() const { return _hideSimilarChannels.value(); }
+	[[nodiscard]] rpl::producer<bool> hideSimilarChannelsChanges() const { return _hideSimilarChannels.changes(); }
+	[[nodiscard]] rpl::producer<int> messageBubbleRadiusValue() const { return _messageBubbleRadius.value(); }
+	[[nodiscard]] rpl::producer<int> messageBubbleRadiusChanges() const { return _messageBubbleRadius.changes(); }
+	[[nodiscard]] rpl::producer<bool> disableOpenLinkWarningValue() const { return _disableOpenLinkWarning.value(); }
+	[[nodiscard]] rpl::producer<bool> disableOpenLinkWarningChanges() const { return _disableOpenLinkWarning.changes(); }
+	[[nodiscard]] rpl::producer<double> wideMultiplierValue() const { return _wideMultiplier.value(); }
+	[[nodiscard]] rpl::producer<double> wideMultiplierChanges() const { return _wideMultiplier.changes(); }
+	[[nodiscard]] rpl::producer<bool> spoofWebviewAsAndroidValue() const { return _spoofWebviewAsAndroid.value(); }
+	[[nodiscard]] rpl::producer<bool> spoofWebviewAsAndroidChanges() const { return _spoofWebviewAsAndroid.changes(); }
+	[[nodiscard]] rpl::producer<bool> increaseWebviewHeightValue() const { return _increaseWebviewHeight.value(); }
+	[[nodiscard]] rpl::producer<bool> increaseWebviewHeightChanges() const { return _increaseWebviewHeight.changes(); }
+	[[nodiscard]] rpl::producer<bool> increaseWebviewWidthValue() const { return _increaseWebviewWidth.value(); }
+	[[nodiscard]] rpl::producer<bool> increaseWebviewWidthChanges() const { return _increaseWebviewWidth.changes(); }
+	[[nodiscard]] rpl::producer<bool> materialSwitchesValue() const { return _materialSwitches.value(); }
+	[[nodiscard]] rpl::producer<bool> materialSwitchesChanges() const { return _materialSwitches.changes(); }
+	[[nodiscard]] rpl::producer<bool> removeMessageTailValue() const { return _removeMessageTail.value(); }
+	[[nodiscard]] rpl::producer<bool> removeMessageTailChanges() const { return _removeMessageTail.changes(); }
+	[[nodiscard]] rpl::producer<bool> disableNotificationsDelayValue() const { return _disableNotificationsDelay.value(); }
+	[[nodiscard]] rpl::producer<bool> disableNotificationsDelayChanges() const { return _disableNotificationsDelay.changes(); }
+	[[nodiscard]] rpl::producer<bool> localPremiumValue() const { return _localPremium.value(); }
+	[[nodiscard]] rpl::producer<bool> localPremiumChanges() const { return _localPremium.changes(); }
+	[[nodiscard]] rpl::producer<bool> showChannelReactionsValue() const { return _showChannelReactions.value(); }
+	[[nodiscard]] rpl::producer<bool> showChannelReactionsChanges() const { return _showChannelReactions.changes(); }
+	[[nodiscard]] rpl::producer<bool> showGroupReactionsValue() const { return _showGroupReactions.value(); }
+	[[nodiscard]] rpl::producer<bool> showGroupReactionsChanges() const { return _showGroupReactions.changes(); }
+	[[nodiscard]] rpl::producer<bool> showPrivateChatReactionsValue() const { return _showPrivateChatReactions.value(); }
+	[[nodiscard]] rpl::producer<bool> showPrivateChatReactionsChanges() const { return _showPrivateChatReactions.changes(); }
+	[[nodiscard]] rpl::producer<QString> appIconValue() const { return _appIcon.value(); }
+	[[nodiscard]] rpl::producer<QString> appIconChanges() const { return _appIcon.changes(); }
+	[[nodiscard]] rpl::producer<bool> simpleQuotesAndRepliesValue() const { return _simpleQuotesAndReplies.value(); }
+	[[nodiscard]] rpl::producer<bool> simpleQuotesAndRepliesChanges() const { return _simpleQuotesAndReplies.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideFastShareValue() const { return _hideFastShare.value(); }
+	[[nodiscard]] rpl::producer<bool> hideFastShareChanges() const { return _hideFastShare.changes(); }
+	[[nodiscard]] rpl::producer<bool> replaceBottomInfoWithIconsValue() const { return _replaceBottomInfoWithIcons.value(); }
+	[[nodiscard]] rpl::producer<bool> replaceBottomInfoWithIconsChanges() const { return _replaceBottomInfoWithIcons.changes(); }
+	[[nodiscard]] rpl::producer<QString> deletedMarkValue() const { return _deletedMark.value(); }
+	[[nodiscard]] rpl::producer<QString> deletedMarkChanges() const { return _deletedMark.changes(); }
+	[[nodiscard]] rpl::producer<QString> editedMarkValue() const { return _editedMark.value(); }
+	[[nodiscard]] rpl::producer<QString> editedMarkChanges() const { return _editedMark.changes(); }
+	[[nodiscard]] rpl::producer<bool> unlimitedRecentStickersValue() const { return _unlimitedRecentStickers.value(); }
+	[[nodiscard]] rpl::producer<bool> unlimitedRecentStickersChanges() const { return _unlimitedRecentStickers.changes(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showReactionsPanelInContextMenuValue() const { return _showReactionsPanelInContextMenu.value(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showReactionsPanelInContextMenuChanges() const { return _showReactionsPanelInContextMenu.changes(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showViewsPanelInContextMenuValue() const { return _showViewsPanelInContextMenu.value(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showViewsPanelInContextMenuChanges() const { return _showViewsPanelInContextMenu.changes(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showHideMessageInContextMenuValue() const { return _showHideMessageInContextMenu.value(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showHideMessageInContextMenuChanges() const { return _showHideMessageInContextMenu.changes(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showUserMessagesInContextMenuValue() const { return _showUserMessagesInContextMenu.value(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showUserMessagesInContextMenuChanges() const { return _showUserMessagesInContextMenu.changes(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showMessageDetailsInContextMenuValue() const { return _showMessageDetailsInContextMenu.value(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showMessageDetailsInContextMenuChanges() const { return _showMessageDetailsInContextMenu.changes(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showRepeatMessageInContextMenuValue() const { return _showRepeatMessageInContextMenu.value(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showRepeatMessageInContextMenuChanges() const { return _showRepeatMessageInContextMenu.changes(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showAddFilterInContextMenuValue() const { return _showAddFilterInContextMenu.value(); }
+	[[nodiscard]] rpl::producer<ContextMenuVisibility> showAddFilterInContextMenuChanges() const { return _showAddFilterInContextMenu.changes(); }
+	[[nodiscard]] rpl::producer<bool> showAttachButtonInMessageFieldValue() const { return _showAttachButtonInMessageField.value(); }
+	[[nodiscard]] rpl::producer<bool> showAttachButtonInMessageFieldChanges() const { return _showAttachButtonInMessageField.changes(); }
+	[[nodiscard]] rpl::producer<bool> showCommandsButtonInMessageFieldValue() const { return _showCommandsButtonInMessageField.value(); }
+	[[nodiscard]] rpl::producer<bool> showCommandsButtonInMessageFieldChanges() const { return _showCommandsButtonInMessageField.changes(); }
+	[[nodiscard]] rpl::producer<bool> showEmojiButtonInMessageFieldValue() const { return _showEmojiButtonInMessageField.value(); }
+	[[nodiscard]] rpl::producer<bool> showEmojiButtonInMessageFieldChanges() const { return _showEmojiButtonInMessageField.changes(); }
+	[[nodiscard]] rpl::producer<bool> showMicrophoneButtonInMessageFieldValue() const { return _showMicrophoneButtonInMessageField.value(); }
+	[[nodiscard]] rpl::producer<bool> showMicrophoneButtonInMessageFieldChanges() const { return _showMicrophoneButtonInMessageField.changes(); }
+	[[nodiscard]] rpl::producer<bool> showAutoDeleteButtonInMessageFieldValue() const { return _showAutoDeleteButtonInMessageField.value(); }
+	[[nodiscard]] rpl::producer<bool> showAutoDeleteButtonInMessageFieldChanges() const { return _showAutoDeleteButtonInMessageField.changes(); }
+	[[nodiscard]] rpl::producer<bool> showGiftButtonInMessageFieldValue() const { return _showGiftButtonInMessageField.value(); }
+	[[nodiscard]] rpl::producer<bool> showGiftButtonInMessageFieldChanges() const { return _showGiftButtonInMessageField.changes(); }
+	[[nodiscard]] rpl::producer<bool> showAiEditorButtonInMessageFieldValue() const { return _showAiEditorButtonInMessageField.value(); }
+	[[nodiscard]] rpl::producer<bool> showAiEditorButtonInMessageFieldChanges() const { return _showAiEditorButtonInMessageField.changes(); }
+	[[nodiscard]] rpl::producer<bool> showAttachPopupValue() const { return _showAttachPopup.value(); }
+	[[nodiscard]] rpl::producer<bool> showAttachPopupChanges() const { return _showAttachPopup.changes(); }
+	[[nodiscard]] rpl::producer<bool> showEmojiPopupValue() const { return _showEmojiPopup.value(); }
+	[[nodiscard]] rpl::producer<bool> showEmojiPopupChanges() const { return _showEmojiPopup.changes(); }
+	[[nodiscard]] rpl::producer<bool> showMyProfileInDrawerValue() const { return _showMyProfileInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showMyProfileInDrawerChanges() const { return _showMyProfileInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showBotsInDrawerValue() const { return _showBotsInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showBotsInDrawerChanges() const { return _showBotsInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showNewGroupInDrawerValue() const { return _showNewGroupInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showNewGroupInDrawerChanges() const { return _showNewGroupInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showNewChannelInDrawerValue() const { return _showNewChannelInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showNewChannelInDrawerChanges() const { return _showNewChannelInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showContactsInDrawerValue() const { return _showContactsInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showContactsInDrawerChanges() const { return _showContactsInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showCallsInDrawerValue() const { return _showCallsInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showCallsInDrawerChanges() const { return _showCallsInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showSavedMessagesInDrawerValue() const { return _showSavedMessagesInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showSavedMessagesInDrawerChanges() const { return _showSavedMessagesInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showLReadToggleInDrawerValue() const { return _showLReadToggleInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showLReadToggleInDrawerChanges() const { return _showLReadToggleInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showSReadToggleInDrawerValue() const { return _showSReadToggleInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showSReadToggleInDrawerChanges() const { return _showSReadToggleInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showNightModeToggleInDrawerValue() const { return _showNightModeToggleInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showNightModeToggleInDrawerChanges() const { return _showNightModeToggleInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showGhostToggleInDrawerValue() const { return _showGhostToggleInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showGhostToggleInDrawerChanges() const { return _showGhostToggleInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showStreamerToggleInDrawerValue() const { return _showStreamerToggleInDrawer.value(); }
+	[[nodiscard]] rpl::producer<bool> showStreamerToggleInDrawerChanges() const { return _showStreamerToggleInDrawer.changes(); }
+	[[nodiscard]] rpl::producer<bool> showGhostToggleInTrayValue() const { return _showGhostToggleInTray.value(); }
+	[[nodiscard]] rpl::producer<bool> showGhostToggleInTrayChanges() const { return _showGhostToggleInTray.changes(); }
+	[[nodiscard]] rpl::producer<bool> showStreamerToggleInTrayValue() const { return _showStreamerToggleInTray.value(); }
+	[[nodiscard]] rpl::producer<bool> showStreamerToggleInTrayChanges() const { return _showStreamerToggleInTray.changes(); }
+	[[nodiscard]] rpl::producer<QString> monoFontValue() const { return _monoFont.value(); }
+	[[nodiscard]] rpl::producer<QString> monoFontChanges() const { return _monoFont.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideNotificationCountersValue() const { return _hideNotificationCounters.value(); }
+	[[nodiscard]] rpl::producer<bool> hideNotificationCountersChanges() const { return _hideNotificationCounters.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideNotificationBadgeValue() const { return _hideNotificationBadge.value(); }
+	[[nodiscard]] rpl::producer<bool> hideNotificationBadgeChanges() const { return _hideNotificationBadge.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideAllChatsFolderValue() const { return _hideAllChatsFolder.value(); }
+	[[nodiscard]] rpl::producer<bool> hideAllChatsFolderChanges() const { return _hideAllChatsFolder.changes(); }
+	[[nodiscard]] rpl::producer<ChannelBottomButton> channelBottomButtonValue() const { return _channelBottomButton.value(); }
+	[[nodiscard]] rpl::producer<ChannelBottomButton> channelBottomButtonChanges() const { return _channelBottomButton.changes(); }
+	[[nodiscard]] rpl::producer<bool> quickAdminShortcutsValue() const { return _quickAdminShortcuts.value(); }
+	[[nodiscard]] rpl::producer<bool> quickAdminShortcutsChanges() const { return _quickAdminShortcuts.changes(); }
+	[[nodiscard]] rpl::producer<bool> disableGreetingStickerValue() const { return _disableGreetingSticker.value(); }
+	[[nodiscard]] rpl::producer<bool> disableGreetingStickerChanges() const { return _disableGreetingSticker.changes(); }
+	[[nodiscard]] rpl::producer<PeerIdDisplay> showPeerIdValue() const { return _showPeerId.value(); }
+	[[nodiscard]] rpl::producer<PeerIdDisplay> showPeerIdChanges() const { return _showPeerId.changes(); }
+	[[nodiscard]] rpl::producer<bool> showMessageSecondsValue() const { return _showMessageSeconds.value(); }
+	[[nodiscard]] rpl::producer<bool> showMessageSecondsChanges() const { return _showMessageSeconds.changes(); }
+	[[nodiscard]] rpl::producer<bool> showMessageShotValue() const { return _showMessageShot.value(); }
+	[[nodiscard]] rpl::producer<bool> showMessageShotChanges() const { return _showMessageShot.changes(); }
+	[[nodiscard]] rpl::producer<bool> filterZalgoValue() const { return _filterZalgo.value(); }
+	[[nodiscard]] rpl::producer<bool> filterZalgoChanges() const { return _filterZalgo.changes(); }
+	[[nodiscard]] rpl::producer<bool> stickerConfirmationValue() const { return _stickerConfirmation.value(); }
+	[[nodiscard]] rpl::producer<bool> stickerConfirmationChanges() const { return _stickerConfirmation.changes(); }
+	[[nodiscard]] rpl::producer<bool> gifConfirmationValue() const { return _gifConfirmation.value(); }
+	[[nodiscard]] rpl::producer<bool> gifConfirmationChanges() const { return _gifConfirmation.changes(); }
+	[[nodiscard]] rpl::producer<bool> voiceConfirmationValue() const { return _voiceConfirmation.value(); }
+	[[nodiscard]] rpl::producer<bool> voiceConfirmationChanges() const { return _voiceConfirmation.changes(); }
+	[[nodiscard]] rpl::producer<bool> roundConfirmationValue() const { return _roundConfirmation.value(); }
+	[[nodiscard]] rpl::producer<bool> roundConfirmationChanges() const { return _roundConfirmation.changes(); }
+	[[nodiscard]] rpl::producer<TranslationProvider> translationProviderValue() const { return _translationProvider.value(); }
+	[[nodiscard]] rpl::producer<TranslationProvider> translationProviderChanges() const { return _translationProvider.changes(); }
+	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorValue() const { return _adaptiveCoverColor.value(); }
+	[[nodiscard]] rpl::producer<bool> adaptiveCoverColorChanges() const { return _adaptiveCoverColor.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandEnabledValue() const { return _musicIslandEnabled.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandEnabledChanges() const { return _musicIslandEnabled.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandPositionValue() const { return _musicIslandPosition.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandPositionChanges() const { return _musicIslandPosition.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandHideTopBarValue() const { return _musicIslandHideTopBar.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandHideTopBarChanges() const { return _musicIslandHideTopBar.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandExpandModeValue() const { return _musicIslandExpandMode.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandExpandModeChanges() const { return _musicIslandExpandMode.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCoverColorsChanges() const { return _musicIslandCoverColors.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandBlurCoverChanges() const { return _musicIslandBlurCover.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandEqualizerChanges() const { return _musicIslandEqualizer.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandLockedValue() const { return _musicIslandLocked.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandLockedChanges() const { return _musicIslandLocked.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeXValue() const { return _musicIslandFreeX.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeXChanges() const { return _musicIslandFreeX.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeYValue() const { return _musicIslandFreeY.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandFreeYChanges() const { return _musicIslandFreeY.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundEnabledValue() const { return _musicIslandCustomBackgroundEnabled.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundEnabledChanges() const { return _musicIslandCustomBackgroundEnabled.changes(); }
+	[[nodiscard]] rpl::producer<QString> musicIslandCustomBackgroundPathValue() const { return _musicIslandCustomBackgroundPath.value(); }
+	[[nodiscard]] rpl::producer<QString> musicIslandCustomBackgroundPathChanges() const { return _musicIslandCustomBackgroundPath.changes(); }
+	[[nodiscard]] rpl::producer<QString> musicKaraokeCoverPathValue() const { return _musicKaraokeCoverPath.value(); }
+	[[nodiscard]] rpl::producer<QString> musicWeatherCityValue() const { return _musicWeatherCity.value(); }
+	[[nodiscard]] rpl::producer<QString> musicWeatherCityChanges() const { return _musicWeatherCity.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundOpacityValue() const { return _musicIslandCustomBackgroundOpacity.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundOpacityChanges() const { return _musicIslandCustomBackgroundOpacity.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundBlurValue() const { return _musicIslandCustomBackgroundBlur.value(); }
+	[[nodiscard]] rpl::producer<bool> musicIslandCustomBackgroundBlurChanges() const { return _musicIslandCustomBackgroundBlur.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundDimValue() const { return _musicIslandCustomBackgroundDim.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundDimChanges() const { return _musicIslandCustomBackgroundDim.changes(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundModeValue() const { return _musicIslandCustomBackgroundMode.value(); }
+	[[nodiscard]] rpl::producer<int> musicIslandCustomBackgroundModeChanges() const { return _musicIslandCustomBackgroundMode.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsEnabledChanges() const { return _musicLyricsEnabled.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsShowInIslandChanges() const { return _musicLyricsShowInIsland.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsFloatingLineChanges() const { return _musicLyricsFloatingLine.changes(); }
+	[[nodiscard]] rpl::producer<int> musicLyricsAnimationChanges() const { return _musicLyricsAnimation.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsArtScatterChanges() const { return _musicLyricsArtScatter.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsKeywordChanges() const { return _musicLyricsKeyword.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsBassPulseChanges() const { return _musicLyricsBassPulse.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsChorusChanges() const { return _musicLyricsChorus.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsTranslateChanges() const { return _musicLyricsTranslate.changes(); }
+	[[nodiscard]] rpl::producer<int> musicLyricsFontScaleChanges() const { return _musicLyricsFontScale.changes(); }
+	[[nodiscard]] rpl::producer<int> profileBackgroundDimChanges() const { return _profileBackgroundDim.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsKaraokeButtonChanges() const { return _musicLyricsKaraokeButton.changes(); }
+	[[nodiscard]] rpl::producer<bool> musicLyricsBlurChanges() const { return _musicLyricsBlur.changes(); }
+	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsValue() const { return _improveLinkPreviews.value(); }
+	[[nodiscard]] rpl::producer<bool> improveLinkPreviewsChanges() const { return _improveLinkPreviews.changes(); }
+	[[nodiscard]] rpl::producer<bool> crashReportingValue() const { return _crashReporting.value(); }
+	[[nodiscard]] rpl::producer<bool> crashReportingChanges() const { return _crashReporting.changes(); }
+	[[nodiscard]] rpl::producer<int> avatarCornersValue() const { return _avatarCorners.value(); }
+	[[nodiscard]] rpl::producer<int> avatarCornersChanges() const { return _avatarCorners.changes(); }
+	[[nodiscard]] rpl::producer<int> typingAnimationValue() const { return _typingAnimation.value(); }
+	[[nodiscard]] rpl::producer<bool> singleCornerRadiusValue() const { return _singleCornerRadius.value(); }
+	[[nodiscard]] rpl::producer<bool> singleCornerRadiusChanges() const { return _singleCornerRadius.changes(); }
+	[[nodiscard]] rpl::producer<bool> streamerModeValue() const { return _streamerMode.value(); }
+	[[nodiscard]] rpl::producer<bool> streamerModeChanges() const { return _streamerMode.changes(); }
+	[[nodiscard]] rpl::producer<bool> hideTelegramOnViewOnceValue() const { return _hideTelegramOnViewOnce.value(); }
+	[[nodiscard]] rpl::producer<bool> hideTelegramOnViewOnceChanges() const { return _hideTelegramOnViewOnce.changes(); }
+	[[nodiscard]] rpl::producer<bool> hidePhoneNumberValue() const { return _hidePhoneNumber.value(); }
+	[[nodiscard]] rpl::producer<bool> hidePhoneNumberChanges() const { return _hidePhoneNumber.changes(); }
+	[[nodiscard]] rpl::producer<PhoneRevealMode> phoneRevealModeValue() const { return _phoneRevealMode.value(); }
+	[[nodiscard]] rpl::producer<PhoneRevealMode> phoneRevealModeChanges() const { return _phoneRevealMode.changes(); }
+
+
+  [[nodiscard]] AccountProfilesVisualVariant accountProfilesVisualVariant() const {
+    return _accountProfilesVisualVariant.current();
+  }
+  void setAccountProfilesVisualVariant(AccountProfilesVisualVariant val);
+  [[nodiscard]] rpl::producer<AccountProfilesVisualVariant> accountProfilesVisualVariantValue() const {
+    return _accountProfilesVisualVariant.value();
+  }
+
+  [[nodiscard]] const std::vector<AccountProfile>& accountProfiles() const {
+    return _accountProfiles;
+  }
+  void setAccountProfiles(const std::vector<AccountProfile>& val);
+  void addAccountProfile(const AccountProfile& val);
+  void addAccountProfile(const QString &name);
+  void removeAccountProfile(int id);
+  void updateAccountProfile(const AccountProfile& val);
+  void renameAccountProfile(int id, const QString &newName);
+  void setAccountProfileIcon(int id, const QString &icon);
+  [[nodiscard]] int maxAccountProfiles() const {
+    return _maxAccountProfiles.current();
+  }
+  void setMaxAccountProfiles(int val);
+  [[nodiscard]] rpl::producer<int> maxAccountProfilesValue() const {
+    return _maxAccountProfiles.value();
+  }
+  void toggleAccountInProfile(int profileId, uint64 accountId);
+  [[nodiscard]] rpl::producer<> accountProfilesChanges() const {
+    return _accountProfilesChanges.events();
+  }
+
+  [[nodiscard]] const std::map<uint64, std::vector<int>>& accountProfileMap() const {
+    return _accountProfileMap;
+  }
+  void setAccountProfileMap(const std::map<uint64, std::vector<int>>& val);
+  void assignAccountToProfile(uint64 accountId, int profileId);
+  void unassignAccountFromProfile(uint64 accountId, int profileId);
+  [[nodiscard]] std::vector<int> getAccountProfileIds(uint64 accountId) const;
+  [[nodiscard]] int activeProfileId() const {
+    return _activeProfileId.current();
+  }
+  void setActiveProfileId(int val);
+  [[nodiscard]] rpl::producer<int> activeProfileIdValue() const {
+    return _activeProfileId.value();
+  }
+  [[nodiscard]] rpl::producer<int> activeProfileIdChanges() const {
+    return _activeProfileId.changes();
+  }
+
+
+
+  [[nodiscard]] bool glassEffect() const {
+    return _glassEffect.current();
+  }
+  [[nodiscard]] rpl::producer<bool> glassEffectValue() const {
+    return _glassEffect.value();
+  }
+  [[nodiscard]] rpl::producer<bool> glassEffectChanges() const {
+    return _glassEffect.changes();
+  }
+  [[nodiscard]] int glassOpacity() const {
+    return _glassOpacity.current();
+  }
+  [[nodiscard]] rpl::producer<int> glassOpacityChanges() const {
+    return _glassOpacity.changes();
+  }
+  [[nodiscard]] bool glassBlur() const {
+    return _glassBlur.current();
+  }
+  [[nodiscard]] rpl::producer<bool> glassBlurValue() const {
+    return _glassBlur.value();
+  }
+  [[nodiscard]] int glassBlurStrength() const {
+    return _glassBlurStrength.current();
+  }
+  [[nodiscard]] bool showGlassToggleInDrawer() const {
+    return _showGlassToggleInDrawer.current();
+  }
+
+  [[nodiscard]] bool showCryptoInDrawer() const {
+    return _showCryptoInDrawer.current();
+  }
+  [[nodiscard]] bool showSendBotInDrawer() const {
+    return _showSendBotInDrawer.current();
+  }
+  [[nodiscard]] int cryptoFiatCurrency() const {
+    return _cryptoFiatCurrency.current();
+  }
+  [[nodiscard]] bool cryptoFiatCurrencyManual() const {
+    return _cryptoFiatCurrencyManual.current();
+  }
+  [[nodiscard]] rpl::producer<int> cryptoFiatCurrencyValue() const {
+    return _cryptoFiatCurrency.value();
+  }
+  [[nodiscard]] rpl::producer<int> cryptoFiatCurrencyChanges() const {
+    return _cryptoFiatCurrency.changes();
+  }
+  [[nodiscard]] bool showBTC() const { return _showBTC.current(); }
+  [[nodiscard]] bool showETH() const { return _showETH.current(); }
+  [[nodiscard]] bool showTON() const { return _showTON.current(); }
+  [[nodiscard]] bool showSOL() const { return _showSOL.current(); }
+  [[nodiscard]] bool showBNB() const { return _showBNB.current(); }
+  [[nodiscard]] bool showFiatUSD() const { return _showFiatUSD.current(); }
+  [[nodiscard]] bool showFiatEUR() const { return _showFiatEUR.current(); }
+  [[nodiscard]] bool showFiatRUB() const { return _showFiatRUB.current(); }
+  [[nodiscard]] bool showCryptoCharts() const {
+    return _showCryptoCharts.current();
+  }
+  [[nodiscard]] bool showCryptoChanges() const {
+    return _showCryptoChanges.current();
+  }
+  [[nodiscard]] int cryptoChartDays() const {
+    return _cryptoChartDays.current();
+  }
+  [[nodiscard]] rpl::producer<bool> showCryptoChartsChanges() const {
+    return _showCryptoCharts.changes();
+  }
+  [[nodiscard]] rpl::producer<bool> showCryptoChangesChanges() const {
+    return _showCryptoChanges.changes();
+  }
+  [[nodiscard]] rpl::producer<int> cryptoChartDaysChanges() const {
+    return _cryptoChartDays.changes();
+  }
+
+
+
+  void setGlassEffect(bool val);
+  void setGlassOpacity(int val);
+  void setGlassBlur(bool val);
+  void setGlassBlurStrength(int val);
+  void setShowGlassToggleInDrawer(bool val);
+
+  void setShowCryptoInDrawer(bool val);
+  void setShowSendBotInDrawer(bool val);
+  void setCryptoFiatCurrency(int val);
+  void setCryptoFiatCurrencyFromLanguage(int val, bool force = false);
+  void setShowBTC(bool val);
+  void setShowETH(bool val);
+  void setShowTON(bool val);
+  void setShowSOL(bool val);
+  void setShowBNB(bool val);
+  void setShowFiatUSD(bool val);
+  void setShowFiatEUR(bool val);
+  void setShowFiatRUB(bool val);
+  void setShowCryptoCharts(bool val);
+  void setShowCryptoChanges(bool val);
+  void setCryptoChartDays(int val);
+
+  [[nodiscard]] bool startupAnimationEnabled() const {
+    return _startupAnimationEnabled.current();
+  }
+  void setStartupAnimationEnabled(bool val);
+  [[nodiscard]] bool startupAnimationShowIcon() const {
+    return _startupAnimationShowIcon.current();
+  }
+  void setStartupAnimationShowIcon(bool val);
+  [[nodiscard]] rpl::producer<bool> startupAnimationShowIconValue() const {
+    return _startupAnimationShowIcon.value();
+  }
+  [[nodiscard]] rpl::producer<int> startupAnimationTypeValue() const {
+    return _startupAnimationType.value();
+  }
+  [[nodiscard]] int startupAnimationType() const {
+    return _startupAnimationType.current();
+  }
+  void setStartupAnimationType(int val);
+  [[nodiscard]] int startupAnimationFps() const {
+    return _startupAnimationFps.current();
+  }
+  void setStartupAnimationFps(int val);
+
+
+
+  [[nodiscard]] rpl::producer<int64> totalTimeSpent() const {
+    return _totalTimeSpent.value();
+  }
+  [[nodiscard]] int64 getTotalTimeSpent() const {
+    return _totalTimeSpent.current();
+  }
+  void setTotalTimeSpent(int64 val);
+
+  // Per-account counters: minutes tick only for the account whose window is
+  // active. UI subscriptions are tied to their own account, including in
+  // inactive windows.
+  [[nodiscard]] int64 getTimeSpentFor(uint64 userId) const {
+    const auto i = _timeSpentByAccount.find(userId);
+    return (i == _timeSpentByAccount.end()) ? 0 : i->second;
+  }
+  [[nodiscard]] rpl::producer<int64> timeSpentValue(uint64 userId) const;
+  // Multi-device merge: a higher server value raises the account's counter.
+  void mergeTimeSpentFromServer(uint64 userId, int64 serverMinutes);
+
+  [[nodiscard]] bool showTimeSpentInDrawer() const {
+    return _showTimeSpentInDrawer.current();
+  }
+  [[nodiscard]] rpl::producer<bool> showTimeSpentInDrawerValue() const {
+    return _showTimeSpentInDrawer.value();
+  }
+  [[nodiscard]] rpl::producer<bool> showTimeSpentInDrawerChanges() const {
+    return _showTimeSpentInDrawer.changes();
+  }
+  void setShowTimeSpentInDrawer(bool val);
+
+  // Formats of the time-spent row: 0 = "340 ч" (default),
+  // 1 = "340 ч. 11 мин.", 2 = "14 дн." (>24h), 3 = "14 дн. 3 ч".
+  [[nodiscard]] int timeSpentFormat() const {
+    return _timeSpentFormat.current();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentFormatValue() const {
+    return _timeSpentFormat.value();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentFormatChanges() const {
+    return _timeSpentFormat.changes();
+  }
+  void setTimeSpentFormat(int val);
+
+  // Whether the own total time is published to the profile row other
+  // Whitegram users see.
+  [[nodiscard]] bool showTimeSpentInProfile() const {
+    return _showTimeSpentInProfile.current();
+  }
+  [[nodiscard]] rpl::producer<bool> showTimeSpentInProfileValue() const {
+    return _showTimeSpentInProfile.value();
+  }
+  [[nodiscard]] rpl::producer<bool> showTimeSpentInProfileChanges() const {
+    return _showTimeSpentInProfile.changes();
+  }
+  void setShowTimeSpentInProfile(bool val);
+
+  // The drawer counter label template: 0 = "В приложении: …",
+  // 1 = "В Whitegram: …", 2 = "Залипание: …", 3 = "Онлайн: …".
+  [[nodiscard]] int timeSpentLabelStyle() const {
+    return _timeSpentLabelStyle.current();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentLabelStyleValue() const {
+    return _timeSpentLabelStyle.value();
+  }
+  [[nodiscard]] rpl::producer<int> timeSpentLabelStyleChanges() const {
+    return _timeSpentLabelStyle.changes();
+  }
+  void setTimeSpentLabelStyle(int val);
+
+  [[nodiscard]] bool whitegramAutoUpdate() const {
+    return _whitegramAutoUpdate.current();
+  }
+  [[nodiscard]] rpl::producer<bool> whitegramAutoUpdateValue() const {
+    return _whitegramAutoUpdate.value();
+  }
+  [[nodiscard]] rpl::producer<bool> whitegramAutoUpdateChanges() const {
+    return _whitegramAutoUpdate.changes();
+  }
+  void setWhitegramAutoUpdate(bool val);
+
+  [[nodiscard]] bool hasSelfDestructPassword() const {
+    return _hasSelfDestructPassword.current();
+  }
+  [[nodiscard]] rpl::producer<bool> hasSelfDestructPasswordValue() const {
+    return _hasSelfDestructPassword.value();
+  }
+  [[nodiscard]] bool checkSelfDestructPassword(const QString &password) const;
+  void setSelfDestructPassword(const QString &password);
+  void clearSelfDestructPassword();
+
+  [[nodiscard]] bool isSelfDestructPasswordLockedOut() const;
+  [[nodiscard]] crl::time selfDestructPasswordLockoutRemaining() const;
+  [[nodiscard]] int selfDestructPasswordAttemptsRemaining() const;
+  void registerSelfDestructPasswordFailure();
+  void resetSelfDestructPasswordLockout();
+  void syncSelfDestructPasswordLockout();
+
+  [[nodiscard]] bool hasTotalDestructPassword() const {
+    return _hasTotalDestructPassword.current();
+  }
+  [[nodiscard]] rpl::producer<bool> hasTotalDestructPasswordValue() const {
+    return _hasTotalDestructPassword.value();
+  }
+  [[nodiscard]] bool checkTotalDestructPassword(const QString &password) const;
+  void setTotalDestructPassword(const QString &password);
+  void clearTotalDestructPassword();
+
+  void setTotalDestructCloudPassword(
+      uint64 userId,
+      const QString &encryptedPassword);
+  void clearTotalDestructCloudPasswords();
+  [[nodiscard]] std::map<uint64, QString> totalDestructCloudPasswords() const;
+
+  [[nodiscard]] bool isTotalDestructPasswordLockedOut() const;
+  [[nodiscard]] crl::time totalDestructPasswordLockoutRemaining() const;
+  [[nodiscard]] int totalDestructPasswordAttemptsRemaining() const;
+  void registerTotalDestructPasswordFailure();
+  void resetTotalDestructPasswordLockout();
+  void syncTotalDestructPasswordLockout();
+
+  [[nodiscard]] bool startupSoundEnabled() const {
+    return _startupSoundEnabled.current();
+  }
+  [[nodiscard]] rpl::producer<bool> startupSoundEnabledValue() const {
+    return _startupSoundEnabled.value();
+  }
+  [[nodiscard]] rpl::producer<bool> startupSoundEnabledChanges() const {
+    return _startupSoundEnabled.changes();
+  }
+  void setStartupSoundEnabled(bool val);
+
+  [[nodiscard]] QString startupSoundPath() const {
+    return _startupSoundPath.current();
+  }
+  [[nodiscard]] rpl::producer<QString> startupSoundPathValue() const {
+    return _startupSoundPath.value();
+  }
+  [[nodiscard]] rpl::producer<QString> startupSoundPathChanges() const {
+    return _startupSoundPath.changes();
+  }
+  void setStartupSoundPath(const QString &val);
+  [[nodiscard]] int startupSoundVolume() const {
+    return _startupSoundVolume.current();
+  }
+  [[nodiscard]] rpl::producer<int> startupSoundVolumeValue() const {
+    return _startupSoundVolume.value();
+  }
+  [[nodiscard]] rpl::producer<int> startupSoundVolumeChanges() const {
+    return _startupSoundVolume.changes();
+  }
+  void setStartupSoundVolume(int val);
+  void playStartupSound();
+  void previewStartupSound();
+  void stopStartupSound();
+  [[nodiscard]] bool isStartupSoundPlaying() const;
+  [[nodiscard]] static QString startupSoundBuiltinPath();
+  [[nodiscard]] QString startupSoundEffectivePath() const;
+
+  friend void to_json(nlohmann::json &j, const WhiteSettings &s);
+  friend void from_json(const nlohmann::json &j, WhiteSettings &s);
+
+private:
+  WhiteSettings();
+  ~WhiteSettings();
+
+  void normalizeSelfDestructPasswordLockout();
+  void normalizeTotalDestructPasswordLockout();
+
+  [[nodiscard]] uint64 getOverriddenGhostUserId(uint64 userId) const {
+    return _useGlobalGhostMode.current() ? 0 : userId;
+  }
+
+  rpl::variable<bool> _saveDeletedMessages = true;
+  rpl::variable<bool> _saveMessagesHistory = true;
+  rpl::variable<bool> _saveForBots = false;
+  std::unordered_set<int64> _shadowBanIds;
+  rpl::variable<bool> _filtersEnabled = false;
+  rpl::variable<bool> _filtersEnabledInChats = false;
+  rpl::variable<bool> _hideFromBlocked = false;
+  rpl::variable<bool> _semiTransparentDeletedMessages = false;
+  rpl::variable<bool> _disableAds = true;
+  rpl::variable<bool> _disableStories = false;
+  rpl::variable<bool> _disableCustomBackgrounds = false;
+  rpl::variable<bool> _showOnlyAddedEmojisAndStickers = false;
+  rpl::variable<bool> _collapseSimilarChannels = true;
+  rpl::variable<bool> _hideSimilarChannels = false;
+  rpl::variable<int> _messageBubbleRadius = 16;
+  rpl::variable<bool> _disableOpenLinkWarning = false;
+  rpl::variable<double> _wideMultiplier = 1.0;
+  rpl::variable<bool> _spoofWebviewAsAndroid = false;
+  rpl::variable<bool> _increaseWebviewHeight = false;
+  rpl::variable<bool> _increaseWebviewWidth = false;
+  rpl::variable<bool> _materialSwitches = true;
+  rpl::variable<bool> _removeMessageTail = false;
+  rpl::variable<bool> _disableNotificationsDelay = false;
+  rpl::variable<bool> _localPremium = false;
+  rpl::variable<bool> _showChannelReactions = true;
+  rpl::variable<bool> _showGroupReactions = true;
+  rpl::variable<bool> _showPrivateChatReactions = true;
+  rpl::variable<QString> _appIcon;
+  rpl::variable<bool> _simpleQuotesAndReplies = false;
+  rpl::variable<bool> _hideFastShare = false;
+  rpl::variable<bool> _replaceBottomInfoWithIcons = true;
+  rpl::variable<QString> _deletedMark = QString::fromUtf8("🧹");
+  rpl::variable<QString> _editedMark;
+  rpl::variable<bool> _unlimitedRecentStickers = false;
+  rpl::variable<ContextMenuVisibility> _showReactionsPanelInContextMenu = ContextMenuVisibility::Visible;
+  rpl::variable<ContextMenuVisibility> _showViewsPanelInContextMenu = ContextMenuVisibility::Visible;
+  rpl::variable<ContextMenuVisibility> _showHideMessageInContextMenu = ContextMenuVisibility::Hidden;
+  rpl::variable<ContextMenuVisibility> _showUserMessagesInContextMenu = ContextMenuVisibility::VisibleWithModifier;
+  rpl::variable<ContextMenuVisibility> _showMessageDetailsInContextMenu = ContextMenuVisibility::VisibleWithModifier;
+  rpl::variable<ContextMenuVisibility> _showRepeatMessageInContextMenu = ContextMenuVisibility::Hidden;
+  rpl::variable<ContextMenuVisibility> _showAddFilterInContextMenu = ContextMenuVisibility::Visible;
+  rpl::variable<bool> _showAttachButtonInMessageField = true;
+  rpl::variable<bool> _showCommandsButtonInMessageField = true;
+  rpl::variable<bool> _showEmojiButtonInMessageField = true;
+  rpl::variable<bool> _showMicrophoneButtonInMessageField = true;
+  rpl::variable<bool> _showAutoDeleteButtonInMessageField = true;
+  rpl::variable<bool> _showGiftButtonInMessageField = true;
+  rpl::variable<bool> _showAiEditorButtonInMessageField = true;
+  rpl::variable<bool> _showAttachPopup = true;
+  rpl::variable<bool> _showEmojiPopup = true;
+  rpl::variable<bool> _showMyProfileInDrawer = true;
+  rpl::variable<bool> _showBotsInDrawer = true;
+  rpl::variable<bool> _showNewGroupInDrawer = true;
+  rpl::variable<bool> _showNewChannelInDrawer = true;
+  rpl::variable<bool> _showContactsInDrawer = true;
+  rpl::variable<bool> _showCallsInDrawer = true;
+  rpl::variable<bool> _showSavedMessagesInDrawer = true;
+  rpl::variable<bool> _showLReadToggleInDrawer = false;
+  rpl::variable<bool> _showSReadToggleInDrawer = true;
+  rpl::variable<bool> _showNightModeToggleInDrawer = true;
+  rpl::variable<bool> _showGhostToggleInDrawer = true;
+  rpl::variable<bool> _showStreamerToggleInDrawer = false;
+  rpl::variable<bool> _showGhostToggleInTray = true;
+  rpl::variable<bool> _showStreamerToggleInTray = false;
+  rpl::variable<bool> _hidePremiumStatuses = false;
+  rpl::variable<QString> _monoFont;
+  rpl::variable<bool> _hideNotificationCounters = false;
+  rpl::variable<bool> _hideNotificationBadge = false;
+  rpl::variable<bool> _hideAllChatsFolder = false;
+  rpl::variable<ChannelBottomButton> _channelBottomButton = ChannelBottomButton::DiscussWithFallback;
+  rpl::variable<bool> _quickAdminShortcuts = true;
+  rpl::variable<bool> _disableGreetingSticker = false;
+  rpl::variable<PeerIdDisplay> _showPeerId = PeerIdDisplay::BotApi;
+  rpl::variable<bool> _showMessageSeconds = false;
+  rpl::variable<bool> _showMessageShot = true;
+  rpl::variable<bool> _filterZalgo = false;
+  rpl::variable<bool> _stickerConfirmation = false;
+  rpl::variable<bool> _gifConfirmation = false;
+  rpl::variable<bool> _voiceConfirmation = false;
+  rpl::variable<bool> _roundConfirmation = false;
+  rpl::variable<TranslationProvider> _translationProvider = TranslationProvider::Telegram;
+  rpl::variable<bool> _adaptiveCoverColor = true;
+  rpl::variable<bool> _improveLinkPreviews = false;
+  rpl::variable<bool> _crashReporting = true;
+  rpl::variable<int> _avatarCorners = 23;
+  rpl::variable<int> _typingAnimation = 0;
+  rpl::variable<bool> _singleCornerRadius = false;
+  rpl::variable<bool> _streamerMode = false;
+  rpl::variable<bool> _hideTelegramOnViewOnce = true;
+  rpl::variable<bool> _hidePhoneNumber = false;
+  rpl::variable<PhoneRevealMode> _phoneRevealMode = PhoneRevealMode::OnClick;
+  rpl::variable<bool> _musicIslandEnabled = true;
+  rpl::variable<int> _musicIslandPosition = 3;
+  rpl::variable<bool> _musicIslandHideTopBar = true;
+  rpl::variable<int> _musicIslandExpandMode = 2;
+  rpl::variable<bool> _musicIslandCoverColors = true;
+  rpl::variable<bool> _musicIslandBlurCover = true;
+  rpl::variable<bool> _musicIslandEqualizer = true;
+  rpl::variable<bool> _musicIslandClickOpensTrack = true;
+  rpl::variable<bool> _musicIslandLocked = false;
+  rpl::variable<int> _musicIslandFreeX = 500;
+  rpl::variable<int> _musicIslandFreeY = 862;
+  rpl::variable<bool> _musicIslandCustomBackgroundEnabled = false;
+  rpl::variable<QString> _musicIslandCustomBackgroundPath;
+  rpl::variable<QString> _musicKaraokeCoverPath;
+  rpl::variable<QString> _musicWeatherCity;
+  rpl::variable<int> _musicIslandCustomBackgroundOpacity = 100;
+  rpl::variable<bool> _musicIslandCustomBackgroundBlur = false;
+  rpl::variable<int> _musicIslandCustomBackgroundDim = 35;
+  rpl::variable<int> _musicIslandCustomBackgroundMode = 0;
+  rpl::variable<bool> _musicLyricsEnabled = true;
+  rpl::variable<bool> _musicLyricsShowInIsland = true;
+  rpl::variable<bool> _musicLyricsFloatingLine = true;
+  rpl::variable<bool> _musicLyricsKaraokeButton = true;
+  rpl::variable<int> _musicLyricsAnimation = 0;
+  rpl::variable<bool> _musicLyricsArtScatter = true;
+  rpl::variable<bool> _musicLyricsKeyword = true;
+  rpl::variable<bool> _musicLyricsBassPulse = true;
+  rpl::variable<bool> _musicLyricsChorus = true;
+  rpl::variable<bool> _musicLyricsTranslate = true;
+  rpl::variable<bool> _musicLyricsBlur = true;
+  rpl::variable<int> _profileBackgroundDim = 100;
+  rpl::variable<int> _musicLyricsFontScale = 100;
+  rpl::variable<ConnectionBypassMode> _connectionBypassMode =
+	  ConnectionBypassMode::Auto;
+  rpl::variable<QString> _connectionBypassSecret;
+  rpl::variable<bool> _tgWsProxyEnabled = false;
+  QString _tgWsProxySecret;
+
+  rpl::variable<bool> _enableAccountProfiles = true;
+  rpl::variable<AccountProfilesVisualVariant> _accountProfilesVisualVariant = AccountProfilesVisualVariant::Folders;
+  std::vector<AccountProfile> _accountProfiles;
+  std::map<uint64, std::vector<int>> _accountProfileMap;
+  rpl::variable<int> _activeProfileId = 0;
+  rpl::variable<int> _maxAccountProfiles = 10;
+  rpl::event_stream<> _accountProfilesChanges;
+
+  rpl::variable<bool> _enableCustomArchives = true;
+  rpl::variable<bool> _confirmFolderChanges = true;
+  std::vector<CustomArchive> _customArchives;
+  rpl::event_stream<> _customArchivesChanges;
+
+  std::vector<CustomProfileBackground> _customProfileBackgrounds;
+  rpl::event_stream<> _customProfileBackgroundChanges;
+
+
+
+  rpl::variable<bool> _glassEffect = false;
+  // Background opacity in percent while the glass effect is enabled.
+  rpl::variable<int> _glassOpacity = 60;
+  rpl::variable<bool> _glassBlur = true;
+  rpl::variable<int> _glassBlurStrength = 40;
+  rpl::variable<bool> _showGlassToggleInDrawer = false;
+
+  rpl::variable<bool> _showCryptoInDrawer = true;
+  rpl::variable<bool> _showSendBotInDrawer = false;
+  rpl::variable<int> _cryptoFiatCurrency = 0;
+  rpl::variable<bool> _cryptoFiatCurrencyManual = false;
+  rpl::variable<bool> _showBTC = true;
+  rpl::variable<bool> _showETH = true;
+  rpl::variable<bool> _showTON = true;
+  rpl::variable<bool> _showSOL = false;
+  rpl::variable<bool> _showBNB = false;
+  rpl::variable<bool> _showFiatUSD = true;
+  rpl::variable<bool> _showFiatEUR = true;
+  rpl::variable<bool> _showFiatRUB = true;
+  rpl::variable<bool> _showCryptoCharts = true;
+  rpl::variable<bool> _showCryptoChanges = true;
+  rpl::variable<int> _cryptoChartDays = 7;
+
+  rpl::variable<int64> _totalTimeSpent = 0;
+  std::map<uint64, int64> _timeSpentByAccount;
+  rpl::event_stream<uint64> _timeSpentUpdates;
+  rpl::variable<bool> _showTimeSpentInDrawer = false;
+  rpl::variable<int> _timeSpentFormat = 0;
+  rpl::variable<bool> _showTimeSpentInProfile = true;
+  rpl::variable<int> _timeSpentLabelStyle = 0;
+  rpl::variable<bool> _whitegramAutoUpdate = true;
+  rpl::variable<bool> _hasSelfDestructPassword = false;
+  QString _selfDestructSalt;
+  QString _selfDestructHash;
+  int _selfDestructFailedAttempts = 0;
+  int _selfDestructLockoutLevel = 0;
+  crl::time _selfDestructLockoutUntilUnixMs = 0;
+
+  rpl::variable<bool> _hasTotalDestructPassword = false;
+  QString _totalDestructSalt;
+  QString _totalDestructHash;
+  int _totalDestructFailedAttempts = 0;
+  int _totalDestructLockoutLevel = 0;
+  crl::time _totalDestructLockoutUntilUnixMs = 0;
+  std::map<uint64, QString> _totalDestructCloudPasswords;
+  QString _bypassLastGoodHost;
+  std::map<QString, crl::time> _bypassBadHostsUntil;
+  std::vector<QString> _bypassServerMirrors;
+  std::vector<QString> _bypassServerMirrorHosts;
+  std::unique_ptr<base::Timer> _timeSpentTimer;
+
+  rpl::variable<bool> _startupSoundEnabled = false;
+  rpl::variable<QString> _startupSoundPath;
+  rpl::variable<int> _startupSoundVolume = 80;
+  std::unique_ptr<Media::Audio::Track> _startupSoundTrack;
+
+  rpl::variable<bool> _startupAnimationEnabled = true;
+  rpl::variable<bool> _startupAnimationShowIcon = true;
+  rpl::variable<int> _startupAnimationType = 5;
+  rpl::variable<int> _startupAnimationFps = 240;
+
+  rpl::variable<bool> _useGlobalGhostMode = true;
+  std::map<uint64, std::unique_ptr<GhostModeAccountSettings>> _ghostAccounts;
+  std::map<uint64, std::unique_ptr<AccountNotificationSettings>> _notificationAccounts;
+
+  MessageShotSettings _messageShotSettings;
+};
+
+void to_json(nlohmann::json &j, const WhiteSettings &s);
+void from_json(const nlohmann::json &j, WhiteSettings &s);

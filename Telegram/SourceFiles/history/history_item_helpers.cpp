@@ -61,8 +61,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace {
@@ -633,7 +633,7 @@ QString NewMessagePostAuthor(const Api::SendAction &action) {
 bool ShouldSendSilent(
 		not_null<PeerData*> peer,
 		const Api::SendOptions &options) {
-	const auto &ghost = AyuSettings::ghost(&peer->session());
+	const auto &ghost = WhiteSettings::ghost(&peer->session());
 	if (ghost.shouldSendWithoutSound()) {
 		return !options.silent;
 	}
@@ -989,7 +989,7 @@ MessageFlags FlagsFromMTP(
 		| ((flags & MTP::f_views) ? Flag::HasViews : Flag())
 		// AyuGram: removed
 		// | ((flags & MTP::f_noforwards) ? Flag::NoForwards : Flag())
-		| (flags & MTP::f_noforwards ? Flag::AyuNoForwards : Flag())
+		| (flags & MTP::f_noforwards ? Flag::WhiteNoForwards : Flag())
 		| ((flags & MTP::f_invert_media) ? Flag::InvertMedia : Flag())
 		| ((flags & MTP::f_video_processing_pending)
 			? Flag::EstimatedDate
@@ -1341,7 +1341,7 @@ void CheckReactionNotificationSchedule(
 		return;
 	}
 	const auto peer = item->history()->peer;
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if ((peer->isChannel() && !peer->isMegagroup() && !settings.showChannelReactions())
 		|| (peer->isMegagroup() && !settings.showGroupReactions())
 		|| (peer->isUser() && !settings.showPrivateChatReactions())) {

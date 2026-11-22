@@ -11,7 +11,7 @@ function Check-Png($path, $size) {
     } finally { $image.Dispose() }
 }
 foreach ($variant in @('light', 'dark')) {
-    $dir = "$desktop/Telegram/Resources/art/ayu/whitegram_$variant"
+    $dir = "$desktop/Telegram/Resources/art/white/whitegram_$variant"
     Check-Png "$dir/app.png" 1024
     $bytes = [IO.File]::ReadAllBytes("$dir/app_icon.ico")
     Assert ([BitConverter]::ToUInt16($bytes, 2) -eq 1) 'Not an ICO'
@@ -39,10 +39,10 @@ foreach ($variant in @('light', 'dark')) {
         Check-Png "$dir/whitegram_${variant}_foreground.png" ([int](108 * $density.Value))
     }
 }
-$legacy = "$desktop/Telegram/Resources/art/ayu/whitegram"
+$legacy = "$desktop/Telegram/Resources/art/white/whitegram"
 Assert ((Get-FileHash "$legacy/app.png").Hash -eq '0DC07414BDED7BC8A7D4D1909DD32794B914EA567D8AAB861BA4C19404336239') 'Legacy PNG changed'
 Assert ((Get-FileHash "$legacy/app_icon.ico").Hash -eq 'C74F1B34F39FEF8419831CFC084CDD253C82BEBD209CEB42D5739102D5C3A67A') 'Legacy ICO changed'
-$qrcPath = "$desktop/Telegram/Resources/qrc/ayu/ayu.qrc"
+$qrcPath = "$desktop/Telegram/Resources/qrc/white/white.qrc"
 [xml]$qrc = [IO.File]::ReadAllText($qrcPath)
 foreach ($file in $qrc.RCC.qresource.file) {
     Assert (Test-Path (Join-Path (Split-Path $qrcPath) $file.InnerText)) "Missing Qt resource: $($file.InnerText)"

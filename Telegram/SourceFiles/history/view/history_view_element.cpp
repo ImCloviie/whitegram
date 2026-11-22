@@ -81,10 +81,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "data/data_groups.h"
-#include "ayu/ayu_settings.h"
-#include "ayu/features/message_shot/message_shot.h"
-#include "ayu/utils/telegram_helpers.h"
-#include "styles/style_ayu_styles.h"
+#include "white/white_settings.h"
+#include "white/features/message_shot/message_shot.h"
+#include "white/utils/telegram_helpers.h"
+#include "styles/style_white_styles.h"
 
 
 namespace HistoryView {
@@ -793,7 +793,7 @@ void UnreadBar::paint(
 		int y,
 		int w,
 		ElementChatMode mode) const {
-	if (AyuFeatures::MessageShot::isTakingShot()) {
+	if (WhiteFeatures::MessageShot::isTakingShot()) {
 		return;
 	}
 	const auto previousTranslation = p.transform().dx();
@@ -1311,7 +1311,7 @@ Element::Element(
 		}
 	}
 	const auto deletedOpacityEnabled
-		= AyuSettings::getInstance().semiTransparentDeletedMessages();
+		= WhiteSettings::getInstance().semiTransparentDeletedMessages();
 	if (deletedOpacityEnabled
 		&& replacing
 		&& replacing->_deletedOpacityAnimation.animating()) {
@@ -1497,7 +1497,7 @@ void Element::refreshDeletedAnimationTarget() {
 }
 
 float64 Element::deletedOpacity() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (!settings.semiTransparentDeletedMessages()) {
 		_deletedOpacityAnimation.stop();
 		_deletedOpacityAnimationTarget = nullptr;
@@ -1524,7 +1524,7 @@ float64 Element::deletedOpacity() const {
 }
 
 void Element::startDeletedAnimation() {
-	if (!AyuSettings::getInstance().semiTransparentDeletedMessages()) {
+	if (!WhiteSettings::getInstance().semiTransparentDeletedMessages()) {
 		_deletedOpacityAnimation.stop();
 		_deletedOpacityAnimationTarget = nullptr;
 		return;
@@ -1532,7 +1532,7 @@ void Element::startDeletedAnimation() {
 	refreshDeletedAnimationTarget();
 	_deletedOpacityAnimation.start(
 		[target = _deletedOpacityAnimationTarget] {
-			if (!AyuSettings::getInstance().semiTransparentDeletedMessages()) {
+			if (!WhiteSettings::getInstance().semiTransparentDeletedMessages()) {
 				return false;
 			}
 			if (const auto view = target->get()) {
@@ -1734,7 +1734,7 @@ bool Element::hasCommentsButton() const {
 int Element::skipBlockWidth() const {
 	if (hidesBottomInfo()) {
 		return 0;
-	} else if (AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Date)) {
+	} else if (WhiteFeatures::MessageShot::ignoreRender(WhiteFeatures::MessageShot::RenderPart::Date)) {
 		return st::msgDateDelta.x();
 	}
 	return st::msgDateSpace + infoWidth() - st::msgDateDelta.x();
@@ -2668,7 +2668,7 @@ void Element::destroyUnreadBar() {
 }
 
 int Element::displayedDateHeight() const {
-	if (AyuFeatures::MessageShot::isTakingShot() || isMessageHidden(data())) {
+	if (WhiteFeatures::MessageShot::isTakingShot() || isMessageHidden(data())) {
 		return 0;
 	}
 

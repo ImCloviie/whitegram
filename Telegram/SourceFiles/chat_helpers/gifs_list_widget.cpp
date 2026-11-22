@@ -47,8 +47,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/white_settings.h"
+#include "white/features/glass_effect/glass_effect.h"
 #include "ui/boxes/confirm_box.h"
 #include "boxes/abstract_box.h"
 
@@ -122,7 +122,7 @@ GifsListWidget::GifsListWidget(
 	setMouseTracking(true);
 	setAttribute(
 		Qt::WA_OpaquePaintEvent,
-		!AyuFeatures::GlassEffect::CreateTranslucent());
+		!WhiteFeatures::GlassEffect::CreateTranslucent());
 
 	setupSearch();
 
@@ -550,10 +550,10 @@ void GifsListWidget::selectInlineResult(
 					});
 				});
 
-			const auto &settings = AyuSettings::getInstance();
+			const auto &settings = WhiteSettings::getInstance();
 			if (settings.gifConfirmation() && !needsCaption) {
 				_show->showBox(Ui::MakeConfirmBox({
-					.text = tr::ayu_ConfirmationGIF(),
+					.text = tr::white_ConfirmationGIF(),
 					.confirmed = sendGIFCallback,
 					.confirmText = tr::lng_send_button()
 				}));

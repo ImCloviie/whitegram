@@ -36,7 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <Cocoa/Cocoa.h>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Platform {
@@ -205,7 +205,7 @@ GhostModeAccountSettings *Manager::resolveGhostSettings() const {
 		return nullptr;
 	}
 	const auto session = window->maybeSession();
-	return session ? &AyuSettings::ghost(session) : nullptr;
+	return session ? &WhiteSettings::ghost(session) : nullptr;
 }
 
 bool Manager::clipboardHasText() {
@@ -314,22 +314,22 @@ void Manager::retranslate() {
 		_clearFormat->setText(tr::lng_menu_formatting_clear(tr::now));
 	}
 	if (_ghostModeMenu) {
-		_ghostModeMenu->setTitle(tr::ayu_CategoryGhostMode(tr::now));
+		_ghostModeMenu->setTitle(tr::white_CategoryGhostMode(tr::now));
 	}
 	if (_ghostMode) {
 		if (const auto ghost = resolveGhostSettings()) {
 			_ghostMode->setText(ghost->isGhostModeActive()
-				? tr::ayu_DisableGhostMode(tr::now)
-				: tr::ayu_EnableGhostMode(tr::now));
+				? tr::white_DisableGhostMode(tr::now)
+				: tr::white_EnableGhostMode(tr::now));
 		} else {
-			_ghostMode->setText(tr::ayu_EnableGhostMode(tr::now));
+			_ghostMode->setText(tr::white_EnableGhostMode(tr::now));
 		}
 	}
 	if (_readOnInteract) {
-		_readOnInteract->setText(tr::ayu_MarkReadAfterAction(tr::now));
+		_readOnInteract->setText(tr::white_MarkReadAfterAction(tr::now));
 	}
 	if (_scheduleMessages) {
-		_scheduleMessages->setText(tr::ayu_UseScheduledMessages(tr::now));
+		_scheduleMessages->setText(tr::white_UseScheduledMessages(tr::now));
 	}
 }
 
@@ -470,12 +470,12 @@ void Manager::recomputeState() {
 	};
 	if (ghost) {
 		_ghostMode->setText(ghost->isGhostModeActive()
-			? tr::ayu_DisableGhostMode(tr::now)
-			: tr::ayu_EnableGhostMode(tr::now));
+			? tr::white_DisableGhostMode(tr::now)
+			: tr::white_EnableGhostMode(tr::now));
 		setChecked(_readOnInteract, ghost->markReadAfterAction());
 		setChecked(_scheduleMessages, ghost->useScheduledMessages());
 	} else {
-		_ghostMode->setText(tr::ayu_EnableGhostMode(tr::now));
+		_ghostMode->setText(tr::white_EnableGhostMode(tr::now));
 		setChecked(_readOnInteract, false);
 		setChecked(_scheduleMessages, false);
 	}

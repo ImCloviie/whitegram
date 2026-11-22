@@ -32,7 +32,7 @@
 
 | Что | Где |
 |---|---|
-| Хранилище настроек (JSON, `AyuSettings`) | `Telegram/SourceFiles/ayu/ayu_settings.h/.cpp` |
+| Хранилище настроек (JSON, `WhiteSettings`) | `Telegram/SourceFiles/white/white_settings.h/.cpp` |
 | UI-билдер настроек (`Builder`, `AyuBuilder`) | `Telegram/SourceFiles/settings/settings_builder.h`, `ayu/ui/settings/ayu_builder.h` |
 | Секции настроек Whitegram | `ayu/ui/settings/settings_appearance.cpp`, `settings_chats.cpp`, `settings_general.cpp`, `settings_other.cpp` |
 | Главный экран настроек Whitegram | `ayu/ui/settings/settings_main.cpp` |
@@ -92,12 +92,12 @@
 - Кнопка «Сбросить раздел» и «Сбросить всё» с подтверждением.
 
 ### 4.2. Технические
-- Все новые значения — в `AyuSettings` (JSON-схема, как у существующих
+- Все новые значения — в `WhiteSettings` (JSON-схема, как у существующих
   полей: сериализация `to_json/from_json`, значения по умолчанию,
   обратная совместимость при чтении старых конфигов — старый файл без
   новых полей обязан открываться без ошибок).
 - Никаких глобальных синглтонов и записей «вразнобой»: изменение
-  проходит через `AyuSettings`, UI слушает изменения (rpl/сигналы),
+  проходит через `WhiteSettings`, UI слушает изменения (rpl/сигналы),
   как сделано у текущих фич.
 - Ночные/тёмные темы: все новые цвета берутся из палитры, никаких
   «запечённых» `QColor`-значений в коде отрисовки (известный класс багов

@@ -31,8 +31,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/filters/filters_controller.h"
+#include "white/white_settings.h"
+#include "white/features/filters/filters_controller.h"
 
 
 namespace Api {
@@ -664,7 +664,7 @@ rpl::producer<Ui::WhoReadContent> WhoReacted(
 			}
 			auto &owner = item->history()->owner();
 			auto blockedReactionsCount = 0;
-			const auto &settings = AyuSettings::getInstance();
+			const auto &settings = WhiteSettings::getInstance();
 			if (settings.filtersEnabled()) {
 				peers.list.erase(ranges::remove_if(peers.list, [&](const PeerWithReaction &p) {
 					const auto peer = owner.peerLoaded(p.peerWithDate.peer);
@@ -733,7 +733,7 @@ QString FormatReadDate(TimeId date, const QDateTime &now) {
 	const auto parsed = base::unixtime::parse(date);
 	const auto readDate = parsed.date();
 	const auto nowDate = now.date();
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	if (readDate.year() < nowDate.year()) {
 		return tr::lng_mediaview_date_time(

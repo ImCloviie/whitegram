@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/outline_segments.h"
 
 // AyuGram includes
-#include "ayu/ui/ayu_userpic.h"
+#include "white/ui/white_userpic.h"
 
 
 namespace Ui {
@@ -20,8 +20,8 @@ void PaintOutlineSegments(
 		float64 fromFullProgress) {
 	Expects(!segments.empty());
 
-	if (!AyuUserpic::IsCircle()) {
-		const auto r = AyuUserpic::ComputeRadiusF(std::min(ellipse.width(), ellipse.height()));
+	if (!WhiteUserpic::IsCircle()) {
+		const auto r = WhiteUserpic::ComputeRadiusF(std::min(ellipse.width(), ellipse.height()));
 		PaintOutlineSegments(p, ellipse, r, segments);
 		return;
 	}

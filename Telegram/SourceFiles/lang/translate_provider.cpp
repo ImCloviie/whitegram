@@ -19,8 +19,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_translate_provider.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/translator/ayu_translate_provider.h"
+#include "white/white_settings.h"
+#include "white/features/translator/white_translate_provider.h"
 
 
 namespace {
@@ -33,7 +33,7 @@ base::options::option<QString> OptionTranslateUrlTemplate({
 });
 
 [[nodiscard]] TranslationProvider ResolveTranslateProvider() {
-	const auto provider = AyuSettings::getInstance().translationProvider();
+	const auto provider = WhiteSettings::getInstance().translationProvider();
 	if ((provider == TranslationProvider::Native)
 		&& !Platform::IsTranslateProviderAvailable()) {
 		return TranslationProvider::Telegram;

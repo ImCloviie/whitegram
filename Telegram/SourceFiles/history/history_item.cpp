@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
 
-#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "white/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "api/api_premium.h"
 #include "api/api_sensitive_content.h"
 #include "api/api_transcribes.h"
@@ -95,11 +95,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 // AyuGram includes
-#include "ayu/features/whitegram_e2ee/whitegram_one_time_media.h"
-#include "ayu/ayu_settings.h"
-#include "ayu/features/filters/filters_controller.h"
-#include "ayu/features/message_shot/message_shot.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/features/whitegram_e2ee/whitegram_one_time_media.h"
+#include "white/white_settings.h"
+#include "white/features/filters/filters_controller.h"
+#include "white/features/message_shot/message_shot.h"
+#include "white/utils/telegram_helpers.h"
 #include "ui/emoji_config.h"
 
 
@@ -624,7 +624,7 @@ HistoryItem::HistoryItem(
 			tr::lng_message_empty(tr::now, tr::marked)
 		});
 	} else if ((checked == MediaCheckResult::HasExpiredMediaTimeToLive)
-			|| (!AyuSettings::getInstance().saveDeletedMessages()
+			|| (!WhiteSettings::getInstance().saveDeletedMessages()
 				&& checked == MediaCheckResult::Good
 				&& media
 				&& ShowTtlMediaAsExpired(this, *media))) {
@@ -2385,7 +2385,7 @@ bool HistoryItem::isSponsored() const {
 }
 
 bool HistoryItem::isAyuNoForwards() const {
-	return _flags & MessageFlag::AyuNoForwards;
+	return _flags & MessageFlag::WhiteNoForwards;
 }
 
 bool HistoryItem::canLookupMessageAuthor() const {
@@ -3168,7 +3168,7 @@ void HistoryItem::clearMediaAsExpired() {
 	if (!media || !media->ttlSeconds()) {
 		return;
 	}
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.saveDeletedMessages()) {
 		return;
 	}
@@ -3590,7 +3590,7 @@ bool HistoryItem::forbidsSaving() const {
 	if (forbidsForward()) {
 		return true;
 	} else if (_media && _media->ttlSeconds()) {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (!settings.saveDeletedMessages()) {
 			return true;
 		}
@@ -4018,11 +4018,11 @@ void HistoryItem::updateReactionsUnknown() {
 
 const std::vector<Data::MessageReaction> &HistoryItem::reactions() const {
 	static const auto kEmpty = std::vector<Data::MessageReaction>();
-	return _reactions && !AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Reactions) ? _reactions->list() : kEmpty;
+	return _reactions && !WhiteFeatures::MessageShot::ignoreRender(WhiteFeatures::MessageShot::RenderPart::Reactions) ? _reactions->list() : kEmpty;
 }
 
 std::vector<Data::MessageReaction> HistoryItem::reactionsWithLocal() const {
-	if (!_reactions || AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Reactions)) {
+	if (!_reactions || WhiteFeatures::MessageShot::ignoreRender(WhiteFeatures::MessageShot::RenderPart::Reactions)) {
 		return {};
 	}
 	auto result = _reactions->list();
@@ -4454,7 +4454,7 @@ void HistoryItem::setDeleted() {
 	}
 
 	if (isService()) {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		setAyuHint(settings.deletedMark());
 	} else {
 		history()->owner().requestItemViewRefresh(this);
@@ -4997,7 +4997,7 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 
 		text = finalText;
 	} else {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (settings.filterZalgo()) {
 			text.text = filterZalgo(text.text);
 		}

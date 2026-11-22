@@ -58,7 +58,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_premium.h"
 
 // AyuGram includes
-#include "styles/style_ayu_icons.h"
+#include "styles/style_white_icons.h"
 
 
 namespace {

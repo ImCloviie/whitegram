@@ -111,13 +111,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "tgw/tgw_storage.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/ayu_worker.h"
-#include "ayu/features/whitegram_plugins/whitegram_plugins.h"
-#include "ayu/utils/telegram_helpers.h"
-#include "ayu/features/forward/ayu_forward.h"
-#include "ayu/features/custom_archives/custom_archives.h"
-#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "white/white_settings.h"
+#include "white/white_worker.h"
+#include "white/features/whitegram_plugins/whitegram_plugins.h"
+#include "white/utils/telegram_helpers.h"
+#include "white/features/forward/white_forward.h"
+#include "white/features/custom_archives/custom_archives.h"
+#include "white/features/whitegram_e2ee/whitegram_e2ee.h"
 
 
 namespace {
@@ -526,7 +526,7 @@ void ApiWrap::toggleHistoryArchived(
 		bool archived,
 		Fn<void()> callback) {
 	if (archived) {
-		AyuFeatures::CustomArchives::RemovePeerFromCustomFolders(
+		WhiteFeatures::CustomArchives::RemovePeerFromCustomFolders(
 			history->peer);
 	}
 	if (const auto already = _historyArchivedRequests.take(history)) {
@@ -545,7 +545,7 @@ void ApiWrap::toggleHistoryArchived(
 		if (archived) {
 			history->setFolder(_session->data().folder(archiveId));
 		} else {
-			const auto &settings = AyuSettings::getInstance();
+			const auto &settings = WhiteSettings::getInstance();
 			if (settings.hideAllChatsFolder()) {
 				if (const auto window = Core::App().activeWindow()) {
 					if (const auto controller = window->sessionController()) {
@@ -1497,7 +1497,7 @@ void ApiWrap::migrateFail(not_null<PeerData*> peer, const QString &error) {
 
 void ApiWrap::markContentsRead(
 		const base::flat_set<not_null<HistoryItem*>> &items) {
-	const auto &ghost = AyuSettings::ghost(&session());
+	const auto &ghost = WhiteSettings::ghost(&session());
 
 	auto markedIds = QVector<MTPint>();
 	auto channelMarkedIds = base::flat_map<
@@ -1543,7 +1543,7 @@ void ApiWrap::markContentsRead(not_null<HistoryItem*> item) {
 		return;
 	}
 
-	const auto &ghost = AyuSettings::ghost(&session());
+	const auto &ghost = WhiteSettings::ghost(&session());
 	if (!ghost.shouldSendReadMessagesForPeer(item->history()->peer->id.value) && !passthrough) {
 		return;
 	}
@@ -2024,7 +2024,7 @@ void ApiWrap::joinChannel(not_null<ChannelData*> channel) {
 		using Flag = ChannelDataFlag;
 		chatParticipants().loadSimilarPeers(channel);
 
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (!settings.collapseSimilarChannels()) {
 			channel->setFlags(channel->flags() | Flag::SimilarExpanded);
 		}
@@ -3982,18 +3982,18 @@ FullMsgId ApiWrap::forwardMessages(
 		Fn<void(const MessageIdsList&)> sentCallback) {
 	Expects(!draft.items.empty());
 
-	const auto fullAyuForward = AyuForward::isFullAyuForwardNeeded(draft.items.front());
+	const auto fullAyuForward = WhiteForward::isFullAyuForwardNeeded(draft.items.front());
 	if (fullAyuForward) {
 		crl::async([=] {
-			AyuForward::forwardMessages(_session, action, false, draft);
+			WhiteForward::forwardMessages(_session, action, false, draft);
 		});
 		return FullMsgId();
 	}
 
-	const auto ayuIntelligentForwardNeeded = AyuForward::isAyuForwardNeeded(draft.items);
-	if (ayuIntelligentForwardNeeded) {
+	const auto whiteIntelligentForwardNeeded = WhiteForward::isAyuForwardNeeded(draft.items);
+	if (whiteIntelligentForwardNeeded) {
 		crl::async([=] {
-			AyuForward::intelligentForward(_session, action, draft);
+			WhiteForward::intelligentForward(_session, action, draft);
 		});
 		return FullMsgId();
 	}
@@ -4899,7 +4899,7 @@ void ApiWrap::sendMessage(
 	const auto ephemeral = _session->ephemeralMessages().wouldSend(message);
 	if (!ephemeral
 		&& !canSendTexts
-		&& !AyuForward::isForwarding(peer->id)) {
+		&& !WhiteForward::isForwarding(peer->id)) {
 		return;
 	} else if (_session->ephemeralMessages().trySend(message)) {
 		if (clearCloudDraft) {
@@ -5225,7 +5225,7 @@ void ApiWrap::sendBotStart(
 	)).done([=](const MTPUpdates &result) {
 		applyUpdates(result);
 
-		AyuWorker::markAsOnline(_session);
+		WhiteWorker::markAsOnline(_session);
 	}).fail([=](const MTP::Error &error) {
 		if (chat) {
 			const auto type = error.type();

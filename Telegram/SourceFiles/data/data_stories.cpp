@@ -28,7 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Data {
@@ -1241,7 +1241,7 @@ void Stories::markAsRead(FullStoryId id, bool viewed) {
 		return;
 	}
 
-	const auto &ghost = AyuSettings::ghost(&_owner->session());
+	const auto &ghost = WhiteSettings::ghost(&_owner->session());
 	if (!ghost.shouldSendReadStoriesForPeer(id.peer.value)) {
 		return;
 	}
@@ -1400,7 +1400,7 @@ void Stories::toggleHidden(
 void Stories::sendMarkAsReadRequest(
 		not_null<PeerData*> peer,
 		StoryId tillId) {
-	if (!AyuSettings::ghost(&_owner->session()).shouldSendReadStoriesForPeer(peer->id.value)) {
+	if (!WhiteSettings::ghost(&_owner->session()).shouldSendReadStoriesForPeer(peer->id.value)) {
 		return;
 	}
 
@@ -1434,7 +1434,7 @@ void Stories::checkQuitPreventFinished() {
 void Stories::sendMarkAsReadRequests() {
 	_markReadTimer.cancel();
 
-	const auto &ghost = AyuSettings::ghost(&_owner->session());
+	const auto &ghost = WhiteSettings::ghost(&_owner->session());
 	for (auto i = begin(_markReadPending); i != end(_markReadPending);) {
 		const auto peerId = *i;
 		if (!ghost.shouldSendReadStoriesForPeer(peerId.value)) {
@@ -1454,7 +1454,7 @@ void Stories::sendMarkAsReadRequests() {
 }
 
 void Stories::sendIncrementViewsRequests() {
-	const auto &ghost = AyuSettings::ghost(&_owner->session());
+	const auto &ghost = WhiteSettings::ghost(&_owner->session());
 	for (auto i = begin(_incrementViewsPending); i != end(_incrementViewsPending);) {
 		if (!ghost.shouldSendReadStoriesForPeer(i->first.value)) {
 			i = _incrementViewsPending.erase(i);
@@ -2306,7 +2306,7 @@ bool Stories::isQuitPrevent() {
 		sendIncrementViewsRequests();
 	}
 
-	const auto &ghost = AyuSettings::ghost(&_owner->session());
+	const auto &ghost = WhiteSettings::ghost(&_owner->session());
 	if (!ghost.sendReadStories() || (_markReadRequests.empty() && _incrementViewsRequests.empty())) {
 		return false;
 	}

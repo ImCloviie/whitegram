@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_values.h"
 
 #include "api/api_chat_participants.h"
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "apiwrap.h"
 #include "info/profile/info_profile_phone_menu.h"
 #include "info/profile/info_profile_badge.h"

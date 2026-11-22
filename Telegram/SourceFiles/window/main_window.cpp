@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/main_window.h"
 
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/features/glass_effect/glass_effect.h"
 
 #include "api/api_updates.h"
 #include "storage/localstorage.h"
@@ -65,9 +65,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <kurlmimedata.h>
 
 // AyuGram includes
-#include "ayu/ui/ayu_logo.h"
-#include "ayu/ui/whitegram_startup_animation.h"
-#include "ayu/ayu_settings.h"
+#include "white/ui/white_logo.h"
+#include "white/ui/whitegram_startup_animation.h"
+#include "white/white_settings.h"
 
 
 namespace Window {
@@ -149,11 +149,11 @@ const char kOptionNewWindowsSizeAsFirst[] = "new-windows-size-as-first";
 const char kOptionDisableTouchbar[] = "touchbar-disabled";
 
 QImage Logo() {
-	return AyuAssets::currentAppLogo();
+	return WhiteAssets::currentAppLogo();
 }
 
 QImage LogoNoMargin() {
-	return AyuAssets::currentAppLogo();
+	return WhiteAssets::currentAppLogo();
 }
 
 const QImage &LogoTelegramDefault() {
@@ -416,7 +416,7 @@ QImage WithSmallCounter(QImage image, CounterLayerArgs &&args) {
 }
 
 MainWindow::MainWindow(not_null<Controller*> controller)
-: Ui::RpWindow(AyuFeatures::GlassEffect::CreateTranslucent())
+: Ui::RpWindow(WhiteFeatures::GlassEffect::CreateTranslucent())
 , _controller(controller)
 , _positionUpdatedTimer([=] { savePosition(); })
 , _outdated(Ui::CreateOutdatedBar(body(), cWorkingDir()))
@@ -853,7 +853,7 @@ void MainWindow::firstShow() {
 	updateMinimumSize();
 
 	auto applyAnimation = [&] {
-		if (isPrimary() && AyuSettings::getInstance().startupAnimationEnabled()) {
+		if (isPrimary() && WhiteSettings::getInstance().startupAnimationEnabled()) {
 			auto anim = Ui::CreateChild<Ui::WhitegramStartupAnimation>(body().get());
 			anim->setGeometry(body()->rect());
 			anim->show();

@@ -49,7 +49,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 
 // AyuGram includes
-#include "ayu/utils/telegram_helpers.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace Api {

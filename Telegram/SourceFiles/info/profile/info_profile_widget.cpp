@@ -28,7 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/event_filter.h"
 
 // AyuGram includes
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QScrollBar>
@@ -228,7 +228,7 @@ Widget::Widget(
 }
 
 void Widget::setupFullProfileBackground() {
-	namespace Background = AyuFeatures::CustomProfileBackground;
+	namespace Background = WhiteFeatures::CustomProfileBackground;
 	const auto renderer = Background::SetupFullBackgroundLayer(
 		this,
 		[=]() -> PeerData* {

@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_section_stack.h"
 
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 #include "ui/widgets/box_content_divider.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/slide_wrap.h"
@@ -23,8 +23,8 @@ namespace {
 
 [[nodiscard]] not_null<Ui::SlideWrap<>*> CreatePlainSeparator(
 		not_null<Ui::VerticalLayout*> layout) {
-	using AyuFeatures::CustomProfileBackground::AdaptiveStyle;
-	using AyuFeatures::CustomProfileBackground::BackgroundShownValue;
+	using WhiteFeatures::CustomProfileBackground::AdaptiveStyle;
+	using WhiteFeatures::CustomProfileBackground::BackgroundShownValue;
 	auto inner = object_ptr<Ui::VerticalLayout>(layout);
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
 	// Over a profile background the bar is a dark band, the gap is enough.
@@ -47,7 +47,7 @@ namespace {
 		not_null<Ui::VerticalLayout*> layout,
 		rpl::producer<TextWithEntities> text,
 		Fn<void(not_null<Ui::FlatLabel*>)> setup) {
-	using AyuFeatures::CustomProfileBackground::AdaptiveStyle;
+	using WhiteFeatures::CustomProfileBackground::AdaptiveStyle;
 	auto inner = object_ptr<Ui::VerticalLayout>(layout);
 	Ui::AddSkip(inner.data(), st::infoProfileSkip);
 	auto label = object_ptr<Ui::FlatLabel>(

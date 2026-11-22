@@ -56,8 +56,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/white_settings.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 
 
 namespace Info {
@@ -86,7 +86,7 @@ void AddUnofficialSecurityRiskWarning(
 			layout,
 			object_ptr<Ui::VerticalLayout>(layout)));
 	const auto content = wrap->entity();
-	const auto bar = &AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+	const auto bar = &WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 		content,
 		st::defaultDividerLabel.bar);
 	user->session().changes().peerFlagsValue(
@@ -189,7 +189,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 
 	// Everything built below looks for this mark to drop its opaque fills
 	// while the full profile background is painted under the profile.
-	AyuFeatures::CustomProfileBackground::MarkBackgroundHost(
+	WhiteFeatures::CustomProfileBackground::MarkBackgroundHost(
 		parent,
 		fullProfileBackgroundValue());
 
@@ -318,7 +318,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 				tabs.push_back(MakeCommonGroupsTabDescriptor(user));
 			}
 			if ((_peer->asBot() || _peer->asBroadcast())
-				&& !AyuSettings::getInstance().hideSimilarChannels()) {
+				&& !WhiteSettings::getInstance().hideSimilarChannels()) {
 				tabs.push_back(MakeSimilarPeersTabDescriptor(_peer));
 			}
 		}

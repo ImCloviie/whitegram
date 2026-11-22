@@ -31,8 +31,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace {
@@ -347,7 +347,7 @@ void Polls::sendVotes(
 			}
 		}
 		_session->updates().applyUpdates(result);
-		const auto &ghost = AyuSettings::ghost(_session);
+		const auto &ghost = WhiteSettings::ghost(_session);
 		if (!ghost.sendReadMessages()
 			&& ghost.markReadAfterAction()
 			&& item) {

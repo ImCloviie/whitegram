@@ -112,11 +112,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 
 // AyuGram includes
-#include "ayu/ui/ayu_userpic.h"
-#include "ayu/utils/telegram_helpers.h"
-#include "ayu/ayu_settings.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "white/ui/white_userpic.h"
+#include "white/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
 
 
 namespace Info::Profile {
@@ -493,19 +493,19 @@ TopBar::TopBar(
 , _customBackground([this] { update(); }) {
 	setObjectName(u"profileTopBar"_q);
 	_peer->updateFull();
-	if (AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)) {
-		AyuFeatures::CustomProfileBackground::EnsureRemoteBackgrounds(
+	if (WhiteFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)) {
+		WhiteFeatures::CustomProfileBackground::EnsureRemoteBackgrounds(
 			_peer->id.value);
 	}
 	reloadCustomBackground();
-	AyuSettings::getInstance().customProfileBackgroundChanges(
+	WhiteSettings::getInstance().customProfileBackgroundChanges(
 	) | rpl::on_next([=] {
 		reloadCustomBackground();
 		update();
 	}, lifetime());
 	Whitegram::Backend::profileBackgroundUpdates(
 	) | rpl::filter([=](uint64 userId) {
-		return AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
+		return WhiteFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
 			&& userId == _peer->id.value;
 	}) | rpl::on_next([=] {
 		reloadCustomBackground();
@@ -2867,31 +2867,31 @@ void TopBar::paintUserpic(QPainter &p, const QRect &geometry) {
 		}
 	}
 	const auto key = _peer->userpicUniqueKey(_userpicView);
-	const auto ayuState = AyuUserpic::PackedState();
+	const auto whiteState = WhiteUserpic::PackedState();
 	const auto overlayActive = _uploadOverlay && _uploadOverlay->shown();
 	const auto awaitingCloud = _waitingUserpicCloudLoad
 		&& !_peer->userpicCloudImage(_userpicView);
 	if (!overlayActive
 		&& !awaitingCloud
-		&& (_userpicUniqueKey != key || _userpicAyuState != ayuState)) {
+		&& (_userpicUniqueKey != key || _userpicAyuState != whiteState)) {
 		_waitingUserpicCloudLoad = false;
 		_userpicUniqueKey = key;
-		_userpicAyuState = ayuState;
+		_userpicAyuState = whiteState;
 		const auto fullSize = st::infoProfileTopBarPhotoSize;
 		const auto scaled = fullSize * style::DevicePixelRatio();
 		auto image = QImage();
 		if (const auto broadcast = _peer->monoforumBroadcast()) {
-			const auto ayuOverride = AyuUserpic::ShouldOverrideShape(
+			const auto whiteOverride = WhiteUserpic::ShouldOverrideShape(
 				Ui::PeerUserpicShape::Monoforum);
 			image = PeerData::GenerateUserpicImage(
 				broadcast,
 				_userpicView,
 				scaled,
-				ayuOverride
+				whiteOverride
 					? std::optional<int>(
-						AyuUserpic::ComputeRadius(scaled))
+						WhiteUserpic::ComputeRadius(scaled))
 					: std::optional<int>(0));
-			if (!ayuOverride) {
+			if (!whiteOverride) {
 				if (_monoforumMask.isNull()) {
 					_monoforumMask = Ui::MonoforumShapeMask(Size(scaled));
 				}
@@ -2910,9 +2910,9 @@ void TopBar::paintUserpic(QPainter &p, const QRect &geometry) {
 		} else {
 			const auto radius = (_source == Source::Community)
 				? std::optional<int>(
-					AyuUserpic::ShouldOverrideShape(
+					WhiteUserpic::ShouldOverrideShape(
 						Ui::PeerUserpicShape::Forum)
-						? AyuUserpic::ComputeRadius(scaled)
+						? WhiteUserpic::ComputeRadius(scaled)
 						: int(
 							scaled
 							* Ui::ForumUserpicRadiusMultiplier()))
@@ -4078,7 +4078,7 @@ TopBarActionButtonStyle TopBar::mapActionStyle(
 }
 
 void TopBar::setFullProfileBackground(
-		base::weak_ptr<AyuFeatures::CustomProfileBackground::Renderer> renderer) {
+		base::weak_ptr<WhiteFeatures::CustomProfileBackground::Renderer> renderer) {
 	_fullBackground = std::move(renderer);
 	reloadCustomBackground();
 	update();
@@ -4088,8 +4088,8 @@ bool TopBar::fullProfileBackgroundAllowed() const {
 	return !_savedMessages
 		&& !_key.topic()
 		&& !_key.sublist()
-		&& AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
-		&& AyuFeatures::CustomProfileBackground::UsesFullBackground(
+		&& WhiteFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
+		&& WhiteFeatures::CustomProfileBackground::UsesFullBackground(
 			_peer->id.value);
 }
 
@@ -4124,12 +4124,12 @@ bool TopBar::paintTopBackground(QPainter &p, int coverHeight) {
 
 void TopBar::reloadCustomBackground() {
 	const auto peerId = _peer->id.value;
-	if (!AyuFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
+	if (!WhiteFeatures::CustomProfileBackground::BackgroundEnabledFor(_peer)
 		|| (_fullBackground && fullProfileBackgroundAllowed())) {
 		_customBackground.clear();
 		return;
 	}
-	if (const auto zone = AyuFeatures::CustomProfileBackground::TopRendererZone(
+	if (const auto zone = WhiteFeatures::CustomProfileBackground::TopRendererZone(
 			peerId)) {
 		_customBackground.setPeer(peerId, *zone);
 	} else {

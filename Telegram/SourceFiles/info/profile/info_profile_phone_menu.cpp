@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_phone_menu.h"
 
 #include "data/data_user.h"
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "lang/lang_keys.h"
 #include "main/main_app_config.h"
 #include "main/main_app_config_values.h"
@@ -183,9 +183,9 @@ void AddPhoneSpoilerMenu(
 			hidden);
 	}
 	{
-		const auto current = AyuSettings::getInstance().phoneRevealMode();
+		const auto current = WhiteSettings::getInstance().phoneRevealMode();
 		const auto setMode = [](PhoneRevealMode mode) {
-			AyuSettings::getInstance().setPhoneRevealMode(mode);
+			WhiteSettings::getInstance().setPhoneRevealMode(mode);
 		};
 		Menu::AddCheckedAction(
 			sub,

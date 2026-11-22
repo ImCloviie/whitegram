@@ -36,7 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "main/main_session.h"
 #include "window/window_session_controller.h"
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/features/glass_effect/glass_effect.h"
 #include "styles/style_media_player.h"
 
 namespace Media {
@@ -92,7 +92,7 @@ Widget::Widget(
 
 	setAttribute(
 		Qt::WA_OpaquePaintEvent,
-		!AyuFeatures::GlassEffect::CreateTranslucent());
+		!WhiteFeatures::GlassEffect::CreateTranslucent());
 	setMouseTracking(true);
 	resize(width(), st::mediaPlayerHeight + st::lineWidth);
 

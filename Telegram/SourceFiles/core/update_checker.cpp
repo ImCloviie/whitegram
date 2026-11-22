@@ -7,9 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/update_checker.h"
 
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
 
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "platform/platform_specific.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/base_platform_file_utilities.h"
@@ -1838,7 +1838,7 @@ void Updater::start(bool forceWait) {
 	RecoverStuckUpdates();
 
 	_timer.cancel();
-	const auto autoUpdate = AyuSettings::getInstance().whitegramAutoUpdate();
+	const auto autoUpdate = WhiteSettings::getInstance().whitegramAutoUpdate();
 	if ((!autoUpdate && !_forcedStart) || _action != Action::Waiting) {
 		_forcedStart = false;
 		return;

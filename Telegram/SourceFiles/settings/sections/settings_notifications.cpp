@@ -7,8 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_notifications.h"
 
-#include "ayu/ayu_settings.h"
-#include "ayu/ui/boxes/account_notification_box.h"
+#include "white/white_settings.h"
+#include "white/ui/boxes/account_notification_box.h"
 #include "settings/settings_common_session.h"
 
 #include "api/api_authorizations.h"
@@ -69,7 +69,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QSvgRenderer>
 
 // AyuGram includes
-#include "ayu/ui/ayu_userpic.h"
+#include "white/ui/white_userpic.h"
 
 
 namespace Settings {
@@ -455,7 +455,7 @@ void NotificationsCount::prepareNotificationSampleSmall() {
 		auto padding = height / 8;
 		auto userpicSize = height - 2 * padding;
 		p.setBrush(st::notificationSampleUserpicFg);
-		AyuUserpic::PaintShape(p, QRectF(style::rtlrect(padding, padding, userpicSize, userpicSize, width)));
+		WhiteUserpic::PaintShape(p, QRectF(style::rtlrect(padding, padding, userpicSize, userpicSize, width)));
 
 		auto rowLeft = height;
 		auto rowHeight = padding;
@@ -813,7 +813,7 @@ void NotifyPreview::paint(Painter &p, int x, int y) {
 
 	if (_nameShown) {
 		auto hq = PainterHighQualityEnabler(p);
-		const auto r = AyuUserpic::ComputeRadiusF(userpic.width());
+		const auto r = WhiteUserpic::ComputeRadiusF(userpic.width());
 		auto clip = QPainterPath();
 		clip.addRoundedRect(QRectF(userpic), r, r);
 		p.save();
@@ -957,7 +957,7 @@ void BuildMultiAccountSection(SectionBuilder &builder) {
 		const auto user = session->user();
 		const auto name = user ? user->name() : QString::number(session->userId().bare);
 
-		auto &accountNotif = AyuSettings::accountNotifications(session);
+		auto &accountNotif = WhiteSettings::accountNotifications(session);
 
 		auto labelValue = rpl::combine(
 			accountNotif.completelyMuteValue(),

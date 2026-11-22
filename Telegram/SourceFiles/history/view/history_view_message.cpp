@@ -74,10 +74,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_polls.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/filters/filters_controller.h"
-#include "ayu/features/message_shot/message_shot.h"
-#include "styles/style_ayu_icons.h"
+#include "white/white_settings.h"
+#include "white/features/filters/filters_controller.h"
+#include "white/features/message_shot/message_shot.h"
+#include "styles/style_white_icons.h"
 
 
 namespace HistoryView {
@@ -554,7 +554,7 @@ struct BadgePillGeometry {
 		: (st::msgTagBadgeBoostSkip + badge->boosts.maxWidth());
 	if (badge->role == BadgeRole::User) {
 		const auto tagWidth = (badge->channel
-				&& AyuSettings::getInstance().replaceBottomInfoWithIcons())
+				&& WhiteSettings::getInstance().replaceBottomInfoWithIcons())
 			? st::inChannelBadgeIcon.width()
 			: badge->tag.isEmpty()
 			? 0
@@ -1130,15 +1130,15 @@ void Message::refreshRightBadge() {
 	if (const auto badge = Get<RightBadge>(); badge && badge->overridden) {
 		return;
 	}
-	if ((hasOutLayout() && !AyuFeatures::MessageShot::isTakingShot())
+	if ((hasOutLayout() && !WhiteFeatures::MessageShot::isTakingShot())
 		|| (context() == Context::WelcomeMessages)) {
 		if (Has<RightBadge>()) {
 			RemoveComponents(RightBadge::Bit());
 		}
 		return;
 	}
-	if (AyuFeatures::MessageShot::ignoreRender(
-			AyuFeatures::MessageShot::RenderPart::HeaderDecorations)) {
+	if (WhiteFeatures::MessageShot::ignoreRender(
+			WhiteFeatures::MessageShot::RenderPart::HeaderDecorations)) {
 		if (Has<RightBadge>()) {
 			RemoveComponents(RightBadge::Bit());
 		}
@@ -1811,7 +1811,7 @@ int Message::marginTop() const {
 	}
 	result += displayedDateHeight();
 	if (const auto bar = Get<UnreadBar>()) {
-		if (!AyuFeatures::MessageShot::isTakingShot()) {
+		if (!WhiteFeatures::MessageShot::isTakingShot()) {
 			result += bar->height();
 		}
 	}
@@ -1819,7 +1819,7 @@ int Message::marginTop() const {
 		result += bar->height();
 	}
 	if (const auto service = Get<ServicePreMessage>()) {
-		if (!service->below && !AyuFeatures::MessageShot::isTakingShot()) {
+		if (!service->below && !WhiteFeatures::MessageShot::isTakingShot()) {
 			result += service->height;
 		}
 	}
@@ -1908,7 +1908,7 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 	auto mediaOnBottom = (mediaDisplayed && media->isBubbleBottom()) || check || (entry/* && entry->isBubbleBottom()*/);
 	auto mediaOnTop = (mediaDisplayed && media->isBubbleTop()) || (entry && entry->isBubbleTop());
 
-	const auto displayInfo = needInfoDisplay() && !AyuFeatures::MessageShot::ignoreRender(AyuFeatures::MessageShot::RenderPart::Date);
+	const auto displayInfo = needInfoDisplay() && !WhiteFeatures::MessageShot::ignoreRender(WhiteFeatures::MessageShot::RenderPart::Date);
 	const auto reactionsInBubble = _reactions && embedReactionsInBubble();
 
 	// We need to count geometry without keyboard and reactions
@@ -2444,7 +2444,7 @@ void Message::paintCommentsButton(
 		Painter &p,
 		QRect &g,
 		const PaintContext &context) const {
-	if (AyuFeatures::MessageShot::isTakingShot()) {
+	if (WhiteFeatures::MessageShot::isTakingShot()) {
 		return;
 	}
 
@@ -2661,7 +2661,7 @@ void Message::paintFromName(
 		}
 		return &info->nameText();
 	}();
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	const auto hidePremiumStatuses = settings.hidePremiumStatuses();
 	const auto statusWidth = _fromNameStatus && !hidePremiumStatuses
 		? st::dialogsPremiumIcon.icon.width()
@@ -2795,7 +2795,7 @@ void Message::paintFromName(
 				+ trect.width()
 				- badgeWidth;
 			if (badge->channel
-				&& AyuSettings::getInstance().replaceBottomInfoWithIcons()) {
+				&& WhiteSettings::getInstance().replaceBottomInfoWithIcons()) {
 				const auto badgeTop = trect.top()
 					+ (st::msgNameFont->height
 						- stm->channelBadgeIcon.height()) / 2;
@@ -3760,7 +3760,7 @@ BottomRippleMask Message::bottomRippleMask(int buttonHeight) const {
 	const auto &large = CachedCornersMasks(Radius::BubbleLarge);
 	const auto &small = CachedCornersMasks(Radius::BubbleSmall);
 	auto rounding = countBubbleRounding();
-	if (AyuSettings::getInstance().removeMessageTail()) {
+	if (WhiteSettings::getInstance().removeMessageTail()) {
 		if (rounding.bottomLeft == Corner::Tail) {
 			rounding.bottomLeft = Corner::Large;
 		}
@@ -6116,7 +6116,7 @@ bool Message::displayRightActionComments() const {
 }
 
 std::optional<QSize> Message::rightActionSize() const {
-	if (AyuFeatures::MessageShot::isTakingShot()) {
+	if (WhiteFeatures::MessageShot::isTakingShot()) {
 		return {};
 	}
 
@@ -6143,7 +6143,7 @@ std::optional<QSize> Message::rightActionSize() const {
 }
 
 bool Message::displayFastShare() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.hideFastShare()) {
 		return false;
 	}
@@ -7034,7 +7034,7 @@ int Message::resizeContentGetHeight(int newWidth) {
 		}
 
 		if (hasCommentsButton()) {
-			if (!AyuFeatures::MessageShot::isTakingShot()) {
+			if (!WhiteFeatures::MessageShot::isTakingShot()) {
 				newHeight += st::historyCommentsButtonHeight;
 			}
 		} else if (_comments) {

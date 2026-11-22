@@ -1,0 +1,111 @@
+/*
+ * This is the source code of AyuGram for Desktop.
+ *
+ * We do not and cannot prevent the use of our code,
+ * but be respectful and credit the original author.
+ *
+ * Copyright @Radolyn, 2025
+ */
+
+using "ui/colors.palette";
+using "ui/chat/chat.style";
+using "ui/widgets/widgets.style";
+using "dialogs/dialogs.style";
+
+whiteGhostIcon: icon {{ "white/ghost", menuIconColor }};
+whiteGhostModeGlobalIcon: icon {{ "white/ghost_mode_global", historyPeerUserpicFg }};
+whiteEditsHistoryIcon: icon {{ "white/edits_history", menuIconColor }};
+whiteLReadMenuIcon: icon {{ "white/lread", menuIconColor }};
+whiteSReadMenuIcon: icon {{ "white/sread", menuIconColor }};
+whiteStreamerModeMenuIcon: icon {{ "white/streamer", menuIconColor }};
+whiteToBeginningMenuIcon: icon {{ "white/to_beginning", menuIconColor }};
+whiteRepeatMenuIcon: icon {{ "white/repeat", menuIconColor }};
+whiteContactsMutualIcon: icon {{ "white/contacts_mutual", contactsStatusFg }};
+whiteContactsMutualIconOver: icon {{ "white/contacts_mutual", contactsStatusFgOver }};
+
+messageFieldAttachIcon: icon {{ "white/message_field/attach", menuIconColor }};
+messageFieldCommandsIcon: icon {{ "white/message_field/commands", menuIconColor }};
+messageFieldEmojiIcon: icon {{ "white/message_field/emoji", menuIconColor }};
+messageFieldVoiceIcon: icon {{ "white/message_field/voice", menuIconColor }};
+messageFieldTTLIcon: icon {{ "white/message_field/ttl", menuIconColor }};
+messageFieldCocoonAiIcon: icon{
+	{ size(24px, 24px), transparent },
+	{ "chat/ai_letters-20x20", menuIconColor, point(2px, 2px) },
+	{ "chat/ai_star1-20x20", menuIconColor, point(2px, 2px) },
+	{ "chat/ai_star2-20x20", menuIconColor, point(2px, 2px) },
+};
+
+inChannelBadgeIcon: icon {{ "white/channel", msgInDateFg }};
+inChannelBadgeSelectedIcon: icon {{ "white/channel", msgInDateFgSelected }};
+outChannelBadgeIcon: icon {{ "white/channel", msgOutDateFg }};
+outChannelBadgeSelectedIcon: icon {{ "white/channel", msgOutDateFgSelected }};
+
+infoExteraOfficialBadge: icon {{ "white/extera_official", profileVerifiedCheckBg }};
+infoExteraSupporterBadge: icon {{ "white/extera_badge", profileVerifiedCheckBg }};
+infoWhitegramSponsorBadge: icon {{ "white/sponsor_icon", profileVerifiedCheckBg }};
+infoWhitegramUserBadge: icon {{ "white/whitegram_user_icon", profileVerifiedCheckBg }};
+infoWhitegramDeveloperBadge: icon {{ "white/whitegram_developer_icon", profileVerifiedCheckBg }};
+
+
+winEnterWithGuestIcon: icon {{ "white/ghost_tray", windowFg }};
+
+editedIcon: IconEmoji{
+    icon: icon{{ "white/edited", windowFg }};
+    padding: margins(0px, 0px, 0px, 0px);
+    useIconColor: false;
+}
+
+deletedIcon: IconEmoji{
+    icon: icon{{ "white/trash_bin", windowFg }};
+    padding: margins(0px, 0px, 0px, 0px);
+    useIconColor: false;
+}
+
+burntIcon: IconEmoji{
+    icon: icon{{ "white/burnt", windowFg }};
+    padding: margins(0px, 0px, 0px, 0px);
+    useIconColor: false;
+}
+
+dialogsExteraOfficialIcon: ThreeStateIcon {
+	icon: icon {{ "white/dialogs_extera_official", dialogsVerifiedIconBg }};
+	over: icon {{ "white/dialogs_extera_official", dialogsVerifiedIconBgOver }};
+	active: icon {{ "white/dialogs_extera_official", dialogsVerifiedIconBgActive }};
+}
+dialogsExteraSupporterIcon: ThreeStateIcon {
+	icon: icon {{ "white/dialogs_extera_supporter", dialogsVerifiedIconBg }};
+	over: icon {{ "white/dialogs_extera_supporter", dialogsVerifiedIconBgOver }};
+	active: icon {{ "white/dialogs_extera_supporter", dialogsVerifiedIconBgActive }};
+}
+dialogsWhitegramSponsorIcon: ThreeStateIcon {
+	icon: icon {{ "white/sponsor_icon", dialogsVerifiedIconBg }};
+	over: icon {{ "white/sponsor_icon", dialogsVerifiedIconBgOver }};
+	active: icon {{ "white/sponsor_icon", dialogsVerifiedIconBgActive }};
+}
+dialogsWhitegramDeveloperIcon: ThreeStateIcon {
+	icon: icon {{ "white/whitegram_developer_icon", dialogsVerifiedIconBg }};
+	over: icon {{ "white/whitegram_developer_icon", dialogsVerifiedIconBgOver }};
+	active: icon {{ "white/whitegram_developer_icon", dialogsVerifiedIconBgActive }};
+}
+dialogsWhitegramUserIcon: ThreeStateIcon {
+	icon: icon {{ "white/whitegram_user_icon", dialogsVerifiedIconBg }};
+	over: icon {{ "white/whitegram_user_icon", dialogsVerifiedIconBgOver }};
+	active: icon {{ "white/whitegram_user_icon", dialogsVerifiedIconBgActive }};
+}
+
+whiteHistoryFileInPlugin: icon {{ "white/history_file_plugin", historyFileInIconFg }};
+whiteHistoryFileInPluginSelected: icon {{ "white/history_file_plugin", historyFileInIconFgSelected }};
+whiteHistoryFileOutPlugin: icon {{ "white/history_file_plugin", historyFileOutIconFg }};
+whiteHistoryFileOutPluginSelected: icon {{ "white/history_file_plugin", historyFileOutIconFgSelected }};
+
+menuIconClearAttention: icon {{ "menu/clear", menuIconAttentionColor }};
+
+/* force rebuild */
+
+
+// trigger rebuild
+
+// trigger rebuild 2
+
+// Removed upstream in 7.4, still used by AyuGram context menu.
+menuIconTTLAny: icon {{ "menu/auto_delete_plain", menuIconColor }};

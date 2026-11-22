@@ -85,9 +85,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "base/unixtime.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/utils/telegram_helpers.h"
 #include <QApplication>
 #include <QBuffer>
 #include <QDrag>
@@ -1523,7 +1523,7 @@ void SendFilesBox::addMenuButton() {
 		using ImageInfo = Ui::PreparedFileInformation::Image;
 		if (_list.files.size() == 1 && std::get_if<ImageInfo>(&_list.files[0].information->media)) {
 			_menu->addAction(
-				tr::ayu_SendAsSticker(tr::now),
+				tr::white_SendAsSticker(tr::now),
 				[=]() mutable
 				{
 					const auto file = std::move(_list.files[0]);

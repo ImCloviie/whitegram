@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
 
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/features/glass_effect/glass_effect.h"
 
 #include "base/call_delayed.h"
 #include "base/qt/qt_key_modifiers.h"
@@ -65,7 +65,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 #include "core/application.h"
 #include "core/update_checker.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
 #include "core/shortcuts.h"
 #include "window/window_columns.h"
 #include "window/window_controller.h"
@@ -104,7 +104,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "styles/style_info.h"
 #include "ui/widgets/labels.h"
-#include "ayu/features/custom_archives/custom_archives.h"
+#include "white/features/custom_archives/custom_archives.h"
 #include "styles/style_info.h"
 #include "styles/style_window.h"
 
@@ -114,10 +114,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QTextEdit>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/custom_archives/custom_archives.h"
-#include "ayu/ui/context_menu/context_menu.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/features/custom_archives/custom_archives.h"
+#include "white/ui/context_menu/context_menu.h"
+#include "white/utils/telegram_helpers.h"
 #include "ui/widgets/popup_menu.h"
 #include "base/platform/base_platform_haptic.h"
 
@@ -159,7 +159,7 @@ struct IdSearchQuery {
 	if (id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q)) {
 		return u"Обновить Whitegram"_q;
 	}
-	return tr::ayu_UpdateWhitegram(tr::now);
+	return tr::white_UpdateWhitegram(tr::now);
 }
 
 [[nodiscard]] QString UpdateWhitegramDownloadingText() {
@@ -1060,7 +1060,7 @@ void Widget::chosenRow(const ChosenRow &row) {
 		&& (row.message.fullId.msg == ShowAtUnreadMsgId)
 		&& history->peer->hasActiveStories()
 		&& !history->peer->isSelf()
-		&& !AyuSettings::getInstance().disableStories()) {
+		&& !WhiteSettings::getInstance().disableStories()) {
 		controller()->openPeerStories(history->peer->id);
 		return;
 	} else if (userpicCommunity) {
@@ -1698,7 +1698,7 @@ void Widget::setupMainMenuToggle() {
 			? &st::dialogsMenuToggleUnread
 			: &st::dialogsMenuToggleUnreadMuted;
 
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (settings.hideNotificationCounters()) {
 			icon = nullptr;
 		}
@@ -1709,7 +1709,7 @@ void Widget::setupMainMenuToggle() {
 
 void Widget::setupStories() {
 	// AyuGram disableStories
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.disableStories()) {
 		return;
 	}
@@ -2409,7 +2409,7 @@ void Widget::refreshCustomFolderTopBar() {
 			_customFolderPopup = base::make_unique_q<Ui::PopupMenu>(
 				_customFolderTopBar.data(),
 				st::popupMenuExpandedSeparator);
-			AyuUi::FillCustomFolderContextMenu(
+			WhiteUi::FillCustomFolderContextMenu(
 				_customFolderPopup.get(),
 				controller(),
 				_openedCustomArchiveId,
@@ -2422,7 +2422,7 @@ void Widget::refreshCustomFolderTopBar() {
 				QPoint(0, _customFolderMenu->height())));
 		});
 	}
-	_customFolderTitleText = AyuFeatures::CustomArchives::FolderTitle(
+	_customFolderTitleText = WhiteFeatures::CustomArchives::FolderTitle(
 		_openedCustomArchiveId);
 	_customFolderBack->show();
 	_customFolderMenu->show();
@@ -3025,7 +3025,7 @@ void Widget::updateStoriesVisibility() {
 		return;
 	}
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.disableStories()) {
 		_stories->setVisible(false);
 		return;
@@ -4305,7 +4305,7 @@ void Widget::closeChildList(anim::type animated) {
 		_hideChildListCanvas->paintRequest(
 		) | rpl::on_next([=] {
 			QPainter p(_hideChildListCanvas.get());
-			if (AyuFeatures::GlassEffect::BackgroundOpacity() < 1.) {
+			if (WhiteFeatures::GlassEffect::BackgroundOpacity() < 1.) {
 				// The snapshots already contain the chat list. Replace the live
 				// list underneath instead of blending a second copy over it.
 				p.setCompositionMode(QPainter::CompositionMode_Source);
@@ -5226,7 +5226,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 			p.fillRect(0, aboveBottom, width(), top - aboveBottom, bg);
 		}
 		// Under a translucent search panel the chat list snapshot shows through.
-		const auto glass = (AyuFeatures::GlassEffect::BackgroundOpacity() < 1.);
+		const auto glass = (WhiteFeatures::GlassEffect::BackgroundOpacity() < 1.);
 		if (glass) {
 			p.setOpacity(1. - suggestionsShown);
 		}

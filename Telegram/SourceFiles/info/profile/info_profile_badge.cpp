@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_emoji_status_panel.h"
 #include "lang/lang_keys.h"
 #include "ui/widgets/buttons.h"
+#include "ui/effects/animations.h"
 #include "ui/painter.h"
 #include "ui/power_saving.h"
 #include "ui/text/text_custom_emoji.h"
@@ -24,9 +25,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 
 // AyuGram includes
-#include "styles/style_ayu_icons.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "styles/style_white_icons.h"
+
+#include <QtCore/QtMath>
+#include <QtGui/QPainterPath>
+#include "white/features/whitegram_backend/whitegram_backend.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace Info::Profile {
@@ -42,6 +46,112 @@ namespace {
 		|| (content.badge == BadgeType::WhitegramUser)
 		|| (content.badge == BadgeType::WhitegramDeveloper)
 		|| (content.badge == BadgeType::WhitegramCustom);
+}
+
+[[nodiscard]] QPainterPath SparklePath(QPointF center, float64 radius) {
+	auto result = QPainterPath();
+	for (auto i = 0; i != 8; ++i) {
+		const auto angle = M_PI * i / 4. - M_PI / 2.;
+		const auto r = (i % 2) ? (radius * 0.3) : radius;
+		const auto point = center
+			+ QPointF(std::cos(angle) * r, std::sin(angle) * r);
+		if (i) {
+			result.lineTo(point);
+		} else {
+			result.moveTo(point);
+		}
+	}
+	result.closeSubpath();
+	return result;
+}
+
+// A soft glow and twinkling stars around the sponsor badge icon.
+void AddSponsorSparkles(not_null<Ui::RpWidget*> badge, QRect icon) {
+	const auto parent = badge->parentWidget();
+	if (!parent) {
+		return;
+	}
+	const auto sparkles = Ui::CreateChild<Ui::RpWidget>(parent);
+	sparkles->setAttribute(Qt::WA_TransparentForMouseEvents);
+	sparkles->stackUnder(badge);
+	badge->lifetime().add([weak = QPointer<QWidget>(sparkles)] {
+		delete weak.data();
+	});
+
+	const auto margin = icon.height();
+	badge->geometryValue() | rpl::on_next([=](QRect geometry) {
+		sparkles->setGeometry(icon.translated(geometry.topLeft()).marginsAdded(
+			{ margin, margin, margin, margin }));
+	}, sparkles->lifetime());
+	badge->shownValue() | rpl::on_next([=](bool shown) {
+		sparkles->setVisible(shown);
+	}, sparkles->lifetime());
+
+	struct Star {
+		float64 angle = 0.;
+		float64 distance = 0.;
+		float64 size = 0.;
+		float64 phase = 0.;
+	};
+	// Kept off the left side, where the name ends.
+	static constexpr auto kStars = std::array<Star, 6>{ {
+		{ -95., 0.92, 0.30, 0.0 },
+		{ -42., 1.05, 0.22, 2.1 },
+		{ 8., 0.98, 0.26, 4.0 },
+		{ 58., 1.0, 0.20, 1.2 },
+		{ 112., 0.95, 0.24, 3.1 },
+		{ -140., 1.08, 0.16, 5.0 },
+	} };
+	struct State {
+		Ui::Animations::Basic animation;
+		crl::time painted = 0;
+	};
+	const auto state = sparkles->lifetime().make_state<State>();
+	const auto animated = [] {
+		return !anim::Disabled() && !PowerSaving::On(PowerSaving::kEmojiStatus);
+	};
+	state->animation.init([=](crl::time now) {
+		// About 30 frames a second is plenty for a twinkle.
+		if (now - state->painted >= 33) {
+			state->painted = now;
+			sparkles->update();
+		}
+	});
+	if (animated()) {
+		state->animation.start();
+	}
+
+	sparkles->paintRequest() | rpl::on_next([=] {
+		auto p = QPainter(sparkles);
+		auto hq = PainterHighQualityEnabler(p);
+		const auto t = animated() ? (crl::now() / 1000.) : 0.;
+		const auto center = QRectF(sparkles->rect()).center();
+		const auto base = icon.height() / 2.;
+
+		const auto pulse = 0.85 + 0.15 * std::sin(t * 1.6);
+		auto glow = QRadialGradient(center, base * 1.9 * pulse);
+		glow.setColorAt(0., QColor(255, 255, 255, 60));
+		glow.setColorAt(0.55, QColor(255, 255, 255, 22));
+		glow.setColorAt(1., QColor(255, 255, 255, 0));
+		p.setPen(Qt::NoPen);
+		p.setBrush(glow);
+		p.drawEllipse(center, base * 1.9, base * 1.9);
+
+		for (const auto &star : kStars) {
+			const auto wave = 0.5 + 0.5 * std::sin(t * 2.2 + star.phase);
+			const auto angle = star.angle * M_PI / 180.;
+			const auto distance = base * (1.25 + 0.5 * star.distance);
+			const auto position = center + QPointF(
+				std::cos(angle) * distance,
+				std::sin(angle) * distance);
+			const auto radius = base * star.size * (0.6 + 0.5 * wave);
+			auto color = QColor(236, 240, 255);
+			color.setAlphaF(0.35 + 0.65 * wave);
+			p.setBrush(color);
+			p.drawPath(SparklePath(position, radius));
+		}
+	}, sparkles->lifetime());
+	sparkles->show();
 }
 
 } // namespace
@@ -245,28 +355,37 @@ void Badge::setContent(Content content) {
 	case BadgeType::WhitegramSponsor: {
 		static const auto image = MakeWhitegramSponsorBadgeImage();
 		const auto skip = st::infoVerifiedCheckPosition.x();
-		const auto iconSize = image.isNull()
-			? QSize(st::infoWhitegramSponsorBadge.width(), st::infoWhitegramSponsorBadge.height())
-			: (image.size() / image.devicePixelRatio());
+		const auto iconSize = QSize(
+			st::infoWhitegramSponsorBadge.width(),
+			st::infoWhitegramSponsorBadge.height());
 		_view->resize(
 			iconSize.width() + skip,
 			iconSize.height());
+		// The admin panel may pick another icon, it can arrive later.
+		const auto variant = _content.customId;
 		_view->paintRequest(
 		) | rpl::on_next([=, check = _view.data()]{
 			Painter p(check);
-			if (!image.isNull()) {
+			const auto server = variant.isEmpty()
+				? QImage()
+				: Whitegram::Backend::VariantIcon(variant);
+			const auto &use = server.isNull() ? image : server;
+			if (!use.isNull()) {
 				p.drawImage(
-					QRect(skip, 
-					      (check->height() - iconSize.height()) / 2, 
-					      iconSize.width(), 
-					      iconSize.height()), 
-					image);
+					QRect(skip,
+					      (check->height() - iconSize.height()) / 2,
+					      iconSize.width(),
+					      iconSize.height()),
+					FitBadgeImage(use, iconSize));
 			} else if (_overrideSt) {
 				st::infoWhitegramSponsorBadge.paint(p, skip, 0, check->width(), _overrideSt->premiumFg->c);
 			} else {
 				st::infoWhitegramSponsorBadge.paint(p, skip, 0, check->width());
 			}
 		}, _view->lifetime());
+		AddSponsorSparkles(
+			_view.data(),
+			QRect(QPoint(skip, 0), iconSize));
 	} break;
 	case BadgeType::WhitegramUser:
 	case BadgeType::WhitegramDeveloper: {
@@ -288,9 +407,7 @@ void Badge::setContent(Content content) {
 			? st::infoWhitegramDeveloperBadge
 			: st::infoWhitegramUserBadge;
 		const auto skip = st::infoVerifiedCheckPosition.x();
-		const auto iconSize = image.isNull()
-			? QSize(fallback.width(), fallback.height())
-			: (image.size() / image.devicePixelRatio());
+		const auto iconSize = QSize(fallback.width(), fallback.height());
 		_view->resize(
 			iconSize.width() + skip,
 			iconSize.height());
@@ -301,14 +418,12 @@ void Badge::setContent(Content content) {
 			if (!variant.isEmpty()) {
 				const auto server = Whitegram::Backend::VariantIcon(variant);
 				if (!server.isNull()) {
-					const auto size = server.size() / server.devicePixelRatio();
-					check->resize(size.width() + skip, size.height());
 					p.drawImage(
 						QRect(skip,
-						      (check->height() - size.height()) / 2,
-						      size.width(),
-						      size.height()),
-						server);
+						      (check->height() - iconSize.height()) / 2,
+						      iconSize.width(),
+						      iconSize.height()),
+						FitBadgeImage(server, iconSize));
 					drawn = true;
 				}
 			}
@@ -318,7 +433,7 @@ void Badge::setContent(Content content) {
 					      (check->height() - iconSize.height()) / 2,
 					      iconSize.width(),
 					      iconSize.height()),
-					image);
+					FitBadgeImage(image, iconSize));
 			} else if (!drawn && image.isNull()) {
 				if (_overrideSt) {
 					fallback.paint(p, skip, 0, check->width(), _overrideSt->premiumFg->c);
@@ -333,24 +448,21 @@ void Badge::setContent(Content content) {
 		// later than this view was created.
 		const auto customId = _content.customId;
 		const auto skip = st::infoVerifiedCheckPosition.x();
-		_view->resize(22 + skip, 22);
+		// Sized as the other Whitegram badges, whatever the PNG size.
+		const auto iconSize = QSize(
+			st::infoWhitegramDeveloperBadge.width(),
+			st::infoWhitegramDeveloperBadge.height());
+		_view->resize(iconSize.width() + skip, iconSize.height());
 		_view->paintRequest(
 		) | rpl::on_next([=, check = _view.data()]{
 			const auto image = Whitegram::Backend::CustomBadgeIcon(customId);
 			if (image.isNull()) {
 				return;
 			}
-			// The admin panel accepts any PNG size, the badge is 22px.
-			const auto iconSize = (image.size() / image.devicePixelRatio())
-				.scaled(QSize(22, 22), Qt::KeepAspectRatio);
-			check->resize(iconSize.width() + skip, iconSize.height());
 			Painter p(check);
 			p.drawImage(
-				QRect(skip,
-				      (check->height() - iconSize.height()) / 2,
-				      iconSize.width(),
-				      iconSize.height()),
-				image);
+				QRect(QPoint(skip, 0), iconSize),
+				FitBadgeImage(image, iconSize));
 		}, _view->lifetime());
 	} break;
 	}

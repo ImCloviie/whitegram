@@ -5,7 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-#include "ayu/ui/settings/settings_main.h"
+#include "white/ui/settings/settings_main.h"
 #include <QPointer>
 #include <QShortcut>
 
@@ -21,9 +21,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_send_progress.h"
 #include "api/api_unread_things.h"
 #include "base/random.h"
-#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
-#include "ayu/features/whitegram_e2ee/whitegram_key_manager.h"
-#include "ayu/features/whitegram_e2ee/whitegram_view_once_box.h"
+#include "white/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "white/features/whitegram_e2ee/whitegram_key_manager.h"
+#include "white/features/whitegram_e2ee/whitegram_view_once_box.h"
 #include "boxes/compose_ai_box.h"
 #include "ui/boxes/confirm_box.h"
 #include "boxes/delete_messages_box.h"
@@ -234,11 +234,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/filters/filters_cache_controller.h"
-#include "ayu/utils/telegram_helpers.h"
-#include "ayu/features/message_shot/message_shot.h"
-#include "ayu/features/forward/ayu_forward.h"
+#include "white/white_settings.h"
+#include "white/features/filters/filters_cache_controller.h"
+#include "white/utils/telegram_helpers.h"
+#include "white/features/message_shot/message_shot.h"
+#include "white/features/forward/white_forward.h"
 #include "boxes/abstract_box.h"
 
 
@@ -359,7 +359,7 @@ HistoryWidget::HistoryWidget(
 	tr::lng_channel_mute(tr::now).toUpper(),
 	st::historyComposeButton)
 , _discuss(this,
-	tr::ayu_ChannelBottomButtonDiscuss(tr::now).toUpper(),
+	tr::white_ChannelBottomButtonDiscuss(tr::now).toUpper(),
 	st::historyComposeButton)
 , _reportMessages(this, QString(), st::historyComposeButton)
 , _attachToggle(this, st::historyAttach)
@@ -732,7 +732,7 @@ HistoryWidget::HistoryWidget(
 
 	_fieldCharsCountManager.limitExceeds(
 	) | rpl::on_next([=] {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		const auto hide = _fieldCharsCountManager.isLimitExceeded();
 		if (_silent) {
 			_silent->setVisible(!hide);
@@ -1068,17 +1068,17 @@ HistoryWidget::HistoryWidget(
 	}, lifetime());
 
 	rpl::merge(
-		AyuSettings::getInstance().showAttachButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showCommandsButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showEmojiButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showMicrophoneButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showAutoDeleteButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showGiftButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showAiEditorButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showAttachPopupChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showEmojiPopupChanges() | rpl::to_empty,
-		AyuSettings::getInstance().channelBottomButtonChanges() | rpl::to_empty,
-		AyuSettings::getInstance().removeMessageTailChanges() | rpl::to_empty
+		WhiteSettings::getInstance().showAttachButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showCommandsButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showEmojiButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showMicrophoneButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showAutoDeleteButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showGiftButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showAiEditorButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showAttachPopupChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showEmojiPopupChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().channelBottomButtonChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().removeMessageTailChanges() | rpl::to_empty
 	) | rpl::on_next([=] {
 		refreshSendGiftToggle();
 		refreshAttachBotsMenu();
@@ -1088,7 +1088,7 @@ HistoryWidget::HistoryWidget(
 		this->update();
 	}, lifetime());
 
-	AyuSettings::getInstance().translationProviderChanges(
+	WhiteSettings::getInstance().translationProviderChanges(
 	) | rpl::on_next([=](TranslationProvider) {
 		if (_history) {
 			for (const auto &block : _history->blocks) {
@@ -1412,7 +1412,7 @@ HistoryWidget::HistoryWidget(
 		if (action.replaceMediaOf) {
 		} else if (action.options.scheduled) {
 			cancelReplyOrSuggest(lastKeyboardUsed);
-			if (!AyuSettings::ghost(&controller->session()).isUseScheduledMessages()) {
+			if (!WhiteSettings::ghost(&controller->session()).isUseScheduledMessages()) {
 				crl::on_main(this, [=, history = action.history]
 				{
 					controller->showSection(
@@ -3971,7 +3971,7 @@ void HistoryWidget::setHistory(History *history) {
 	}
 	_pullToNext->setHistory(history);
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto was = _attachBotsMenu && _history && _history->peer->isUser();
 	const auto now = _attachBotsMenu && history && history->peer->isUser() && settings.showAttachPopup();
@@ -4065,7 +4065,7 @@ void HistoryWidget::refreshAttachBotsMenu() {
 		return;
 	}
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	_attachBotsMenu = InlineBots::MakeAttachBotsMenu(
 		this,
@@ -4372,7 +4372,7 @@ void HistoryWidget::refreshScheduledToggle() {
 void HistoryWidget::refreshSendGiftToggle() {
 	using Type = Api::DisallowedGiftType;
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	const auto user = _peer ? _peer->asUser() : nullptr;
 	const auto disallowed = user ? user->disallowedGiftTypes() : Type();
 	const auto all = Type::Premium
@@ -4501,7 +4501,7 @@ bool HistoryWidget::canWriteMessage() const {
 }
 
 void HistoryWidget::updateControlsVisibility() {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	auto fieldDisabledRemoved = (_fieldDisabled != nullptr);
 	auto fieldVisibilityChanged = false;
@@ -6581,7 +6581,7 @@ void HistoryWidget::goToDiscussionGroup() {
 }
 
 bool HistoryWidget::hasDiscussionGroup() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.channelBottomButton() != ChannelBottomButton::DiscussWithFallback) {
 		return false;
 	}
@@ -7256,7 +7256,7 @@ bool HistoryWidget::isChoosingTheme() const {
 }
 
 bool HistoryWidget::isMuteUnmute() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.channelBottomButton() == ChannelBottomButton::Hidden) {
 		return false;
 	}
@@ -7273,7 +7273,7 @@ bool HistoryWidget::isSearching() const {
 }
 
 bool HistoryWidget::showRecordButton() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (!settings.showMicrophoneButtonInMessageField()) {
 		return false;
 	}
@@ -7557,7 +7557,7 @@ void HistoryWidget::showKeyboardHideButton() {
 }
 
 void HistoryWidget::toggleKeyboard(bool manual) {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto fieldEnabled = canWriteMessage() && !_showAnimation;
 	if (_kbShown || _kbReplyTo) {
@@ -7960,7 +7960,7 @@ void HistoryWidget::updateSendAsFileGeometry() {
 }
 
 void HistoryWidget::moveFieldControls() {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	auto keyboardHeight = 0;
 	auto bottom = height();
@@ -8069,7 +8069,7 @@ void HistoryWidget::moveFieldControls() {
 }
 
 void HistoryWidget::updateFieldSize() {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto kbShowShown = _history && !_kbShown && _keyboard->hasMarkup();
 	auto fieldWidth = width()
@@ -8946,8 +8946,8 @@ void HistoryWidget::updateSendRestriction() {
 		return;
 	}
 	_sendRestrictionKey = restriction.text;
-	if (AyuForward::isForwarding(_peer->id)) {
-		_sendRestriction = AyuForwardWriteRestriction(this, _peer->id, session());
+	if (WhiteForward::isForwarding(_peer->id)) {
+		_sendRestriction = WhiteForwardWriteRestriction(this, _peer->id, session());
 	} else if (!restriction) {
 		_sendRestriction = nullptr;
 	} else if (restriction.frozen) {
@@ -9447,7 +9447,7 @@ void HistoryWidget::updateBotKeyboard(History *h, bool force) {
 		return;
 	}
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto wasVisible = _kbShown || _kbReplyTo;
 	const auto wasMsgId = _keyboard->forMsgId();
@@ -11518,7 +11518,7 @@ void HistoryWidget::messageShotSelected() {
 		return;
 	}
 
-	AyuFeatures::MessageShot::Wrapper(
+	WhiteFeatures::MessageShot::Wrapper(
 		_list.data(),
 		[=] { clearSelected(); });
 }

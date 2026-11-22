@@ -46,8 +46,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/message_shot/message_shot.h"
+#include "white/white_settings.h"
+#include "white/features/message_shot/message_shot.h"
 
 
 namespace HistoryView {
@@ -403,7 +403,7 @@ Document::Document(
 		} else if (!_parent->data()->out()) {
 			const auto &data = &_parent->data()->history()->owner();
 			setDocumentLinks(_data, realParent, [=] {
-				const auto &settings = AyuSettings::getInstance();
+				const auto &settings = WhiteSettings::getInstance();
 				if (!settings.saveDeletedMessages()) {
 					_openl = nullptr;
 				}
@@ -782,7 +782,7 @@ void Document::draw(
 			&& (radial
 				|| (!loaded && !_data->loading())
 				|| _data->waitingForAlbum())
-			&& !AyuFeatures::MessageShot::isTakingShot()) {
+			&& !WhiteFeatures::MessageShot::isTakingShot()) {
 			const auto backOpacity = (loaded && !_data->uploading()) ? radialOpacity : 1.;
 			p.setPen(Qt::NoPen);
 			p.setBrush(sti->msgDateImgBg);
@@ -1239,7 +1239,7 @@ void Document::drawCornerDownload(
 	if (dataLoaded()
 		|| _data->loadedInMediaCache()
 		|| !downloadInCorner()
-		|| AyuFeatures::MessageShot::isTakingShot()) {
+		|| WhiteFeatures::MessageShot::isTakingShot()) {
 		return;
 	}
 	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;

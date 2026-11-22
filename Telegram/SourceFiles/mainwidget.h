@@ -98,7 +98,7 @@ namespace Core {
 class Changelogs;
 } // namespace Core
 
-namespace AyuUi {
+namespace WhiteUi {
 class MusicIsland;
 } // namespace AyuUi
 
@@ -378,7 +378,7 @@ private:
 	object_ptr<Window::TopBarWrapWidget<Media::Player::Widget>> _player
 		= { nullptr };
 	object_ptr<Media::Player::Panel> _playerPlaylist;
-	AyuUi::MusicIsland *_musicIsland = nullptr;
+	WhiteUi::MusicIsland *_musicIsland = nullptr;
 
 	base::unique_qptr<Window::HistoryHider> _hider;
 	std::vector<std::unique_ptr<StackItem>> _stack;

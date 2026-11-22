@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_shared_media_classic.h"
 
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 #include "core/ui_integration.h"
 #include "data/components/recent_shared_media_gifts.h"
 #include "data/data_channel.h"
@@ -36,7 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Info::Profile {
@@ -198,7 +198,7 @@ namespace {
 						.append(QChar(' '))
 						.append(std::move(customs));
 				}),
-				AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+				WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 					parent,
 					st::infoSharedMediaButton),
 				Core::TextContext({
@@ -294,7 +294,7 @@ object_ptr<Ui::SlideWrap<Ui::RpWidget>> SetupSharedMediaClassic(
 	const auto addSimilarPeersButton = [&](
 			not_null<PeerData*> peer,
 			const style::icon &icon) {
-		if (AyuSettings::getInstance().hideSimilarChannels()) {
+		if (WhiteSettings::getInstance().hideSimilarChannels()) {
 			return;
 		}
 		auto result = AddSimilarPeersButton(

@@ -47,8 +47,8 @@ public:
 			EditedPrimary  = 0x800,
 			Ephemeral      = 0x1000,
 			Updated        = 0x2000,
-			AyuDeleted     = 0x4000,
-			AyuBurnt       = 0x8000,
+			WhiteDeleted     = 0x4000,
+			WhiteBurnt       = 0x8000,
 			FullDate       = 0x10000,
 			//Unread, // We don't want to pass and update it in Date for now.
 		};

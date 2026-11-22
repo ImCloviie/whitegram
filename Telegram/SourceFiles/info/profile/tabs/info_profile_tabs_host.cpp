@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/tabs/info_profile_tabs_strip.h"
 #include "info/profile/tabs/adapters/info_profile_tab_media.h"
 #include "apiwrap.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 #include "base/call_delayed.h"
 #include "base/options.h"
 #include "core/ui_integration.h"
@@ -66,7 +66,7 @@ TabsHost::TabsHost(not_null<QWidget*> parent, Descriptor descriptor)
 	}));
 	_strip->show();
 	_body->show();
-	AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+	WhiteFeatures::CustomProfileBackground::BackgroundShownValue(
 		this
 	) | rpl::on_next([=](bool shown) {
 		_backgroundShown = shown;

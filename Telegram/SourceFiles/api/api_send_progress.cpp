@@ -16,7 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Api {
@@ -117,7 +117,7 @@ void SendProgressManager::send(const Key &key, int progress) {
 		return;
 	}
 
-	if (!AyuSettings::ghost(_session).shouldSendUploadProgressForPeer(key.history->peer->id.value))
+	if (!WhiteSettings::ghost(_session).shouldSendUploadProgressForPeer(key.history->peer->id.value))
 	{
 		DEBUG_LOG(("[AyuGram] Don't send upload progress"));
 		return;

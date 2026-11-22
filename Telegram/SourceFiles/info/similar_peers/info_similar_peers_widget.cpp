@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/similar_peers/info_similar_peers_widget.h"
 
 #include "api/api_chat_participants.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 #include "apiwrap.h"
 #include "boxes/peer_list_box.h"
 #include "data/data_channel.h"
@@ -230,7 +230,7 @@ void ListController::setupUnlock() {
 	// background keeps showing through a little.
 	const auto backgroundShown = _unlock->lifetime().make_state<
 		rpl::variable<bool>>(
-			AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+			WhiteFeatures::CustomProfileBackground::BackgroundShownValue(
 				_unlock));
 	backgroundShown->changes(
 	) | rpl::on_next([=] {
@@ -386,7 +386,7 @@ object_ptr<InnerWidget::ListWidget> InnerWidget::setupList(
 		not_null<ListController*> controller) {
 	// See-through while the list is shown on a profile with a background.
 	controller->setStyleOverrides(
-		&AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		&WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			parent,
 			st::infoMembersList));
 	auto result = object_ptr<ListWidget>(

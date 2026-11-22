@@ -80,9 +80,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/options.h"
 #include "mtproto/mtproto_dc_options.h"
 #include "core/update_checker.h"
-#include "ayu/ayu_settings.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
-#include "ayu/features/whitegram_e2ee/whitegram_key_manager.h"
+#include "white/white_settings.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
+#include "white/features/whitegram_e2ee/whitegram_key_manager.h"
 #include "settings.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
@@ -110,8 +110,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 
 // AyuGram includes
-#include "ayu/features/forward/ayu_forward.h"
-#include "ayu/ui/components/music_island.h"
+#include "white/features/forward/white_forward.h"
+#include "white/ui/components/music_island.h"
 
 
 namespace {
@@ -349,7 +349,7 @@ MainWidget::MainWidget(
 		_player->finishAnimating();
 	}
 
-	_musicIsland = Ui::CreateChild<AyuUi::MusicIsland>(this, _controller);
+	_musicIsland = Ui::CreateChild<WhiteUi::MusicIsland>(this, _controller);
 
 	const auto refreshTopBarPlayer = [=] {
 		const auto player = Media::Player::instance();
@@ -364,7 +364,7 @@ MainWidget::MainWidget(
 		}
 	};
 
-	const auto islandSettings = &AyuSettings::getInstance();
+	const auto islandSettings = &WhiteSettings::getInstance();
 	rpl::merge(
 		islandSettings->musicIslandEnabledChanges() | rpl::to_empty,
 		islandSettings->musicIslandHideTopBarChanges() | rpl::to_empty,
@@ -475,7 +475,7 @@ MainWidget::MainWidget(
 
 	if (!Core::UpdaterDisabled()) {
 		Whitegram::Backend::CheckUpdateAvailability();
-		if (AyuSettings::getInstance().whitegramAutoUpdate()) {
+		if (WhiteSettings::getInstance().whitegramAutoUpdate()) {
 			cSetLastUpdateCheck(0);
 			Core::UpdateChecker().startForced();
 		}
@@ -643,7 +643,7 @@ bool MainWidget::setForwardDraft(
 		});
 	// allow opening chat that
 	// already have some forward task
-	if (error && !AyuForward::isForwarding(history->peer->id)) {
+	if (error && !WhiteForward::isForwarding(history->peer->id)) {
 		Data::ShowSendErrorToast(_controller, history->peer, error);
 		return false;
 	}

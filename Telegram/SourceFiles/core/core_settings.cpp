@@ -22,7 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/section_widget.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Core {
@@ -638,7 +638,7 @@ void Settings::addFromSerialized(
 		return;
 	}
 
-    AyuSettings::load();
+    WhiteSettings::load();
 
 	QDataStream stream(serialized);
 	stream.setVersion(QDataStream::Qt_5_1);

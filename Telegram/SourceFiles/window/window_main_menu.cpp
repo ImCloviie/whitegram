@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_main_menu.h"
 
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 #include "apiwrap.h"
 
@@ -90,17 +90,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/utils/telegram_helpers.h"
 #include "boxes/abstract_box.h"
-#include "styles/style_ayu_icons.h"
+#include "styles/style_white_icons.h"
 #include "lang_auto.h"
-#include "ayu/features/glass_effect/glass_effect.h"
-#include "ayu/ui/settings/settings_main.h"
-#include "ayu/features/whitegram_crypto.h"
-#include "ayu/features/whitegram_crypto_charts.h"
-#include "ayu/features/whitegram_backend/whitegram_backend.h"
-#include "ayu/ui/components/music_page.h"
+#include "white/features/glass_effect/glass_effect.h"
+#include "white/ui/settings/settings_main.h"
+#include "white/features/whitegram_crypto.h"
+#include "white/features/whitegram_crypto_charts.h"
+#include "white/features/whitegram_backend/whitegram_backend.h"
+#include "white/ui/components/music_page.h"
 #include "ui/layers/generic_box.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/vertical_layout.h"
@@ -163,7 +163,7 @@ void ShowCryptoChartBox(
 			{ 30, u"1M"_q },
 			{ 90, u"3M"_q },
 		});
-		auto initialDays = AyuSettings::getInstance().cryptoChartDays();
+		auto initialDays = WhiteSettings::getInstance().cryptoChartDays();
 		if (initialDays != 1 && initialDays != 7
 			&& initialDays != 30 && initialDays != 90) {
 			initialDays = 7;
@@ -263,7 +263,7 @@ void ShowCryptoChartBox(
 
 [[nodiscard]] rpl::producer<TextWithEntities> SetStatusLabel(
 		not_null<Main::Session*> session) {
-	return tr::ayu_AyuPreferences() | rpl::map([](const QString& text) {
+	return tr::white_AyuPreferences() | rpl::map([](const QString& text) {
 		return tr::link(text);
 	});
 }
@@ -556,7 +556,7 @@ MainMenu::MainMenu(
 
 	_telegram->setMarkedText(tr::link(
 		u"Whitegram"_q,
-		u"https://github.com/ImCloviie"_q));
+		u"https://github.com/ImCloviie/whitegram"_q));
 	_telegram->setLinksTrusted();
 	setupFooterBetaBadge();
 	// The canary version is too long for the "Version {version}" form.
@@ -855,7 +855,7 @@ void MainMenu::showFinished() {
 void MainMenu::setupMenu() {
 	using namespace Settings;
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto controller = _controller;
 	const auto addAction = [&](
@@ -951,16 +951,16 @@ void MainMenu::setupMenu() {
 		)->setClickedCallback([=] {
 			// Hiding the layer destroys this menu and the lambda with it.
 			const auto window = controller;
-			AyuUi::MusicPage::Show(window);
+			WhiteUi::MusicPage::Show(window);
 			window->hideLayer(anim::type::normal);
 		});
 		if (settings.showLReadToggleInDrawer()) {
 			addAction(
-				tr::ayu_LReadMessages(),
-				{&st::ayuLReadMenuIcon}
+				tr::white_LReadMessages(),
+				{&st::whiteLReadMenuIcon}
 			)->setClickedCallback([=]() mutable
 			{
-				auto &ghost = AyuSettings::ghost(&controller->session());
+				auto &ghost = WhiteSettings::ghost(&controller->session());
 				const auto prev = ghost.sendReadMessages();
 				ghost.setSendReadMessages(false);
 
@@ -973,7 +973,7 @@ void MainMenu::setupMenu() {
 
 		if (settings.showSReadToggleInDrawer()) {
 			auto callback = [=](Fn<void()> &&close) mutable {
-				auto &ghost = AyuSettings::ghost(&controller->session());
+				auto &ghost = WhiteSettings::ghost(&controller->session());
 				const auto prev = ghost.sendReadMessages();
 				ghost.setSendReadMessages(true);
 
@@ -982,21 +982,21 @@ void MainMenu::setupMenu() {
 
 				// slight delay for forums to send packets
 				dispatchToMainThread(crl::guard(controller, [=] {
-					auto &ghost = AyuSettings::ghost(&controller->session());
+					auto &ghost = WhiteSettings::ghost(&controller->session());
 					ghost.setSendReadMessages(prev);
 				}), 200);
 				close();
 			};
 
 			addAction(
-				tr::ayu_SReadMessages(),
-				{&st::ayuSReadMenuIcon}
+				tr::white_SReadMessages(),
+				{&st::whiteSReadMenuIcon}
 			)->setClickedCallback([=]
 			{
 				auto box = Ui::MakeConfirmBox({
-					.text = tr::ayu_ReadConfirmationBoxQuestion(),
+					.text = tr::white_ReadConfirmationBoxQuestion(),
 					.confirmed = callback,
-					.confirmText = tr::ayu_ReadConfirmationBoxActionText()
+					.confirmText = tr::white_ReadConfirmationBoxActionText()
 				});
 				Ui::show(std::move(box));
 			});
@@ -1098,22 +1098,22 @@ void MainMenu::setupMenu() {
 	}
 
 	if (settings.showGhostToggleInDrawer()) {
-		auto ghostActiveChanges = AyuSettings::getInstance().useGlobalGhostModeValue()
+		auto ghostActiveChanges = WhiteSettings::getInstance().useGlobalGhostModeValue()
 			| rpl::map([controller = _controller](bool) {
-				return AyuSettings::ghost(&controller->session()).ghostModeActiveValue();
+				return WhiteSettings::ghost(&controller->session()).ghostModeActiveValue();
 			})
 			| rpl::flatten_latest();
 
 		const auto ghostModeToggle = addAction(
-			tr::ayu_GhostModeToggle(),
-			{&st::ayuGhostIcon}
+			tr::white_GhostModeToggle(),
+			{&st::whiteGhostIcon}
 		)->toggleOn(std::move(ghostActiveChanges));
 
 		ghostModeToggle->toggledChanges(
 		) | rpl::on_next(
 			[controller = _controller](bool ghostMode)
 			{
-				auto &ghost = AyuSettings::ghost(&controller->session());
+				auto &ghost = WhiteSettings::ghost(&controller->session());
 				ghost.setGhostModeEnabled(ghostMode);
 			},
 			ghostModeToggle->lifetime());
@@ -1125,25 +1125,25 @@ void MainMenu::setupMenu() {
 				QString::fromUtf8("Эффект стекла"),
 				u"Glass effect"_q),
 			{ &st::menuIconChangeColors }
-		)->toggleOn(AyuSettings::getInstance().glassEffectValue());
+		)->toggleOn(WhiteSettings::getInstance().glassEffectValue());
 
 		glassToggle->toggledChanges(
 		) | rpl::on_next([](bool enabled) {
-			AyuSettings::getInstance().setGlassEffect(enabled);
+			WhiteSettings::getInstance().setGlassEffect(enabled);
 		}, glassToggle->lifetime());
 	}
 
 	if (settings.showStreamerToggleInDrawer()) {
 		const auto streamerModeToggle = addAction(
-			tr::ayu_StreamerModeToggle(),
-			{&st::ayuStreamerModeMenuIcon}
-		)->toggleOn(AyuSettings::getInstance().streamerModeValue());
+			tr::white_StreamerModeToggle(),
+			{&st::whiteStreamerModeMenuIcon}
+		)->toggleOn(WhiteSettings::getInstance().streamerModeValue());
 
 		streamerModeToggle->toggledChanges(
 		) | rpl::on_next(
 			[=](bool enabled)
 			{
-				AyuSettings::getInstance().setStreamerMode(enabled);
+				WhiteSettings::getInstance().setStreamerMode(enabled);
 			},
 			streamerModeToggle->lifetime());
 	}
@@ -1171,7 +1171,7 @@ void MainMenu::setupMenu() {
 				const QString &coinId,
 				bool fiatRow,
 				const QString &fiatCode) {
-			const auto &s = AyuSettings::getInstance();
+			const auto &s = WhiteSettings::getInstance();
 			const auto showChart = s.showCryptoCharts();
 			const auto rowHeight = 40;
 
@@ -1255,7 +1255,7 @@ void MainMenu::setupMenu() {
 				delete cryptoContainer->widgetAt(0);
 			}
 
-			const auto &s = AyuSettings::getInstance();
+			const auto &s = WhiteSettings::getInstance();
 			const auto fiat = s.cryptoFiatCurrency();
 			const auto &prices = Whitegram::CryptoProvider::instance()
 				.currentPrices();
@@ -1401,22 +1401,22 @@ void MainMenu::setupMenu() {
 			rebuild();
 		}, cryptoContainer->lifetime());
 
-		AyuSettings::getInstance().cryptoFiatCurrencyChanges(
+		WhiteSettings::getInstance().cryptoFiatCurrencyChanges(
 		) | rpl::on_next([=](int) {
 			rebuild();
 		}, cryptoContainer->lifetime());
 
-		AyuSettings::getInstance().showCryptoChartsChanges(
+		WhiteSettings::getInstance().showCryptoChartsChanges(
 		) | rpl::on_next([=](bool) {
 			rebuild();
 		}, cryptoContainer->lifetime());
 
-		AyuSettings::getInstance().showCryptoChangesChanges(
+		WhiteSettings::getInstance().showCryptoChangesChanges(
 		) | rpl::on_next([=](bool) {
 			rebuild();
 		}, cryptoContainer->lifetime());
 
-		AyuSettings::getInstance().cryptoChartDaysChanges(
+		WhiteSettings::getInstance().cryptoChartDaysChanges(
 		) | rpl::on_next([=](int) {
 			// The new period changes the wanted history set: the provider
 			// refetches it and the rebuild follows from historiesValue().
@@ -1448,9 +1448,9 @@ void MainMenu::setupMenu() {
 		// Subscribe to this window's account, including server corrections
 		// received while another account is active.
 		auto timeText = rpl::combine(
-			AyuSettings::getInstance().timeSpentValue(_controller->session().userId().bare),
-			AyuSettings::getInstance().timeSpentFormatValue(),
-			AyuSettings::getInstance().timeSpentLabelStyleValue()
+			WhiteSettings::getInstance().timeSpentValue(_controller->session().userId().bare),
+			WhiteSettings::getInstance().timeSpentFormatValue(),
+			WhiteSettings::getInstance().timeSpentLabelStyleValue()
 		) | rpl::map([labelPrefix](int64 minutes, int format, int labelStyle) {
 			return labelPrefix(labelStyle)
 				+ formatTimeSpent(minutes, format);
@@ -1643,7 +1643,7 @@ OthersUnreadState OtherAccountsUnreadStateCurrent(
 		if (account.get() == current) {
 			continue;
 		} else if (const auto session = account->maybeSession()) {
-			const auto &accountNotif = AyuSettings::accountNotifications(session);
+			const auto &accountNotif = WhiteSettings::accountNotifications(session);
 			if (accountNotif.completelyMute() || !accountNotif.includeInUnreadCounter()) {
 				continue;
 			}

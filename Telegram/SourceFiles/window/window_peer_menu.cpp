@@ -143,10 +143,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 // AyuGram includes
-#include "ayu/utils/telegram_helpers.h"
-#include "styles/style_ayu_icons.h"
-#include "ayu/ui/context_menu/context_menu.h"
-#include "ayu/features/forward/ayu_forward.h"
+#include "white/utils/telegram_helpers.h"
+#include "styles/style_white_icons.h"
+#include "white/ui/context_menu/context_menu.h"
+#include "white/features/forward/white_forward.h"
 
 
 namespace Window {
@@ -1922,7 +1922,7 @@ void Filler::fillContextMenuActions() {
 	addUngroup();
 	addHidePromotion();
 	addToggleArchive();
-	AyuUi::AddCustomArchiveActions(_peer, _controller, _addAction);
+	WhiteUi::AddCustomArchiveActions(_peer, _controller, _addAction);
 	addTogglePin();
 	if (ViewProfileInChatsListContextMenu.value()) {
 		addInfo();
@@ -1938,7 +1938,7 @@ void Filler::fillContextMenuActions() {
 	}
 	addBanFromChannel();
 	addClearHistory();
-	AyuUi::AddDeleteOwnMessagesAction(_peer, _topic, _controller, _addAction);
+	WhiteUi::AddDeleteOwnMessagesAction(_peer, _topic, _controller, _addAction);
 	addDeleteChat();
 	addLeaveChat();
 	addDeleteTopic();
@@ -1946,12 +1946,12 @@ void Filler::fillContextMenuActions() {
 
 void Filler::fillHistoryActions() {
 	addToggleMuteSubmenu(true);
-	AyuUi::AddCustomArchiveActions(_peer, _controller, _addAction);
-	AyuUi::AddAyuGramActions(_peer, _thread, _controller, _addAction);
+	WhiteUi::AddCustomArchiveActions(_peer, _controller, _addAction);
+	WhiteUi::AddAyuGramActions(_peer, _thread, _controller, _addAction);
 	addCreateTopic();
 	addInfo();
-	AyuUi::AddJumpToBeginningAction(_peer, _thread, _controller, _addAction);
-	AyuUi::AddOpenChannelAction(_peer, _controller, _addAction);
+	WhiteUi::AddJumpToBeginningAction(_peer, _thread, _controller, _addAction);
+	WhiteUi::AddOpenChannelAction(_peer, _controller, _addAction);
 	addViewAsTopics();
 	addManageChat();
 	addStoryArchive();
@@ -1967,7 +1967,7 @@ void Filler::fillHistoryActions() {
 	addTranslate();
 	addReport();
 	addClearHistory();
-	AyuUi::AddDeleteOwnMessagesAction(_peer, _topic, _controller, _addAction);
+	WhiteUi::AddDeleteOwnMessagesAction(_peer, _topic, _controller, _addAction);
 	addDeleteChat();
 	addLeaveChat();
 }
@@ -1989,8 +1989,8 @@ void Filler::fillProfileActions() {
 	addTopicLink();
 	addManageTopic();
 	addToggleTopicClosed();
-	AyuUi::AddOpenChannelAction(_peer, _controller, _addAction);
-	AyuUi::AddShadowBanAction(_peer, _addAction);
+	WhiteUi::AddOpenChannelAction(_peer, _controller, _addAction);
+	WhiteUi::AddShadowBanAction(_peer, _addAction);
 	addViewDiscussion();
 	addDirectMessages();
 	addExportChat();
@@ -2005,10 +2005,10 @@ void Filler::fillProfileActions() {
 }
 
 void Filler::fillRepliesActions() {
-	AyuUi::AddAyuGramActions(_peer, _thread, _controller, _addAction);
+	WhiteUi::AddAyuGramActions(_peer, _thread, _controller, _addAction);
 	if (_topic) {
 		addInfo();
-		AyuUi::AddJumpToBeginningAction(_peer, _thread, _controller, _addAction);
+		WhiteUi::AddJumpToBeginningAction(_peer, _thread, _controller, _addAction);
 		addManageTopic();
 	}
 	addBoostChat();
@@ -3704,10 +3704,10 @@ base::weak_qptr<Ui::BoxContent> ShowForwardMessagesBox(
 			options,
 			forwardOptions);
 		const auto items = history->owner().idsToItems(msgIds);
-		const auto ayuForwarding = AyuForward::isAyuForwardNeeded(items)
-			|| AyuForward::isFullAyuForwardNeeded(items.front());
+		const auto whiteForwarding = WhiteForward::isAyuForwardNeeded(items)
+			|| WhiteForward::isFullAyuForwardNeeded(items.front());
 
-		if ((!state->submit || ayuForwarding) && successCallback) {
+		if ((!state->submit || whiteForwarding) && successCallback) {
 			successCallback();
 		}
 		// AyuGram-changed

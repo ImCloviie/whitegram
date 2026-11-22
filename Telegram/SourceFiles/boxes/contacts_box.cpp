@@ -25,7 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_widgets.h"
-#include "styles/style_ayu_icons.h"
+#include "styles/style_white_icons.h"
 
 namespace {
 
@@ -103,8 +103,8 @@ bool SelectableContactRow::isMutualContact() const {
 QSize SelectableContactRow::rightActionSize() const {
 	return isMutualContact()
 		? QSize(
-			st::ayuContactsMutualIcon.width(),
-			st::ayuContactsMutualIcon.height())
+			st::whiteContactsMutualIcon.width(),
+			st::whiteContactsMutualIcon.height())
 		: QSize();
 }
 
@@ -136,8 +136,8 @@ void SelectableContactRow::rightActionPaint(
 		return;
 	}
 	(selected || actionSelected
-		? st::ayuContactsMutualIconOver
-		: st::ayuContactsMutualIcon).paint(p, x, y, outerWidth);
+		? st::whiteContactsMutualIconOver
+		: st::whiteContactsMutualIcon).paint(p, x, y, outerWidth);
 }
 
 class ContactsListController final
@@ -252,7 +252,7 @@ void ContactsListController::rowRightActionClicked(
 	if (const auto user = row->peer()->asUser();
 		user && (user->flags() & UserDataFlag::MutualContact)) {
 		delegate()->peerListUiShow()->showToast(
-			tr::ayu_MutualContactInfo(tr::now));
+			tr::white_MutualContactInfo(tr::now));
 	}
 }
 

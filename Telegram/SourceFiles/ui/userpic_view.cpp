@@ -14,7 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <cmath>
 
 // AyuGram includes
-#include "ayu/ui/ayu_userpic.h"
+#include "white/ui/white_userpic.h"
 
 
 namespace Ui {
@@ -53,19 +53,19 @@ void PaintCommunityUserpicEffect(
 	const auto version = style::PaletteVersion();
 	const auto rgba = color.rgba();
 	const auto peek = size * kPeek;
-	const auto ayuState = AyuUserpic::PackedState();
+	const auto whiteState = WhiteUserpic::PackedState();
 	const auto regenerate = cache.image.isNull()
 		|| (cache.size != size)
 		|| (cache.color != rgba)
 		|| (cache.paletteVersion != version)
 		|| (cache.dpr != dpr)
-		|| (cache.ayuState != ayuState);
+		|| (cache.whiteState != whiteState);
 	if (regenerate) {
 		cache.size = size;
 		cache.color = rgba;
 		cache.paletteVersion = version;
 		cache.dpr = dpr;
-		cache.ayuState = ayuState;
+		cache.whiteState = whiteState;
 
 		const auto imageW = int(std::ceil((peek + size * kCover) * dpr));
 		const auto imageH = int(std::ceil(size * dpr));
@@ -80,9 +80,9 @@ void PaintCommunityUserpicEffect(
 		auto q = QPainter(&cache.image);
 		auto hq = PainterHighQualityEnabler(q);
 		const auto gap = size * kGap;
-		const auto rounding = AyuUserpic::ShouldOverrideShape(
+		const auto rounding = WhiteUserpic::ShouldOverrideShape(
 			Ui::PeerUserpicShape::Forum)
-			? AyuUserpic::ComputeRadiusF(size)
+			? WhiteUserpic::ComputeRadiusF(size)
 			: size * Ui::ForumUserpicRadiusMultiplier();
 
 		// The userpic and every card share a pivot on the userpic's left edge
@@ -152,10 +152,10 @@ void ValidateUserpicCache(
 	const auto full = QSize(size, size);
 	const auto version = style::PaletteVersion();
 	const auto shapeValue = static_cast<uint32>(shape) & 3;
-	const auto ayuState = AyuUserpic::PackedState();
+	const auto whiteState = WhiteUserpic::PackedState();
 	const auto regenerate = (view.cached.size() != QSize(size, size))
 		|| (view.shape != shapeValue)
-		|| (view.ayuState != ayuState)
+		|| (view.whiteState != whiteState)
 		|| (cloud && !view.empty.null())
 		|| (empty && empty != view.empty.get())
 		|| (empty && view.paletteVersion != version);
@@ -165,16 +165,16 @@ void ValidateUserpicCache(
 	view.empty = empty;
 	view.shape = shapeValue;
 	view.paletteVersion = version;
-	view.ayuState = ayuState;
+	view.whiteState = whiteState;
 
-	const auto ayuOverride = AyuUserpic::ShouldOverrideShape(shape);
+	const auto whiteOverride = WhiteUserpic::ShouldOverrideShape(shape);
 
 	if (cloud) {
 		view.cached = cloud->scaled(
 			full,
 			Qt::IgnoreAspectRatio,
 			Qt::SmoothTransformation);
-		if (ayuOverride) {
+		if (whiteOverride) {
 			view.cached = Images::Round(
 				std::move(view.cached),
 				ImageRoundRadius::AyuUserpic);
@@ -196,7 +196,7 @@ void ValidateUserpicCache(
 		view.cached.fill(Qt::transparent);
 
 		auto p = QPainter(&view.cached);
-		if (ayuOverride) {
+		if (whiteOverride) {
 			empty->paintCircle(p, 0, 0, size, size);
 		} else if (shape == PeerUserpicShape::Monoforum) {
 			empty->paintMonoforum(p, 0, 0, size, size);

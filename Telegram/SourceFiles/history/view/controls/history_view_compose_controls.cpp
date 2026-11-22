@@ -7,9 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
 
-#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
-#include "ayu/features/whitegram_e2ee/whitegram_key_manager.h"
-#include "ayu/features/whitegram_e2ee/whitegram_view_once_box.h"
+#include "white/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "white/features/whitegram_e2ee/whitegram_key_manager.h"
+#include "white/features/whitegram_e2ee/whitegram_view_once_box.h"
 #include "lang/lang_keys.h"
 #include "styles/style_boxes.h"
 #include "ui/widgets/fields/password_input.h"
@@ -152,7 +152,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "data/data_ai_compose_tones.h"
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "history/history_item_components.h"
 
 
@@ -3115,17 +3115,17 @@ void ComposeControls::init() {
 	}, _wrap->lifetime());
 
 	rpl::merge(
-		AyuSettings::getInstance().showAttachButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showCommandsButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showEmojiButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showMicrophoneButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showAutoDeleteButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showAttachButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showCommandsButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showEmojiButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showMicrophoneButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showAutoDeleteButtonInMessageFieldChanges() | rpl::to_empty,
 		session().data().aiComposeTones().updated() | rpl::to_empty,
-		AyuSettings::getInstance().showAiEditorButtonInMessageFieldChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showAttachPopupChanges() | rpl::to_empty,
-		AyuSettings::getInstance().showEmojiPopupChanges() | rpl::to_empty,
-		AyuSettings::getInstance().channelBottomButtonChanges() | rpl::to_empty,
-		AyuSettings::getInstance().removeMessageTailChanges() | rpl::to_empty
+		WhiteSettings::getInstance().showAiEditorButtonInMessageFieldChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showAttachPopupChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().showEmojiPopupChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().channelBottomButtonChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().removeMessageTailChanges() | rpl::to_empty
 	) | rpl::on_next([=] {
 		updateSendButtonType();
 		updateControlsVisibility();
@@ -3133,7 +3133,7 @@ void ComposeControls::init() {
 		orderControls();
 	}, _wrap->lifetime());
 
-	AyuSettings::getInstance().translationProviderChanges(
+	WhiteSettings::getInstance().translationProviderChanges(
 	) | rpl::on_next([=](TranslationProvider) {
 		if (_history) {
 			for (const auto &block : _history->blocks) {
@@ -3157,7 +3157,7 @@ void ComposeControls::orderControls() {
 }
 
 bool ComposeControls::showRecordButton() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (!settings.showMicrophoneButtonInMessageField()) {
 		return false;
 	}
@@ -5236,7 +5236,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 	// (_commentsShown) (_attachToggle|_replaceMedia) (_sendAs) -- _inlineResults ------ _tabbedPanel -- _fieldBarCancel (_starsReaction)
 	// (_attachDocument|_attachPhoto) _field (_ttlInfo) (_scheduled) (_silent|_botCommandStart) _tabbedSelectorToggle _send
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto oldComposeHeight = composeFieldHeight();
 	const auto commentsShown = _commentsShown
@@ -5415,7 +5415,7 @@ void ComposeControls::updateControlsGeometry(QSize size) {
 }
 
 void ComposeControls::updateControlsVisibility() {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto hide = hideExtraButtons()
 		|| isEditingMessage()

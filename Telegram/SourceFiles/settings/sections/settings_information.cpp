@@ -7,8 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/sections/settings_information.h"
 
-#include "ayu/ayu_settings.h"
-#include "ayu/ui/boxes/account_notification_box.h"
+#include "white/white_settings.h"
+#include "white/ui/boxes/account_notification_box.h"
 #include "settings/sections/settings_main.h"
 #include "settings/sections/settings_notifications.h"
 #include "settings/settings_builder.h"
@@ -79,11 +79,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QBuffer>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
-#include "ayu/ui/ayu_userpic.h"
-#include "ayu/ui/settings/settings_main.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
+#include "white/ui/white_userpic.h"
+#include "white/ui/settings/settings_main.h"
+#include "white/utils/telegram_helpers.h"
 #include "lang/lang_instance.h"
 #include "styles/style_info.h"
 
@@ -167,7 +167,7 @@ ComposedBadge::ComposedBadge(
 		) | rpl::then(
 			Core::App().domain().unreadBadgeChanges()
 		) | rpl::map([=] {
-			const auto &accountNotif = AyuSettings::accountNotifications(session);
+			const auto &accountNotif = WhiteSettings::accountNotifications(session);
 			if (accountNotif.completelyMute() || !accountNotif.showUnreadBadge()) {
 				return Badge::UnreadBadge{ 0, true };
 			}
@@ -934,7 +934,7 @@ void SetupAccountsWrap(
 			pen.setWidthF(line);
 			p.setPen(pen);
 			p.setBrush(Qt::NoBrush);
-			AyuUserpic::PaintShape(p, rect);
+			WhiteUserpic::PaintShape(p, rect);
 		}
 	}, state->userpic.lifetime());
 
@@ -984,8 +984,8 @@ void SetupAccountsWrap(
 				addAction);
 		}
 
-		if (AyuSettings::getInstance().accountProfilesEnabled()) {
-			const auto &profiles = AyuSettings::getInstance().accountProfiles();
+		if (WhiteSettings::getInstance().accountProfilesEnabled()) {
+			const auto &profiles = WhiteSettings::getInstance().accountProfiles();
 			if (!profiles.empty()) {
 				Window::AddSeparatorAndShiftUp(addAction);
 				const uint64 accId = session->uniqueId();
@@ -994,7 +994,7 @@ void SetupAccountsWrap(
 					const QString label = (inProfile ? QString::fromUtf8("✓ ") : QString("   ")) + p.name;
 					const int profId = p.id;
 					addAction(label, [=] {
-						AyuSettings::getInstance().toggleAccountInProfile(profId, accId);
+						WhiteSettings::getInstance().toggleAccountInProfile(profId, accId);
 					}, &st::menuIconShowAll);
 				}
 			}
@@ -1087,9 +1087,9 @@ void AccountsList::setup() {
 	}, _outer->lifetime());
 
 	rpl::merge(
-		AyuSettings::getInstance().activeProfileIdChanges() | rpl::to_empty,
-		AyuSettings::getInstance().accountProfilesChanges() | rpl::to_empty,
-		AyuSettings::getInstance().accountProfilesEnabledChanges() | rpl::to_empty
+		WhiteSettings::getInstance().activeProfileIdChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().accountProfilesChanges() | rpl::to_empty,
+		WhiteSettings::getInstance().accountProfilesEnabledChanges() | rpl::to_empty
 	) | rpl::on_next([=] {
 		for (auto i = _watched.begin(); i != _watched.end(); i++) {
 			i->second = nullptr;
@@ -1208,7 +1208,7 @@ void AccountsList::rebuild() {
 		}
 	}, inner->lifetime());
 
-	if (AyuSettings::getInstance().accountProfilesEnabled()) {
+	if (WhiteSettings::getInstance().accountProfilesEnabled()) {
 		constexpr auto kPillHeight = 32;
 		constexpr auto kPillRadius = 16;
 		constexpr auto kPillHPad = 14;
@@ -1216,8 +1216,8 @@ void AccountsList::rebuild() {
 		constexpr auto kBarVPad = 8;
 		constexpr auto kIconTextGap = 4;
 
-		const int activeId = AyuSettings::getInstance().activeProfileId();
-		const auto &profiles = AyuSettings::getInstance().accountProfiles();
+		const int activeId = WhiteSettings::getInstance().activeProfileId();
+		const auto &profiles = WhiteSettings::getInstance().accountProfiles();
 
 		struct PillInfo {
 			int id = 0;
@@ -1231,7 +1231,7 @@ void AccountsList::rebuild() {
 			.id = 0,
 			.text = QString::fromUtf8("Все"),
 			.icon = QString(),
-			.click = [=] { AyuSettings::getInstance().setActiveProfileId(0); },
+			.click = [=] { WhiteSettings::getInstance().setActiveProfileId(0); },
 			.active = (activeId == 0),
 		});
 		for (const auto &p : profiles) {
@@ -1240,11 +1240,11 @@ void AccountsList::rebuild() {
 				.id = pId,
 				.text = p.name,
 				.icon = p.icon,
-				.click = [=] { AyuSettings::getInstance().setActiveProfileId(pId); },
+				.click = [=] { WhiteSettings::getInstance().setActiveProfileId(pId); },
 				.active = (activeId == pId),
 			});
 		}
-		if (int(profiles.size()) < AyuSettings::getInstance().maxAccountProfiles()) {
+		if (int(profiles.size()) < WhiteSettings::getInstance().maxAccountProfiles()) {
 			pills.push_back({
 				.id = -1,
 				.text = QString::fromUtf8("+"),
@@ -1259,7 +1259,7 @@ void AccountsList::rebuild() {
 						box->addButton(tr::lng_box_ok(), [=] {
 							const auto text = field->getLastText().trimmed();
 							if (!text.isEmpty()) {
-								AyuSettings::getInstance().addAccountProfile(text);
+								WhiteSettings::getInstance().addAccountProfile(text);
 							}
 							box->closeBox();
 						});
@@ -1377,7 +1377,7 @@ void AccountsList::rebuild() {
 							box->addButton(tr::lng_box_ok(), [=] {
 								const auto text = field->getLastText().trimmed();
 								if (!text.isEmpty()) {
-									AyuSettings::getInstance().renameAccountProfile(pillId, text);
+									WhiteSettings::getInstance().renameAccountProfile(pillId, text);
 								}
 								box->closeBox();
 							});
@@ -1445,7 +1445,7 @@ void AccountsList::rebuild() {
 								ibtn->show();
 
 								ibtn->setClickedCallback([=] {
-									AyuSettings::getInstance().setAccountProfileIcon(pillId, iconPath);
+									WhiteSettings::getInstance().setAccountProfileIcon(pillId, iconPath);
 									box->closeBox();
 								});
 
@@ -1482,7 +1482,7 @@ void AccountsList::rebuild() {
 						_controller->show(Ui::MakeConfirmBox({
 							.text = QString::fromUtf8("Удалить профиль \"") + pillText + QString::fromUtf8("\"?"),
 							.confirmed = [=](Fn<void()> close) {
-								AyuSettings::getInstance().removeAccountProfile(pillId);
+								WhiteSettings::getInstance().removeAccountProfile(pillId);
 								close();
 							},
 							.confirmText = tr::lng_box_delete(),
@@ -1544,10 +1544,10 @@ void AccountsList::rebuild() {
 
 	const auto premiumLimit = _controller->session().domain().maxAccounts();
 	const auto list = _controller->session().domain().orderedAccounts();
-	const int activeProfileId = AyuSettings::getInstance().accountProfilesEnabled()
-		? AyuSettings::getInstance().activeProfileId()
+	const int activeProfileId = WhiteSettings::getInstance().accountProfilesEnabled()
+		? WhiteSettings::getInstance().activeProfileId()
 		: 0;
-	const auto &allProfiles = AyuSettings::getInstance().accountProfiles();
+	const auto &allProfiles = WhiteSettings::getInstance().accountProfiles();
 	const AccountProfile *currProf = nullptr;
 	if (activeProfileId != 0) {
 		for (const auto &p : allProfiles) {
@@ -1619,7 +1619,7 @@ void AccountsList::rebuild() {
 
 	const auto count = int(list.size());
 
-	if (AyuSettings::getInstance().accountProfilesEnabled()) {
+	if (WhiteSettings::getInstance().accountProfilesEnabled()) {
 		_reorder->addPinnedInterval(0, 1);
 		_reorder->addPinnedInterval(
 			1 + premiumLimit,
@@ -1640,12 +1640,12 @@ void AccountsList::rebuild() {
 // The profile background customization lives in its own dedicated section
 // ("Whitegram -> Profile background"), reachable from here with one button.
 void AddProfileBackground(SectionBuilder &builder) {
-	namespace Background = AyuFeatures::CustomProfileBackground;
+	namespace Background = WhiteFeatures::CustomProfileBackground;
 
 	const auto peerId = builder.session()->userPeerId().value;
 
 	auto status = rpl::single(rpl::empty)
-		| rpl::then(AyuSettings::getInstance().customProfileBackgroundChanges())
+		| rpl::then(WhiteSettings::getInstance().customProfileBackgroundChanges())
 		| rpl::map([=]() -> QString {
 			const auto id = Lang::GetInstance().id();
 			const auto baseId = Lang::GetInstance().baseId();

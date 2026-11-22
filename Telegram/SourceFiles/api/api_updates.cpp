@@ -80,8 +80,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/format_values.h" // Ui::FormatPhone
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/ayu_worker.h"
+#include "white/white_settings.h"
+#include "white/white_worker.h"
 
 
 namespace Api {
@@ -1008,7 +1008,7 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 	// AyuGram sendOnlinePackets
 	const auto& config = _session->serverConfig();
 	bool isOnlineOrig = Core::App().hasActiveWindow(&session());
-	bool isOnline = AyuSettings::ghost(_session).sendOnlinePackets() && isOnlineOrig;
+	bool isOnline = WhiteSettings::ghost(_session).sendOnlinePackets() && isOnlineOrig;
 
 	int updateIn = config.onlineUpdatePeriod;
 	Assert(updateIn >= 0);
@@ -2159,7 +2159,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 			} else if (d.vstatus().type() == mtpc_userStatusOnline) {
 				cSetOtherOnline(
 					d.vstatus().c_userStatusOnline().vexpires().v);
-				AyuWorker::markAsOnline(_session);
+				WhiteWorker::markAsOnline(_session);
 			}
 		}
 	} break;

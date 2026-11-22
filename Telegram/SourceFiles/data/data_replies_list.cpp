@@ -25,7 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Data {
@@ -975,7 +975,7 @@ void RepliesList::sendReadTillRequest() {
 	const auto api = &_history->session().api();
 	api->request(base::take(_readRequestId)).cancel();
 
-	if (!AyuSettings::ghost(&_history->session()).sendReadMessages()) {
+	if (!WhiteSettings::ghost(&_history->session()).sendReadMessages()) {
 		return;
 	}
 

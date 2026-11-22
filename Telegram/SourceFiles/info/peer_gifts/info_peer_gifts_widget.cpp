@@ -11,7 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_hash.h"
 #include "api/api_premium.h"
 #include "apiwrap.h"
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 #include "boxes/share_box.h"
 #include "boxes/star_gift_box.h"
 #include "core/ui_integration.h"
@@ -362,7 +362,7 @@ InnerWidget::InnerWidget(
 	_singleMin = _delegate.buttonSize();
 
 	// On a profile with a background the gifts lie right on it.
-	AyuFeatures::CustomProfileBackground::BackgroundShownValue(
+	WhiteFeatures::CustomProfileBackground::BackgroundShownValue(
 		this
 	) | rpl::on_next([=](bool shown) {
 		_backgroundShown = shown;
@@ -1589,7 +1589,7 @@ void InnerWidget::refreshCollectionsTabs() {
 		const auto tabsCount = tabs.size();
 		_collectionsTabs = std::make_unique<Ui::SubTabs>(
 			this,
-			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 				this,
 				st::collectionSubTabs),
 			Ui::SubTabs::Options{ .selected = selected, .centered = true },

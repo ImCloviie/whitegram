@@ -17,7 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 
 // AyuGram includes
-#include "ayu/utils/telegram_helpers.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace HistoryView::Controls {

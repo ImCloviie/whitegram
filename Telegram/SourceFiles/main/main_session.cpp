@@ -71,7 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #endif // TDESKTOP_DISABLE_SPELLCHECK
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "api/api_blocked_peers.h"
 
 
@@ -411,7 +411,7 @@ rpl::producer<> Session::downloaderTaskFinished() const {
 }
 
 bool Session::premium() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.localPremium()) {
 		return true;
 	}
@@ -420,7 +420,7 @@ bool Session::premium() const {
 }
 
 bool Session::premiumPossible() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.localPremium()) {
 		return true;
 	}
@@ -443,7 +443,7 @@ rpl::producer<bool> Session::premiumPossibleValue() const {
 		return _user->isPremium();
 	});
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.localPremium()) {
 		premium = rpl::single(true);
 	}

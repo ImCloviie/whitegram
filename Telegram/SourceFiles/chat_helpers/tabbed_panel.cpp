@@ -20,8 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/white_settings.h"
+#include "white/features/glass_effect/glass_effect.h"
 
 
 namespace ChatHelpers {
@@ -41,7 +41,7 @@ base::options::toggle TabbedPanelShowOnClick({
 const char kOptionTabbedPanelShowOnClick[] = "tabbed-panel-show-on-click";
 
 bool ShowPanelOnClick() {
-	return !AyuSettings::getInstance().showEmojiPopup();
+	return !WhiteSettings::getInstance().showEmojiPopup();
 }
 
 TabbedPanel::TabbedPanel(
@@ -254,7 +254,7 @@ void TabbedPanel::paintEvent(QPaintEvent *e) {
 	} else {
 		if (!_cache.isNull()) _cache = QPixmap();
 		_shadow.paint(p, innerRect(), st::emojiPanRadius);
-		AyuFeatures::GlassEffect::PaintPopupBackdrop(
+		WhiteFeatures::GlassEffect::PaintPopupBackdrop(
 			p,
 			this,
 			innerRect(),
@@ -488,7 +488,7 @@ void TabbedPanel::showStarted() {
 }
 
 bool TabbedPanel::eventFilter(QObject *obj, QEvent *e) {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	if (!settings.showEmojiPopup()) {
 		return false;

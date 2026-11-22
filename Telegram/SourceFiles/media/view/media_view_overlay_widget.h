@@ -31,7 +31,7 @@ namespace anim {
 enum class activation : uchar;
 } // namespace anim
 
-namespace AyuFeatures::StreamerMode {
+namespace WhiteFeatures::StreamerMode {
 class ScopedViewOnceGuard;
 } // namespace AyuFeatures::StreamerMode
 
@@ -631,7 +631,7 @@ private:
 
 	bool _opengl = false;
 	bool _screenshotProtected = false;
-	std::unique_ptr<AyuFeatures::StreamerMode::ScopedViewOnceGuard> _viewOnceGuard;
+	std::unique_ptr<WhiteFeatures::StreamerMode::ScopedViewOnceGuard> _viewOnceGuard;
 	const std::unique_ptr<Ui::GL::Window> _wrap;
 	const not_null<Ui::RpWindow*> _window;
 	const std::unique_ptr<Platform::OverlayWidgetHelper> _helper;

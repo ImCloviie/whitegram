@@ -12,15 +12,15 @@ foreach ($variant in @('light', 'dark')) {
     $mark = [WhitegramIconExport]::LoadMark("$PSScriptRoot/desktop-master.png", $dark, $false)
     try {
         $art = "$DesktopRoot/Telegram/Resources/art"
-        [WhitegramIconExport]::Png($mark, 1024, $dark, 'desktop', "$art/ayu/whitegram_$variant/app.png")
-        [WhitegramIconExport]::Ico($mark, $dark, "$art/ayu/whitegram_$variant/app_icon.ico")
+        [WhitegramIconExport]::Png($mark, 1024, $dark, 'desktop', "$art/white/whitegram_$variant/app.png")
+        [WhitegramIconExport]::Ico($mark, $dark, "$art/white/whitegram_$variant/app_icon.ico")
         if (!$dark) {
-            Copy-Item "$art/ayu/whitegram_light/app_icon.ico" "$art/icon256.ico" -Force
+            Copy-Item "$art/white/whitegram_light/app_icon.ico" "$art/icon256.ico" -Force
             foreach ($size in @(16, 32, 48, 64, 128, 256, 512)) {
                 [WhitegramIconExport]::Png($mark, $size, $false, 'desktop', "$art/icon$size.png")
                 [WhitegramIconExport]::Png($mark, $size * 2, $false, 'desktop', "$art/icon$size@2x.png")
             }
-            Copy-Item "$art/ayu/whitegram_light/app.png" "$art/icon_round512@2x.png" -Force
+            Copy-Item "$art/white/whitegram_light/app.png" "$art/icon_round512@2x.png" -Force
         }
         # Keep the existing mobile artwork and placement independent of desktop.
         $mark.Dispose()

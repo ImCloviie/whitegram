@@ -117,10 +117,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <ksandbox.h>
 
 // AyuGram includes
-#include "ayu/ayu_infra.h"
-#include "ayu/ayu_settings.h"
-#include "ayu/features/streamer_mode/streamer_mode.h"
-#include "ayu/features/whitegram_plugins/whitegram_plugins.h"
+#include "white/white_infra.h"
+#include "white/white_settings.h"
+#include "white/features/streamer_mode/streamer_mode.h"
+#include "white/features/whitegram_plugins/whitegram_plugins.h"
 
 namespace Core {
 namespace {
@@ -313,7 +313,7 @@ Application::~Application() {
 
 	_mediaControlsManager = nullptr;
 
-	AyuSettings::getInstance().stopStartupSound();
+	WhiteSettings::getInstance().stopStartupSound();
 
 	Media::Player::finish(_audio.get());
 	style::StopManager();
@@ -359,7 +359,7 @@ void Application::run() {
 	_translator = std::make_unique<Lang::Translator>();
 	QCoreApplication::instance()->installTranslator(_translator.get());
 
-	AyuInfra::init();
+	WhiteInfra::init();
 	style::StartManager(cScale());
 	Ui::Accessible::Init();
 	Ui::InitTextOptions();
@@ -375,7 +375,7 @@ void Application::run() {
 	Webview::ClearStaleTemporaryStorage();
 
 	crl::on_main([] {
-		AyuSettings::getInstance().playStartupSound();
+		WhiteSettings::getInstance().playStartupSound();
 	});
 
 	if (MediaControlsManager::Supported()) {
@@ -637,8 +637,8 @@ void Application::processCreatedWindow(
 	window->openInMediaViewRequests(
 	) | rpl::start_to_stream(_openInMediaViewRequests, window->lifetime());
 
-	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
-		AyuFeatures::StreamerMode::hideWidgetWindow(window->widget());
+	if (WhiteFeatures::StreamerMode::isStreamerModeActive()) {
+		WhiteFeatures::StreamerMode::hideWidgetWindow(window->widget());
 	}
 }
 
@@ -1382,7 +1382,7 @@ bool Application::openInternalUrl(const QString &url, QVariant context) {
 }
 
 QString Application::changelogLink() const {
-	return u"https://github.com/ImCloviie"_q;
+	return u"https://github.com/ImCloviie/whitegram"_q;
 }
 
 bool Application::openCustomUrl(

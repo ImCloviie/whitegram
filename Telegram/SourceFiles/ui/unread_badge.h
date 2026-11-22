@@ -114,6 +114,12 @@ private:
 	int drawWhitegramDeveloper(Painter &p, const Descriptor &descriptor);
 	int drawWhitegramUser(Painter &p, const Descriptor &descriptor);
 	int drawWhitegramCustom(Painter &p, const Descriptor &descriptor);
+	int drawBadgeImage(
+		Painter &p,
+		const Descriptor &descriptor,
+		const style::icon *icon,
+		const QImage &image,
+		bool paintFallback = true);
 
 	std::unique_ptr<EmojiStatus> _emojiStatus;
 	std::unique_ptr<EmojiStatus> _exteraCustomStatus;

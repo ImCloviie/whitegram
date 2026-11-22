@@ -61,7 +61,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace ChatHelpers {
@@ -468,7 +468,7 @@ bool FieldAutocomplete::clearFilteredBotCommands() {
 FieldAutocomplete::StickerRows FieldAutocomplete::getStickerSuggestions() {
 	const auto data = &_session->data().stickers();
 	const auto list = data->getListByEmoji({ _emoji }, _stickersSeed);
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	auto result = ranges::views::all(
 		list
 	) | ranges::views::filter([&](not_null<DocumentData*> sticker) {

@@ -72,7 +72,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_widgets.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Settings {
@@ -1357,9 +1357,9 @@ base::weak_qptr<Ui::RpWidget> Premium::createPinnedToTop(
 			}
 		}
 
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (settings.localPremium()) {
-			return tr::ayu_LocalPremiumNotice(tr::rich);
+			return tr::white_LocalPremiumNotice(tr::rich);
 		}
 
 		return rpl::conditional(

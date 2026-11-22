@@ -37,10 +37,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/ayu_worker.h"
-#include "ayu/data/messages_storage.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/white_worker.h"
+#include "white/data/messages_storage.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace Data {
@@ -730,7 +730,7 @@ void Histories::reportPendingDeliveries() {
 void Histories::sendReadRequests() {
 	DEBUG_LOG(("Reading: send requests with count %1.").arg(_states.size()));
 
-	const auto &ghost = AyuSettings::ghost(&_owner->session());
+	const auto &ghost = WhiteSettings::ghost(&_owner->session());
 	for (auto it = _states.begin(); it != _states.end();) {
 		if (!ghost.shouldSendReadMessagesForPeer(it->first->peer->id.value)) {
 			it = _states.erase(it);
@@ -1042,7 +1042,7 @@ void Histories::deleteMessages(const MessageIdsList &ids, bool revoke) {
 			}
 			remove.push_back(item);
 			if (item->isDeleted()) {
-				AyuMessages::removeDeletedMessage(item);
+				WhiteMessages::removeDeletedMessage(item);
 			} else if (item->isRegular()) {
 				idsByPeer[history].push_back(MTP_int(itemId.msg));
 			}
@@ -1236,7 +1236,7 @@ int Histories::sendPreparedMessage(
 					const MTPUpdates &result,
 					const MTP::Response &response) {
 				api->applyUpdates(result, randomId);
-				AyuWorker::markAsOnline(&history->owner().session());
+				WhiteWorker::markAsOnline(&history->owner().session());
 				done(result, response);
 				finish();
 			}).fail([=](

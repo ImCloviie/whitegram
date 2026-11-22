@@ -54,7 +54,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_settings.h"
 
 // AyuGram includes
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 
 namespace Info::Stories {
 namespace {
@@ -222,7 +222,7 @@ InnerWidget::InnerWidget(
 	// Everything built below looks for this mark to drop its opaque fills
 	// while the full profile background is painted under the page, as the
 	// layer reports it, see Widget::Widget.
-	AyuFeatures::CustomProfileBackground::MarkBackgroundHost(
+	WhiteFeatures::CustomProfileBackground::MarkBackgroundHost(
 		this,
 		_fullBackgroundPainted.value());
 
@@ -270,7 +270,7 @@ void InnerWidget::setupAlbums() {
 	_albumsWrap = _top->add(object_ptr<Ui::BoxContentDivider>(
 		_top,
 		st::boxDividerHeight,
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			_top.data(),
 			st::defaultDividerBar)));
 
@@ -404,7 +404,7 @@ object_ptr<Ui::SlideWrap<>> InnerWidget::makeArchiveButton() {
 		object_ptr<Ui::SettingsButton>(
 			_top,
 			tr::lng_stories_archive_button(),
-			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 				_top.data(),
 				st::infoSharedMediaButton)));
 	const auto archiveWrap = wrap.data();
@@ -443,7 +443,7 @@ object_ptr<Ui::SlideWrap<>> InnerWidget::makeRecentButton() {
 		object_ptr<Ui::SettingsButton>(
 			_top,
 			tr::lng_stories_recent_button(),
-			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 				_top.data(),
 				st::infoSharedMediaButton)));
 	const auto recentWrap = wrap.data();
@@ -512,7 +512,7 @@ object_ptr<Ui::SlideWrap<>> InnerWidget::makeGiftsButton() {
 		object_ptr<Ui::SettingsButton>(
 			_top,
 			tr::lng_peer_gifts_title(),
-			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 				_top.data(),
 				st::infoSharedMediaButton)));
 	const auto giftsWrap = wrap.data();
@@ -631,7 +631,7 @@ void InnerWidget::createAboutArchive() {
 				: tr::lng_stories_archive_about)(),
 			st::infoStoriesAboutArchive),
 		st::infoStoriesAboutArchivePadding,
-		AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+		WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 			_top.data(),
 			st::defaultDividerBar)));
 
@@ -838,7 +838,7 @@ void InnerWidget::refreshAlbumsTabs() {
 		const auto tabsCount = tabs.size();
 		_albumsTabs = std::make_unique<Ui::SubTabs>(
 			_albumsWrap,
-			AyuFeatures::CustomProfileBackground::AdaptiveStyle(
+			WhiteFeatures::CustomProfileBackground::AdaptiveStyle(
 				_albumsWrap,
 				st::collectionSubTabs),
 			Ui::SubTabs::Options{

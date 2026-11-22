@@ -25,7 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 
 // AyuGram includes
-#include "ayu/features/custom_profile_background/custom_profile_background.h"
+#include "white/features/custom_profile_background/custom_profile_background.h"
 
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QScrollBar>
@@ -157,7 +157,7 @@ Widget::Widget(
 	}, _inner->lifetime());
 
 	const auto renderer
-		= AyuFeatures::CustomProfileBackground::SetupFullBackgroundLayer(
+		= WhiteFeatures::CustomProfileBackground::SetupFullBackgroundLayer(
 			this,
 			[=]() -> PeerData* {
 				const auto peer = controller->key().storiesPeer();

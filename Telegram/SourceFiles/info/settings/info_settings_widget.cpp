@@ -15,7 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/ui_utility.h"
 
 // AyuGram includes
-#include "ayu/ui/settings/settings_main.h"
+#include "white/ui/settings/settings_main.h"
 
 
 namespace Info {

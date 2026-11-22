@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 
 #include "apiwrap.h"
-#include "ayu/features/custom_archives/custom_archives.h"
+#include "white/features/custom_archives/custom_archives.h"
 #include "api/api_cloud_password.h"
 #include "api/api_text_entities.h"
 #include "boxes/peers/add_bot_to_chat_box.h"
@@ -136,7 +136,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h" // st::boxLabel
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Window {
@@ -1599,7 +1599,7 @@ void SessionNavigation::showByInitialId(
 		break;
 	case SeparateType::CustomFolder:
 		clearSectionStack(instant);
-		AyuFeatures::CustomArchives::OpenArchive(
+		WhiteFeatures::CustomArchives::OpenArchive(
 			parent,
 			id.customFolderId);
 		break;
@@ -2244,7 +2244,7 @@ void SessionController::activateFirstChatsFilter() {
 	}
 	_filtersActivated = true;
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (!settings.hideAllChatsFolder()) {
 		setActiveChatsFilter(session().data().chatsFilters().defaultId());
 	}
@@ -2327,7 +2327,7 @@ void SessionController::openCustomArchive(int archiveId) {
 	_openedFolder = nullptr;
 	if (const auto was = _openedCustomArchive.current()) {
 		if (was != archiveId) {
-			AyuFeatures::CustomArchives::LockArchive(was);
+			WhiteFeatures::CustomArchives::LockArchive(was);
 		}
 	}
 	_openedCustomArchive = archiveId;
@@ -2335,7 +2335,7 @@ void SessionController::openCustomArchive(int archiveId) {
 
 void SessionController::closeCustomArchive() {
 	if (const auto id = _openedCustomArchive.current()) {
-		AyuFeatures::CustomArchives::LockArchive(id);
+		WhiteFeatures::CustomArchives::LockArchive(id);
 	}
 	if (_openedCustomArchive.current()
 		&& windowId().type == SeparateType::CustomFolder) {

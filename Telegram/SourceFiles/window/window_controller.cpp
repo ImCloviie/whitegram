@@ -43,8 +43,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QScreen>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/ayu_state.h"
+#include "white/white_settings.h"
+#include "white/white_state.h"
 #include "data/data_story.h"
 
 
@@ -658,7 +658,7 @@ void Controller::openInMediaView(Media::View::OpenRequest &&request) {
 	if (request.story()) {
 		const auto story = not_null{ request.story() };
 		const auto suggestGhostMode = [&] {
-			const auto &ghost = AyuSettings::ghost(&story->session());
+			const auto &ghost = WhiteSettings::ghost(&story->session());
 			return ghost.suggestGhostModeBeforeViewingStory()
 				&& ghost.sendReadStories()
 				&& !ghost.sendReadStoriesLocked()
@@ -668,11 +668,11 @@ void Controller::openInMediaView(Media::View::OpenRequest &&request) {
 			const auto controller = request.controller();
 			const auto context = request.storiesContext();
 			show(Ui::MakeConfirmBox({
-				.text = tr::ayu_SuggestGhostModeStoryText(tr::now, tr::rich),
+				.text = tr::white_SuggestGhostModeStoryText(tr::now, tr::rich),
 				.confirmed = [=](Fn<void()> close) {
 					close();
-					AyuSettings::ghost(&story->session()).setGhostModeEnabled(true);
-					AyuState::setDisableGhostModeOnStoryClose(&story->session());
+					WhiteSettings::ghost(&story->session()).setGhostModeEnabled(true);
+					WhiteState::setDisableGhostModeOnStoryClose(&story->session());
 					_openInMediaViewRequests.fire(
 						Media::View::OpenRequest(controller, story, context));
 				},
@@ -681,9 +681,9 @@ void Controller::openInMediaView(Media::View::OpenRequest &&request) {
 					_openInMediaViewRequests.fire(
 						Media::View::OpenRequest(controller, story, context));
 				},
-				.confirmText = tr::ayu_SuggestGhostModeStoryActionTextYes(),
-				.cancelText = tr::ayu_SuggestGhostModeStoryActionTextNo(),
-				.title = tr::ayu_SuggestGhostModeTitle(),
+				.confirmText = tr::white_SuggestGhostModeStoryActionTextYes(),
+				.cancelText = tr::white_SuggestGhostModeStoryActionTextNo(),
+				.title = tr::white_SuggestGhostModeTitle(),
 				.strictCancel = true,
 			}));
 			return;

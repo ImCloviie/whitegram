@@ -358,10 +358,10 @@ bool checkInstalled(QString path = {}) {
 	}
 
 	const auto installed = u"Whitegram Desktop/Whitegram.lnk"_q;
-	const auto ayuInstalled = u"AyuGram Desktop/AyuGram.lnk"_q;
+	const auto whiteInstalled = u"AyuGram Desktop/AyuGram.lnk"_q;
 	const auto old = u"AyuGram for Windows/AyuGram.lnk"_q;
 	return validateShortcutAt(path + installed)
-		|| validateShortcutAt(path + ayuInstalled)
+		|| validateShortcutAt(path + whiteInstalled)
 		|| validateShortcutAt(path + old);
 }
 

@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_top_bar.h"
 
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/features/glass_effect/glass_effect.h"
 
 #include "dialogs/ui/dialogs_stories_list.h"
 #include "lang/lang_keys.h"
@@ -32,7 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 
 
 namespace Info {
@@ -52,7 +52,7 @@ TopBar::TopBar(
 	setAttribute(
 		Qt::WA_OpaquePaintEvent,
 		!_roundRect
-			&& (AyuFeatures::GlassEffect::BackgroundOpacity() >= 1.));
+			&& (WhiteFeatures::GlassEffect::BackgroundOpacity() >= 1.));
 	setSelectedItems(std::move(selectedItems));
 	updateControlsVisibility(anim::type::instant);
 }
@@ -537,7 +537,7 @@ void TopBar::updateControlsVisibility(anim::type animated) {
 
 void TopBar::setStories(rpl::producer<Dialogs::Stories::Content> content) {
 	// AyuGram disableStories
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.disableStories()) {
 		return;
 	}

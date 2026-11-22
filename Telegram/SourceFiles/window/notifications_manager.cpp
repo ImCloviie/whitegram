@@ -12,7 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qt/qt_key_modifiers.h"
 #include "platform/platform_notifications_manager.h"
 #include "window/notifications_manager_default.h"
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "media/audio/media_audio_track.h"
 #include "media/audio/media_audio.h"
 #include "mtproto/mtproto_config.h"
@@ -56,8 +56,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #endif // __has_include(<gio/gio.hpp>)
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace Window {
@@ -346,7 +346,7 @@ System::SkipState System::computeSkipState(
 	const auto item = notification.item;
 	const auto thread = item->notificationThread();
 	const auto notifySettings = &thread->owner().notifySettings();
-	const auto &accountNotif = AyuSettings::accountNotifications(&thread->session());
+	const auto &accountNotif = WhiteSettings::accountNotifications(&thread->session());
 	if (accountNotif.completelyMute() || !accountNotif.enabled()) {
 		return { SkipState::Skip };
 	}
@@ -424,7 +424,7 @@ System::Timing System::countTiming(
 		delay = config.notifyDefaultDelay;
 	}
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	if (settings.disableNotificationsDelay()) {
 		delay = minimalDelay;
 	}

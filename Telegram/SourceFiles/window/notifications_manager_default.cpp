@@ -48,9 +48,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QScreen>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/streamer_mode/streamer_mode.h"
-#include "ayu/utils/telegram_helpers.h"
+#include "white/white_settings.h"
+#include "white/features/streamer_mode/streamer_mode.h"
+#include "white/utils/telegram_helpers.h"
 
 
 namespace Window {
@@ -762,8 +762,8 @@ Notification::Notification(
 
 	show();
 
-	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
-		AyuFeatures::StreamerMode::hideWidgetWindow(this);
+	if (WhiteFeatures::StreamerMode::isStreamerModeActive()) {
+		WhiteFeatures::StreamerMode::hideWidgetWindow(this);
 	}
 }
 
@@ -1345,8 +1345,8 @@ HideAllButton::HideAllButton(
 
 	show();
 
-	if (AyuFeatures::StreamerMode::isStreamerModeActive()) {
-		AyuFeatures::StreamerMode::hideWidgetWindow(this);
+	if (WhiteFeatures::StreamerMode::isStreamerModeActive()) {
+		WhiteFeatures::StreamerMode::hideWidgetWindow(this);
 	}
 }
 

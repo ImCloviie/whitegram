@@ -60,8 +60,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <memory>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "styles/style_ayu_styles.h"
+#include "white/white_settings.h"
+#include "styles/style_white_styles.h"
 
 
 namespace Ui::BotWebView {
@@ -1262,7 +1262,7 @@ Panel::Panel(Args &&args)
 	}
 	_widget->setWindowFlag(Qt::WindowStaysOnTopHint, false);
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 	auto size = QSize(st::botWebViewPanelSize);
 	if (settings.increaseWebviewHeight()) {
 		size.setHeight(st::botWebViewPanelHeightIncreased);

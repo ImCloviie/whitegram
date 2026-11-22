@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
 
-#include "ayu/features/glass_effect/glass_effect.h"
+#include "white/features/glass_effect/glass_effect.h"
 
 #include "dialogs/dialogs_three_state_icon.h"
 #include "dialogs/ui/chat_search_empty.h"
@@ -117,12 +117,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <unordered_map>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/custom_archives/custom_archives.h"
-#include "ayu/ui/ayu_userpic.h"
-#include "ayu/ui/context_menu/context_menu.h"
-#include "ayu/utils/telegram_helpers.h"
-#include "styles/style_ayu_icons.h"
+#include "white/white_settings.h"
+#include "white/features/custom_archives/custom_archives.h"
+#include "white/ui/white_userpic.h"
+#include "white/ui/context_menu/context_menu.h"
+#include "white/utils/telegram_helpers.h"
+#include "styles/style_white_icons.h"
 
 
 namespace Dialogs {
@@ -343,7 +343,7 @@ InnerWidget::InnerWidget(
 	// pixels underneath translucent rows instead of reusing their old contents.
 	setAttribute(
 		Qt::WA_OpaquePaintEvent,
-		!AyuFeatures::GlassEffect::CreateTranslucent());
+		!WhiteFeatures::GlassEffect::CreateTranslucent());
 	setAccessibleName(tr::lng_recent_chats(tr::now));
 
 	_communityViewable.setRepaint([=] { update(); });
@@ -381,15 +381,15 @@ InnerWidget::InnerWidget(
 		refreshEmpty();
 	}, lifetime());
 
-	AyuSettings::getInstance().enableCustomArchivesChanges(
+	WhiteSettings::getInstance().enableCustomArchivesChanges(
 	) | rpl::on_next([=](bool enabled) {
 		if (enabled) {
-			AyuFeatures::CustomArchives::RestorePeersFromTelegramArchive(
+			WhiteFeatures::CustomArchives::RestorePeersFromTelegramArchive(
 				&session());
 		}
-		AyuFeatures::CustomArchives::RefreshAllFolderPeers(&session());
+		WhiteFeatures::CustomArchives::RefreshAllFolderPeers(&session());
 		if (enabled) {
-			AyuFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
+			WhiteFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
 		}
 		if (_state == WidgetState::Default
 			&& !_openedFolder
@@ -398,10 +398,10 @@ InnerWidget::InnerWidget(
 		}
 	}, lifetime());
 
-	AyuSettings::getInstance().customArchivesChanges(
+	WhiteSettings::getInstance().customArchivesChanges(
 	) | rpl::on_next([=] {
-		AyuFeatures::CustomArchives::RefreshAllFolderPeers(&session());
-		AyuFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
+		WhiteFeatures::CustomArchives::RefreshAllFolderPeers(&session());
+		WhiteFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
 		if (_openedCustomArchiveId) {
 			refreshShownList();
 			refresh();
@@ -410,14 +410,14 @@ InnerWidget::InnerWidget(
 		}
 	}, lifetime());
 
-	if (AyuSettings::getInstance().enableCustomArchives()) {
+	if (WhiteSettings::getInstance().enableCustomArchives()) {
 		crl::on_main(this, [=] {
-			if (!AyuSettings::getInstance().enableCustomArchives()) {
+			if (!WhiteSettings::getInstance().enableCustomArchives()) {
 				return;
 			}
-			AyuFeatures::CustomArchives::RestorePeersFromTelegramArchive(
+			WhiteFeatures::CustomArchives::RestorePeersFromTelegramArchive(
 				&session());
-			AyuFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
+			WhiteFeatures::CustomArchives::SyncAllFolderChatsLists(&session());
 		});
 	}
 
@@ -781,7 +781,7 @@ void InnerWidget::refreshWithCollapsedRows(bool toTop) {
 	}
 
 	if (!_filterId && !_openedFolder && !_openedCustomArchiveId) {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (settings.enableCustomArchives()) {
 			auto folders = settings.customArchives();
 			std::sort(folders.begin(), folders.end(), [](
@@ -871,7 +871,7 @@ int InnerWidget::collapsedRowHeight(
 		not_null<const CollapsedRow*> row) const {
 	return row->customFolderId
 		? ([&] {
-			const auto archive = AyuSettings::getInstance().findCustomArchive(
+			const auto archive = WhiteSettings::getInstance().findCustomArchive(
 				row->customFolderId);
 			return (archive && archive->collapsed)
 				? st::dialogsImportantBarHeight
@@ -1089,7 +1089,7 @@ void InnerWidget::changeOpenedCustomArchive(int archiveId) {
 	_openedCustomArchiveId = archiveId;
 	if (archiveId > 0) {
 		_openedFolder = nullptr;
-		AyuFeatures::CustomArchives::SyncFolderChatsList(
+		WhiteFeatures::CustomArchives::SyncFolderChatsList(
 			&session(),
 			archiveId);
 	}
@@ -1794,7 +1794,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			p.fillRect(0, 0, fullWidth, st::searchedBarHeight, st::searchedBarBg);
 			p.setFont(st::searchedBarFont);
 			p.setPen(st::searchedBarFg);
-			p.drawTextLeft(st::searchedBarPosition.x(), st::searchedBarPosition.y(), width(), tr::ayu_SearchByIDResults(tr::now));
+			p.drawTextLeft(st::searchedBarPosition.x(), st::searchedBarPosition.y(), width(), tr::white_SearchByIDResults(tr::now));
 			p.translate(0, st::searchedBarHeight);
 
 			auto skip = idSearchOffset();
@@ -2172,9 +2172,9 @@ void InnerWidget::paintCollapsedRow(
 	if (row->customFolderId) {
 		const auto &st = st::defaultDialogRow;
 		const auto rowHeight = st.height;
-		const auto archive = AyuSettings::getInstance().findCustomArchive(
+		const auto archive = WhiteSettings::getInstance().findCustomArchive(
 			row->customFolderId);
-		const auto unread = AyuFeatures::CustomArchives::UnreadCountForFolder(
+		const auto unread = WhiteFeatures::CustomArchives::UnreadCountForFolder(
 			&session(),
 			row->customFolderId);
 		if (archive && archive->collapsed) {
@@ -2187,16 +2187,16 @@ void InnerWidget::paintCollapsedRow(
 			});
 			return;
 		}
-		const auto subtitle = AyuFeatures::CustomArchives::FolderSubtitle(
+		const auto subtitle = WhiteFeatures::CustomArchives::FolderSubtitle(
 			&session(),
 			row->customFolderId);
 		const auto locked = archive
 			&& archive->isLocked()
-			&& !AyuFeatures::CustomArchives::IsArchiveUnlocked(
+			&& !WhiteFeatures::CustomArchives::IsArchiveUnlocked(
 				row->customFolderId);
 		const auto emoji = locked
 			? u"🔐"_q
-			: AyuFeatures::CustomArchives::FolderIconEmoji(
+			: WhiteFeatures::CustomArchives::FolderIconEmoji(
 				archive ? archive->icon : QString());
 
 		p.fillRect(
@@ -2211,7 +2211,7 @@ void InnerWidget::paintCollapsedRow(
 			PainterHighQualityEnabler hq(p);
 			p.setPen(Qt::NoPen);
 			p.setBrush(st::historyPeerArchiveUserpicBg);
-			AyuUserpic::PaintShape(p, photoLeft, photoTop, photo);
+			WhiteUserpic::PaintShape(p, photoLeft, photoTop, photo);
 		}
 		p.setPen(st::historyPeerUserpicFg);
 		p.setFont(st::semiboldFont);
@@ -3181,7 +3181,7 @@ const std::vector<Key> &InnerWidget::pinnedChatsOrder() const {
 		? owner->pinnedChatsOrder(_openedForum)
 		: _openedCustomArchiveId
 		? owner->pinnedChatsOrder(
-			AyuFeatures::CustomArchives::FilterIdForFolder(
+			WhiteFeatures::CustomArchives::FilterIdForFolder(
 				_openedCustomArchiveId))
 		: _filterId
 		? owner->pinnedChatsOrder(_filterId)
@@ -3228,7 +3228,7 @@ void InnerWidget::startReorderPinned(QPoint localPosition) {
 
 int InnerWidget::countPinnedIndex(Row *ofRow) {
 	const auto filterId = _openedCustomArchiveId
-		? AyuFeatures::CustomArchives::FilterIdForFolder(
+		? WhiteFeatures::CustomArchives::FilterIdForFolder(
 			_openedCustomArchiveId)
 		: _filterId;
 	if (!ofRow || !ofRow->entry()->isPinnedDialog(filterId)) {
@@ -3272,13 +3272,13 @@ void InnerWidget::savePinnedOrder() {
 				pinned.push_back(history->peer->id.value);
 			}
 		}
-		auto &settings = AyuSettings::getInstance();
+		auto &settings = WhiteSettings::getInstance();
 		if (const auto current = settings.findCustomArchive(
 				_openedCustomArchiveId)) {
 			auto updated = *current;
 			updated.pinnedPeerIds = std::move(pinned);
 			settings.updateCustomArchive(updated);
-			AyuFeatures::CustomArchives::SyncFolderChatsList(
+			WhiteFeatures::CustomArchives::SyncFolderChatsList(
 				&session(),
 				_openedCustomArchiveId);
 		}
@@ -4163,7 +4163,7 @@ Row *InnerWidget::shownRowByKey(Key key) {
 		}
 	} else if (_openedCustomArchiveId) {
 		const auto history = entry->asHistory();
-		const auto filterId = AyuFeatures::CustomArchives::FilterIdForFolder(
+		const auto filterId = WhiteFeatures::CustomArchives::FilterIdForFolder(
 			_openedCustomArchiveId);
 		if (!history || !history->inChatList(filterId)) {
 			return nullptr;
@@ -4392,7 +4392,7 @@ void InnerWidget::refreshShownList() {
 		: _openedCommunity
 		? _openedCommunity->chatsList()->indexed()
 		: _openedCustomArchiveId
-		? AyuFeatures::CustomArchives::FolderChatsList(
+		? WhiteFeatures::CustomArchives::FolderChatsList(
 			&session(),
 			_openedCustomArchiveId)->indexed()
 		: _filterId
@@ -4602,7 +4602,7 @@ void InnerWidget::contextMenuEvent(QContextMenuEvent *e) {
 			_menu = base::make_unique_q<Ui::PopupMenu>(
 				this,
 				st::popupMenuExpandedSeparator);
-			AyuUi::FillCustomFolderContextMenu(
+			WhiteUi::FillCustomFolderContextMenu(
 				_menu.get(),
 				_controller,
 				customId);
@@ -6392,11 +6392,11 @@ bool InnerWidget::chooseCollapsedRow(Qt::KeyboardModifiers modifiers) {
 	const auto &row = _collapsedRows[_collapsedSelected];
 	if (row->customFolderId) {
 		if (modifiers & Qt::ControlModifier) {
-			AyuFeatures::CustomArchives::OpenCustomFolderInNewWindow(
+			WhiteFeatures::CustomArchives::OpenCustomFolderInNewWindow(
 				_controller,
 				row->customFolderId);
 		} else {
-			AyuFeatures::CustomArchives::OpenArchive(
+			WhiteFeatures::CustomArchives::OpenArchive(
 				_controller,
 				row->customFolderId);
 		}
@@ -6916,7 +6916,7 @@ void InnerWidget::repaintDialogRowCornerStatus(not_null<History*> history) {
 		? st::dialogsOnlineBadgeSize
 		: st::dialogsCallBadgeSize;
 	const auto stroke = st::dialogsOnlineBadgeStroke;
-	const auto updateRect = AyuUserpic::OnlineBadgeRect(
+	const auto updateRect = WhiteUserpic::OnlineBadgeRect(
 		_st->photoSize,
 		size,
 		stroke

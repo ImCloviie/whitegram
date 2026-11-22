@@ -124,10 +124,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
-#include "ayu/features/forward/ayu_forward.h"
-#include "ayu/features/whitegram_plugins/whitegram_plugins_ui.h"
-#include "ayu/ui/context_menu/context_menu.h"
+#include "white/white_settings.h"
+#include "white/features/forward/white_forward.h"
+#include "white/features/whitegram_plugins/whitegram_plugins_ui.h"
+#include "white/ui/context_menu/context_menu.h"
 
 
 namespace HistoryView {
@@ -1407,11 +1407,11 @@ void AddMessageActions(
 		not_null<ListWidget*> list) {
 	if (request.item) {
 		const auto context = request.view ? request.view->context() : Context::History;
-		AyuUi::AddHistoryAction(menu, request.item);
-		AyuUi::AddHideMessageAction(menu, request.item);
-		AyuUi::AddUserMessagesAction(menu, request.item);
-		AyuUi::AddRepeatMessageAction(menu, request.item, context);
-		AyuUi::AddMessageDetailsAction(menu, request.item);
+		WhiteUi::AddHistoryAction(menu, request.item);
+		WhiteUi::AddHideMessageAction(menu, request.item);
+		WhiteUi::AddUserMessagesAction(menu, request.item);
+		WhiteUi::AddRepeatMessageAction(menu, request.item, context);
+		WhiteUi::AddMessageDetailsAction(menu, request.item);
 	}
 
 	AddPostLinkAction(menu, request);
@@ -1436,8 +1436,8 @@ void AddMessageActions(
 	AddRescheduleAction(menu, request, list);
 
 	if (request.item) {
-		AyuUi::AddReadUntilAction(menu, request.item);
-		AyuUi::AddBurnAction(menu, request.item);
+		WhiteUi::AddReadUntilAction(menu, request.item);
+		WhiteUi::AddBurnAction(menu, request.item);
 	}
 }
 
@@ -2549,8 +2549,8 @@ void AddWhoReactedAction(
 		not_null<QWidget*> context,
 		not_null<HistoryItem*> item,
 		not_null<Window::SessionController*> controller) {
-	const auto &settings = AyuSettings::getInstance();
-	if (!AyuUi::needToShowItem(settings.showViewsPanelInContextMenu())) {
+	const auto &settings = WhiteSettings::getInstance();
+	if (!WhiteUi::needToShowItem(settings.showViewsPanelInContextMenu())) {
 		return;
 	}
 
@@ -3004,7 +3004,7 @@ void AddSelectRestrictionAction(
 		not_null<HistoryItem*> item,
 		bool addIcon) {
 	const auto peer = item->history()->peer;
-	if ((!peer->isAyuNoForwards() && !AyuForward::isAyuForwardNeeded(item))
+	if ((!peer->isAyuNoForwards() && !WhiteForward::isAyuForwardNeeded(item))
 		|| item->isSponsored()) {
 		return;
 	}
@@ -3019,7 +3019,7 @@ void AddSelectRestrictionAction(
 		((addIcon && !user)
 			? st::historySponsoredAboutMenuLabelPosition
 			: st::historyHasCustomEmojiPosition),
-		tr::ayu_UnforwardableContextMenuText(
+		tr::white_UnforwardableContextMenuText(
 			tr::now,
 			tr::rich),
 		(addIcon && !user) ? &st::menuIconCopyright : nullptr);

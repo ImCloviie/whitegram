@@ -75,12 +75,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QWindow>
 
 // AyuGram includes
-#include "ayu/ayu_settings.h"
+#include "white/white_settings.h"
 #include "boxes/peers/edit_participants_box.h"
 #include "data/data_chat_filters.h"
 #include "history/admin_log/history_admin_log_section.h"
-#include "styles/style_ayu_styles.h"
-#include "styles/style_ayu_icons.h"
+#include "styles/style_white_styles.h"
+#include "styles/style_white_icons.h"
 
 
 namespace HistoryView {
@@ -132,7 +132,7 @@ TopBarWidget::TopBarWidget(
 , _forward(this, tr::lng_selected_forward(), st::defaultActiveButton)
 , _sendNow(this, tr::lng_selected_send_now(), st::defaultActiveButton)
 , _delete(this, tr::lng_selected_delete(), st::defaultActiveButton)
-, _messageShot(this, tr::ayu_MessageShotTopBarText(), st::defaultActiveButton)
+, _messageShot(this, tr::white_MessageShotTopBarText(), st::defaultActiveButton)
 , _back(this, st::historyTopBarBack)
 , _cancelChoose(this, st::topBarCloseChoose)
 , _call(this, st::topBarCall)
@@ -192,7 +192,7 @@ TopBarWidget::TopBarWidget(
 		);
 	});
 
-	AyuSettings::getInstance().quickAdminShortcutsChanges(
+	WhiteSettings::getInstance().quickAdminShortcutsChanges(
 	) | rpl::on_next([=](bool) {
 		updateControlsVisibility();
 	}, lifetime());
@@ -912,7 +912,7 @@ void TopBarWidget::infoClicked() {
 
 void TopBarWidget::backClicked() {
 	if (_activeChat.key.folder()) {
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (settings.hideAllChatsFolder()) {
 			const auto filters = &_controller->session().data().chatsFilters();
 			const auto lookupId = filters->lookupId(_controller->session().premium() ? 0 : 1);
@@ -1405,7 +1405,7 @@ void TopBarWidget::updateControlsVisibility() {
 		return;
 	}
 
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	const auto visible = showSelectedState() || _selectedShown.animating();
 	_clear->setVisible(visible);
@@ -1497,7 +1497,7 @@ void TopBarWidget::updateControlsVisibility() {
 
 	const auto showRecentActions = [&]
 	{
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (!settings.quickAdminShortcuts()) {
 			return false;
 		}
@@ -1515,7 +1515,7 @@ void TopBarWidget::updateControlsVisibility() {
 	_recentActions->setVisible(showRecentActions);
 	const auto showAdmins = [&]
 	{
-		const auto &settings = AyuSettings::getInstance();
+		const auto &settings = WhiteSettings::getInstance();
 		if (!settings.quickAdminShortcuts()) {
 			return false;
 		}
@@ -1603,14 +1603,14 @@ void TopBarWidget::updateMembersShowArea() {
 }
 
 bool TopBarWidget::showSelectedState() const {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	return (_selectedCount > 0)
 		&& (_canDelete || _canForward || _canSendNow || settings.showMessageShot());
 }
 
 void TopBarWidget::showSelected(SelectedState state) {
-	const auto &settings = AyuSettings::getInstance();
+	const auto &settings = WhiteSettings::getInstance();
 
 	auto canDelete = (state.count > 0 && state.count == state.canDeleteCount);
 	auto canForward = (state.count > 0 && state.count == state.canForwardCount);

@@ -9,6 +9,7 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <optional>
+#include <vector>
 
 class HistoryItem;
 
@@ -16,11 +17,11 @@ namespace Whitegram::E2EE {
 
 inline constexpr auto kPrefix = "wg1:";
 inline constexpr auto kPasscodePrefix = "wgp1:";
-inline constexpr auto kProfileUrl = "https://t.me/imcloviie";
+inline constexpr auto kProfileUrl = "https://t.me/whitegrambeta";
 inline constexpr auto kPlaceholderText =
 	"🔒 Одноразовое сообщение Whitegram\n\n"
-	"Это сообщение зашифровано. Чтобы открыть его, установите Whitegram.\n"
-	"Приложение: https://t.me/imcloviie\n";
+	"Сообщение защищено сквозным шифрованием и откроется только в Whitegram.\n\n"
+	"Скачать Whitegram: https://t.me/whitegrambeta\n";
 
 struct KeyPair {
 	QByteArray publicKey;  // 65 bytes uncompressed or 33 bytes compressed X9.62
@@ -46,7 +47,7 @@ struct MessageContent {
 	int ttlSeconds,
 	uint64 senderId,
 	uint64 recipientId,
-	const QByteArray &recipientPublicKey);
+	const std::vector<QByteArray> &recipientPublicKeys);
 
 [[nodiscard]] std::optional<MessageContent> Decrypt(
 	const QString &encryptedPayload,
@@ -81,6 +82,14 @@ void SaveLocalSentMessage(const QString &text, const MessageContent &content);
 [[nodiscard]] std::optional<MessageContent> GetLocalSentMessage(const QString &text);
 void SaveLocalSentMessageById(FullMsgId msgId, const MessageContent &content);
 [[nodiscard]] std::optional<MessageContent> GetLocalSentMessageById(FullMsgId msgId);
+
+[[nodiscard]] QString PacketHash(const QString &payload);
+[[nodiscard]] int PlaceholderTitleLength();
+[[nodiscard]] QString NoRecipientKeyText();
+[[nodiscard]] QString TooLongText();
+
+[[nodiscard]] bool WasViewed(const QString &payload);
+void MarkViewed(const QString &payload);
 
 // Memory wiping utility
 void SecureCleanse(void *ptr, size_t len);

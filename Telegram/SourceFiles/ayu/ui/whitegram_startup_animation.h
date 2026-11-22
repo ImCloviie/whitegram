@@ -6,6 +6,7 @@
 
 #include <QtGui/QImage>
 #include <QtGui/QColor>
+#include <QtGui/QFont>
 
 namespace Ui {
 
@@ -122,6 +123,7 @@ private:
 		float64 exitScale);
 
 	QImage _logo;
+	QFont _font;
 	std::vector<std::pair<quint32, QImage>> _silhouettes;
 	std::vector<Star> _stars;
 	QSizeF _starsSize;
@@ -138,16 +140,25 @@ private:
 class WhitegramStartupAnimation final : public RpWidget {
 public:
 	WhitegramStartupAnimation(QWidget *parent);
+	~WhitegramStartupAnimation();
 
 protected:
+	void resizeEvent(QResizeEvent *e) override;
+	void moveEvent(QMoveEvent *e) override;
 	void paintEvent(QPaintEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
 
 private:
+	class Presenter;
+
 	void startHiding();
 	void scheduleNextFrame();
+	void updatePresenterGeometry();
+	void pollPresenter();
+	void startOwnPainting();
 
+	std::unique_ptr<Presenter> _presenter;
 	WhitegramStartupScene _scene;
 	QImage _underlay;
 	Ui::Animations::Simple _exitAnimation;
@@ -164,6 +175,7 @@ private:
 	int _slowFrames = 0;
 	base::Timer _hideTimer;
 	base::Timer _updateTimer;
+	base::Timer _pollTimer;
 
 };
 

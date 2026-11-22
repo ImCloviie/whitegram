@@ -356,6 +356,89 @@ AlignReport Align(Data &data, const Analysis::Result &analysis) {
 	return report;
 }
 
+AlignReport AlignOffset(Data &data, const Analysis::Result &analysis) {
+	auto report = AlignReport();
+	if (!data.hasData
+		|| !data.synced
+		|| data.autoSynced
+		|| data.lines.size() < 6
+		|| !analysis.ok
+		|| analysis.frameMs <= 0.
+		|| analysis.voice.empty()
+		|| analysis.syllable.size() != analysis.voice.size()) {
+		return report;
+	}
+	const auto c = Curves{
+		.voice = &analysis.voice,
+		.syllable = &analysis.syllable,
+		.frameMs = analysis.frameMs,
+		.count = int(analysis.voice.size()),
+	};
+	auto prefix = std::vector<double>(c.count + 1, 0.);
+	for (auto f = 0; f != c.count; ++f) {
+		prefix[f + 1] = prefix[f] + c.voiceAt(f);
+	}
+	const auto mean = [&](std::int64_t from, std::int64_t till) {
+		const auto a = c.frameOf(from);
+		const auto b = std::max(a + 1, c.frameOf(till));
+		return (prefix[std::min(b, c.count)] - prefix[a]) / std::max(1, b - a);
+	};
+	// A sung line starts where the voice rises and a syllable attacks.
+	const auto score = [&](std::int64_t shift) {
+		auto total = 0.;
+		auto counted = 0;
+		for (auto i = 0; i != int(data.lines.size()); ++i) {
+			const auto &line = data.lines[i];
+			const auto at = line.ms + shift;
+			if (at < 600 || at > analysis.durationMs - 1000) {
+				continue;
+			}
+			const auto next = (i + 1 < int(data.lines.size())) ? data.lines[i + 1].ms : line.ms + 3000;
+			const auto span = std::clamp<std::int64_t>(next - line.ms, 300, 1200);
+			auto attack = 0.f;
+			for (auto f = c.frameOf(at - 80); f <= c.frameOf(at + 80); ++f) {
+				attack = std::max(attack, c.syllableAt(f));
+			}
+			total += (mean(at, at + span) - mean(at - 500, at)) + 0.5 * attack;
+			++counted;
+		}
+		return counted ? total / counted : 0.;
+	};
+	const auto fileMs = analysis.durationMs;
+	const auto mismatch = (data.sourceDurationMs > 0 && fileMs > 0)
+		? std::abs(fileMs - data.sourceDurationMs)
+		: std::int64_t(0);
+	// Another cut moves lines by about the length difference; a matching cut only drifts a little.
+	const auto range = (mismatch >= 1200) ? std::min<std::int64_t>(8000, mismatch + 1500) : 1500;
+	const auto step = std::max<std::int64_t>(10, std::int64_t(std::lround(analysis.frameMs)));
+	const auto base = score(0);
+	auto best = std::int64_t(0);
+	auto bestScore = base;
+	for (auto shift = -range; shift <= range; shift += step) {
+		const auto value = score(shift) - 0.004 * std::abs(shift) / 1000.;
+		if (value > bestScore) {
+			bestScore = value;
+			best = shift;
+		}
+	}
+	const auto needed = (mismatch >= 1200) ? 0.03 : 0.05;
+	if (std::abs(best) < 200 || bestScore - base < std::max(needed, 0.25 * std::abs(base))) {
+		return report;
+	}
+	for (auto &line : data.lines) {
+		line.ms = std::max<std::int64_t>(0, line.ms + best);
+		line.endMs = std::max(line.ms, line.endMs + best);
+		for (auto &word : line.words) {
+			word.startMs = std::max<std::int64_t>(0, word.startMs + best);
+			word.endMs = std::max(word.startMs, word.endMs + best);
+		}
+	}
+	++data.revision;
+	report.changed = true;
+	report.offsetMs = best;
+	return report;
+}
+
 bool AlignWithModel(Data &data, const QString &path, const QByteArray &audio) {
 	const auto python = qEnvironmentVariable("WHITEGRAM_KARAOKE_PYTHON");
 	const auto model = qEnvironmentVariable("WHITEGRAM_KARAOKE_MODEL");

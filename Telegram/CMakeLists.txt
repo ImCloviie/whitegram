@@ -224,8 +224,6 @@ set(ayugram_files
         ayu/ui/settings/settings_main.h
         ayu/ui/settings/experimental_settings_i18n.cpp
         ayu/ui/settings/experimental_settings_i18n.h
-        ayu/ui/settings/settings_other.cpp
-        ayu/ui/settings/settings_other.h
         ayu/ui/settings/filters/settings_filters_list.cpp
         ayu/ui/settings/filters/settings_filters_list.h
         ayu/ui/settings/filters/per_dialog_filter.cpp
@@ -272,6 +270,8 @@ set(ayugram_files
         ayu/ui/components/message_preview.h
         ayu/ui/components/music_island.cpp
         ayu/ui/components/music_island.h
+        ayu/ui/components/music_page.cpp
+        ayu/ui/components/music_page.h
         ayu/ui/components/lyrics_pictograms.cpp
         ayu/ui/components/lyrics_pictograms.h
         ayu/ui/components/lyrics_window.cpp
@@ -340,6 +340,8 @@ set(ayugram_files
         ayu/features/self_destruct/self_destruct.h
         ayu/features/self_destruct/self_destruct_box.cpp
         ayu/features/self_destruct/self_destruct_box.h
+        ayu/features/music/music_service.cpp
+        ayu/features/music/music_service.h
         ayu/features/whitegram_backend/whitegram_backend.cpp
         ayu/features/whitegram_backend/whitegram_backend.h
         ayu/features/whitegram_e2ee/whitegram_e2ee.cpp
@@ -348,6 +350,10 @@ set(ayugram_files
         ayu/features/whitegram_e2ee/whitegram_key_manager.h
         ayu/features/whitegram_e2ee/whitegram_view_once_box.cpp
         ayu/features/whitegram_e2ee/whitegram_view_once_box.h
+        ayu/features/whitegram_e2ee/whitegram_one_time_media.cpp
+        ayu/features/whitegram_e2ee/whitegram_one_time_media.h
+        ayu/features/whitegram_e2ee/whitegram_view_status.cpp
+        ayu/features/whitegram_e2ee/whitegram_view_status.h
         ayu/features/whitegram_e2ee/whitegram_one_time_view.cpp
         ayu/features/whitegram_e2ee/whitegram_one_time_view.h
         ayu/features/whitegram_plugins/whitegram_plugins.cpp

@@ -13,6 +13,8 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QCryptographicHash>
+#include <QtCore/QSaveFile>
 
 #include <openssl/aes.h>
 #include <openssl/crypto.h>
@@ -32,6 +34,11 @@ constexpr auto kTagSize = size_t(16);
 constexpr auto kKeySize = size_t(32);
 constexpr auto kP256X962Length = size_t(65);
 constexpr auto kHkdfInfo = "Whitegram-E2EE-v1";
+constexpr auto kWrapRecipientInfo = "Whitegram-Wrap-Recipient";
+constexpr auto kWrapSenderInfo = "Whitegram-Wrap-Sender";
+constexpr auto kMaxRecipientKeys = size_t(5);
+constexpr auto kMaxMessageLength = 4096;
+constexpr auto kMaxViewedEntries = size_t(5000);
 
 void HkdfSha256(
 		uint8_t *out,
@@ -404,6 +411,111 @@ std::optional<QByteArray> DecodeZeroWidth(const QString &text) {
 	return std::nullopt;
 }
 
+const auto kVsStart = QString(u"⁣⁤⁣"_q);
+
+QString EncodeVariationSelectors(const QByteArray &bytes) {
+	auto result = kVsStart;
+	result.reserve(kVsStart.size() + bytes.size() * 2);
+	for (const auto byte : bytes) {
+		const auto b = uint32(uint8(byte));
+		if (b < 16) {
+			result.append(QChar(ushort(0xFE00 + b)));
+		} else {
+			const auto codepoint = char32_t(0xE0100 + (b - 16));
+			result.append(QChar::highSurrogate(codepoint));
+			result.append(QChar::lowSurrogate(codepoint));
+		}
+	}
+	return result;
+}
+
+std::optional<QByteArray> DecodeVariationSelectors(const QString &text) {
+	const auto start = text.indexOf(kVsStart);
+	if (start < 0) {
+		return std::nullopt;
+	}
+	auto result = QByteArray();
+	for (auto i = start + kVsStart.size(); i < text.size(); ++i) {
+		const auto ch = text[i].unicode();
+		if (ch >= 0xFE00 && ch <= 0xFE0F) {
+			result.append(char(ch - 0xFE00));
+		} else if (QChar::isHighSurrogate(ch) && i + 1 < text.size()) {
+			const auto codepoint = QChar::surrogateToUcs4(ch, text[i + 1].unicode());
+			if (codepoint < 0xE0100 || codepoint > 0xE01EF) {
+				break;
+			}
+			result.append(char(codepoint - 0xE0100 + 16));
+			++i;
+		} else {
+			break;
+		}
+	}
+	if (result.isEmpty()) {
+		return std::nullopt;
+	}
+	return result;
+}
+
+struct Wrap {
+	QByteArray nonce;
+	QByteArray tag;
+	QByteArray key;
+};
+
+std::optional<Wrap> WrapKey(
+		const QByteArray &aesKey,
+		const KeyPair &ephemeral,
+		const QByteArray &publicKey,
+		const char *info) {
+	const auto secret = ComputeEcdh(ephemeral.privateKey, publicKey);
+	if (!secret) {
+		return std::nullopt;
+	}
+	QByteArray wrapKey(kKeySize, '\0');
+	HkdfSha256(
+		reinterpret_cast<uint8_t*>(wrapKey.data()),
+		wrapKey.size(),
+		reinterpret_cast<const uint8_t*>(secret->constData()),
+		secret->size(),
+		reinterpret_cast<const uint8_t*>(ephemeral.publicKey.constData()),
+		ephemeral.publicKey.size(),
+		reinterpret_cast<const uint8_t*>(info),
+		std::strlen(info));
+	auto result = Wrap{ .nonce = QByteArray(kNonceSize, '\0') };
+	RAND_bytes(reinterpret_cast<uint8_t*>(result.nonce.data()), int(result.nonce.size()));
+	result.key = AesGcmEncrypt(wrapKey, result.nonce, aesKey, ephemeral.publicKey, result.tag);
+	SecureCleanse(wrapKey.data(), wrapKey.size());
+	if (result.key.size() != kKeySize || result.tag.size() != kTagSize) {
+		return std::nullopt;
+	}
+	return result;
+}
+
+std::optional<QByteArray> UnwrapKey(
+		const QByteArray &sharedSecret,
+		const QByteArray &ephPub,
+		const QByteArray &nonce,
+		const QByteArray &tag,
+		const QByteArray &encKey,
+		const char *info) {
+	QByteArray wrapKey(kKeySize, '\0');
+	HkdfSha256(
+		reinterpret_cast<uint8_t*>(wrapKey.data()),
+		wrapKey.size(),
+		reinterpret_cast<const uint8_t*>(sharedSecret.constData()),
+		sharedSecret.size(),
+		reinterpret_cast<const uint8_t*>(ephPub.constData()),
+		ephPub.size(),
+		reinterpret_cast<const uint8_t*>(info),
+		std::strlen(info));
+	auto result = AesGcmDecrypt(wrapKey, nonce, encKey, tag, ephPub);
+	SecureCleanse(wrapKey.data(), wrapKey.size());
+	if (!result || result->size() != kKeySize) {
+		return std::nullopt;
+	}
+	return result;
+}
+
 } // namespace
 
 void SecureCleanse(void *ptr, size_t len) {
@@ -509,94 +621,50 @@ QString Encrypt(
 		int ttlSeconds,
 		uint64 senderId,
 		uint64 recipientId,
-		const QByteArray &recipientPublicKey) {
-	const auto validRecipientKey = EnsureUncompressedPublicKey(recipientPublicKey);
-	QByteArray aesKey(kKeySize, '\0');
-	QByteArray packet;
-	QByteArray aad;
-
-	if (validRecipientKey.size() == kP256X962Length) {
-		RAND_bytes(reinterpret_cast<uint8_t*>(aesKey.data()), int(aesKey.size()));
-		const auto ephemeral = GenerateKeyPair();
-		if (ephemeral.publicKey.isEmpty() || ephemeral.privateKey.isEmpty()) {
-			return {};
+		const std::vector<QByteArray> &recipientPublicKeys) {
+	auto recipients = std::vector<QByteArray>();
+	for (const auto &key : recipientPublicKeys) {
+		const auto valid = EnsureUncompressedPublicKey(key);
+		if (valid.size() == kP256X962Length
+			&& !ranges::contains(recipients, valid)
+			&& recipients.size() < kMaxRecipientKeys) {
+			recipients.push_back(valid);
 		}
-		const auto myPubKey = GetMyPublicKey();
-
-		const auto secretR = ComputeEcdh(ephemeral.privateKey, validRecipientKey);
-		if (!secretR) {
-			return {};
-		}
-		QByteArray wrapKeyR(kKeySize, '\0');
-		static constexpr auto kInfoR = "Whitegram-Wrap-Recipient";
-		HkdfSha256(
-			reinterpret_cast<uint8_t*>(wrapKeyR.data()),
-			wrapKeyR.size(),
-			reinterpret_cast<const uint8_t*>(secretR->constData()),
-			secretR->size(),
-			reinterpret_cast<const uint8_t*>(ephemeral.publicKey.constData()),
-			ephemeral.publicKey.size(),
-			reinterpret_cast<const uint8_t*>(kInfoR),
-			std::strlen(kInfoR));
-
-		QByteArray nonceR(kNonceSize, '\0');
-		RAND_bytes(reinterpret_cast<uint8_t*>(nonceR.data()), int(nonceR.size()));
-		QByteArray tagR;
-		const auto encKeyR = AesGcmEncrypt(wrapKeyR, nonceR, aesKey, ephemeral.publicKey, tagR);
-		SecureCleanse(wrapKeyR.data(), wrapKeyR.size());
-		if (encKeyR.isEmpty()) {
-			return {};
-		}
-
-		QByteArray nonceS(kNonceSize, '\0');
-		QByteArray tagS;
-		QByteArray encKeyS;
-		if (myPubKey.size() == kP256X962Length) {
-			const auto secretS = ComputeEcdh(ephemeral.privateKey, myPubKey);
-			if (secretS) {
-				QByteArray wrapKeyS(kKeySize, '\0');
-				static constexpr auto kInfoS = "Whitegram-Wrap-Sender";
-				HkdfSha256(
-					reinterpret_cast<uint8_t*>(wrapKeyS.data()),
-					wrapKeyS.size(),
-					reinterpret_cast<const uint8_t*>(secretS->constData()),
-					secretS->size(),
-					reinterpret_cast<const uint8_t*>(ephemeral.publicKey.constData()),
-					ephemeral.publicKey.size(),
-					reinterpret_cast<const uint8_t*>(kInfoS),
-					std::strlen(kInfoS));
-
-				RAND_bytes(reinterpret_cast<uint8_t*>(nonceS.data()), int(nonceS.size()));
-				encKeyS = AesGcmEncrypt(wrapKeyS, nonceS, aesKey, ephemeral.publicKey, tagS);
-				SecureCleanse(wrapKeyS.data(), wrapKeyS.size());
-			}
-		}
-
-		if (tagS.size() != kTagSize) {
-			tagS = QByteArray(kTagSize, '\0');
-		}
-		if (encKeyS.size() != kKeySize) {
-			encKeyS = QByteArray(kKeySize, '\0');
-		}
-
-		aad = ephemeral.publicKey;
-		packet.append(char(4));
-		packet.append(ephemeral.publicKey);
-		packet.append(nonceR);
-		packet.append(tagR);
-		packet.append(encKeyR);
-		packet.append(nonceS);
-		packet.append(tagS);
-		packet.append(encKeyS);
-	} else {
-		RAND_bytes(reinterpret_cast<uint8_t*>(aesKey.data()), int(aesKey.size()));
-		packet.append(char(3));
-		packet.append(aesKey);
-		aad = QByteArray("Whitegram-Standalone-v3", 23);
 	}
+	if (recipients.empty()) {
+		return {};
+	}
+	const auto ephemeral = GenerateKeyPair();
+	if (ephemeral.publicKey.isEmpty() || ephemeral.privateKey.isEmpty()) {
+		return {};
+	}
+	QByteArray aesKey(kKeySize, '\0');
+	RAND_bytes(reinterpret_cast<uint8_t*>(aesKey.data()), int(aesKey.size()));
+	const auto clear = gsl::finally([&] {
+		SecureCleanse(aesKey.data(), aesKey.size());
+	});
 
-	QByteArray nonce(kNonceSize, '\0');
-	RAND_bytes(reinterpret_cast<uint8_t*>(nonce.data()), int(nonce.size()));
+	QByteArray packet;
+	packet.append(char(5));
+	packet.append(ephemeral.publicKey);
+	packet.append(char(recipients.size()));
+	for (const auto &key : recipients) {
+		const auto wrap = WrapKey(aesKey, ephemeral, key, kWrapRecipientInfo);
+		if (!wrap) {
+			return {};
+		}
+		packet.append(wrap->nonce);
+		packet.append(wrap->tag);
+		packet.append(wrap->key);
+	}
+	const auto own = WrapKey(aesKey, ephemeral, GetMyPublicKey(), kWrapSenderInfo);
+	if (own) {
+		packet.append(own->nonce);
+		packet.append(own->tag);
+		packet.append(own->key);
+	} else {
+		packet.append(QByteArray(kNonceSize + kTagSize + kKeySize, '\0'));
+	}
 
 	nlohmann::json container;
 	container["t"] = text.toUtf8().toStdString();
@@ -604,25 +672,26 @@ QString Encrypt(
 	container["s"] = senderId;
 	container["r"] = recipientId;
 	container["ts"] = crl::now();
-
 	const auto jsonDump = container.dump();
-	const auto plaintext = QByteArray(jsonDump.data(), int(jsonDump.size()));
+	auto plaintext = QByteArray(jsonDump.data(), int(jsonDump.size()));
 
+	QByteArray nonce(kNonceSize, '\0');
+	RAND_bytes(reinterpret_cast<uint8_t*>(nonce.data()), int(nonce.size()));
 	QByteArray tag;
-	const auto ciphertext = AesGcmEncrypt(aesKey, nonce, plaintext, aad, tag);
-	SecureCleanse(aesKey.data(), aesKey.size());
-
+	const auto ciphertext = AesGcmEncrypt(aesKey, nonce, plaintext, packet, tag);
+	SecureCleanse(plaintext.data(), plaintext.size());
 	if (ciphertext.isEmpty()) {
 		return {};
 	}
-
 	packet.append(nonce);
 	packet.append(tag);
 	packet.append(ciphertext);
 
-	const auto zw = EncodeZeroWidth(packet);
-	const auto placeholder = QString::fromUtf8(kPlaceholderText);
-	const auto fullResult = placeholder + zw;
+	const auto fullResult = QString::fromUtf8(kPlaceholderText)
+		+ EncodeVariationSelectors(packet);
+	if (fullResult.size() > kMaxMessageLength) {
+		return {};
+	}
 
 	MessageContent content;
 	content.text = text;
@@ -631,7 +700,6 @@ QString Encrypt(
 	content.recipientId = recipientId;
 	content.timestamp = crl::now();
 	SaveLocalSentMessage(fullResult, content);
-
 	return fullResult;
 }
 
@@ -653,7 +721,45 @@ std::optional<MessageContent> Decrypt(
 	QByteArray aad;
 	auto offset = 1;
 
-	if (version == 4) {
+	if (version == 5) {
+		constexpr auto kKeyBlockSize = kNonceSize + kTagSize + kKeySize;
+		if (packet.size() < 1 + int(kP256X962Length) + 1) {
+			return std::nullopt;
+		}
+		const auto ephPub = packet.mid(offset, kP256X962Length);
+		offset += kP256X962Length;
+		const auto count = int(uint8(packet[offset]));
+		++offset;
+		const auto headerSize = offset + (count + 1) * int(kKeyBlockSize);
+		if (count < 1
+			|| packet.size() < headerSize + int(kNonceSize + kTagSize) + 1) {
+			return std::nullopt;
+		}
+		const auto sharedSecret = ComputeEcdh(myPrivateKey, ephPub);
+		if (!sharedSecret) {
+			return std::nullopt;
+		}
+		auto keyFound = false;
+		for (auto i = 0; i <= count && !keyFound; ++i) {
+			const auto block = offset + i * int(kKeyBlockSize);
+			const auto unwrapped = UnwrapKey(
+				*sharedSecret,
+				ephPub,
+				packet.mid(block, kNonceSize),
+				packet.mid(block + kNonceSize, kTagSize),
+				packet.mid(block + kNonceSize + kTagSize, kKeySize),
+				(i < count) ? kWrapRecipientInfo : kWrapSenderInfo);
+			if (unwrapped) {
+				aesKey = *unwrapped;
+				keyFound = true;
+			}
+		}
+		if (!keyFound) {
+			return std::nullopt;
+		}
+		aad = packet.left(headerSize);
+		offset = headerSize;
+	} else if (version == 4) {
 		constexpr auto kKeyBlockSize = kNonceSize + kTagSize + kKeySize;
 		if (packet.size() < 1 + kP256X962Length + kKeyBlockSize * 2 + kNonceSize + kTagSize + 1) {
 			return std::nullopt;
@@ -911,6 +1017,9 @@ std::optional<MessageContent> DecryptWithPasscode(
 }
 
 std::optional<QByteArray> ExtractPayloadBytes(const QString &text) {
+	if (const auto compact = DecodeVariationSelectors(text)) {
+		return compact;
+	}
 	if (text.contains(kZwStart)) {
 		const auto zw = DecodeZeroWidth(text);
 		if (zw.has_value() && !zw->isEmpty()) {
@@ -963,7 +1072,7 @@ bool IsEncryptedMessage(const QString &text) {
 		|| text.contains(QString::fromLatin1(kPasscodePrefix))) {
 		return true;
 	}
-	if (text.contains(kZwStart)) {
+	if (text.contains(kZwStart) || text.contains(kVsStart)) {
 		return true;
 	}
 	const auto trimmed = text.trimmed();
@@ -994,72 +1103,60 @@ QString ExtractPayload(const QString &text) {
 
 namespace {
 
-QString PayloadsCachePath() {
+QString LegacyPayloadsCachePath() {
 	return cWorkingDir() + u"tdata/whitegram/keys/payloads.json"_q;
+}
+
+QString ViewedPath() {
+	return cWorkingDir() + u"tdata/whitegram/keys/viewed.json"_q;
 }
 
 base::flat_map<const HistoryItem*, QString> gPayloadsByItem;
 base::flat_map<FullMsgId, QString> gPayloadsById;
 base::flat_map<FullMsgId, MessageContent> gLocalSentMessagesById;
 base::flat_map<QString, MessageContent> gLocalSentMessages;
-std::map<QString, QString> gDiskPayloads;
-bool gDiskPayloadsLoaded = false;
+std::vector<QString> gViewed;
+bool gViewedLoaded = false;
 
-void EnsureDiskPayloadsLoaded() {
-	if (gDiskPayloadsLoaded) {
-		return;
-	}
-	gDiskPayloadsLoaded = true;
-	QFile file(PayloadsCachePath());
-	if (file.open(QIODevice::ReadOnly)) {
-		const auto data = file.readAll();
-		file.close();
-		try {
-			const auto j = nlohmann::json::parse(data.constData());
-			for (auto it = j.begin(); it != j.end(); ++it) {
-				gDiskPayloads[QString::fromStdString(it.key())] = QString::fromStdString(it.value().get<std::string>());
-			}
-		} catch (...) {
-		}
+void DropLegacyPayloadsCache() {
+	static auto dropped = false;
+	if (!dropped) {
+		dropped = true;
+		QFile::remove(LegacyPayloadsCachePath());
 	}
 }
 
-void SaveDiskPayloads() {
-	const auto path = PayloadsCachePath();
+void EnsureViewedLoaded() {
+	if (gViewedLoaded) {
+		return;
+	}
+	gViewedLoaded = true;
+	QFile file(ViewedPath());
+	if (!file.open(QIODevice::ReadOnly)) {
+		return;
+	}
+	try {
+		const auto j = nlohmann::json::parse(file.readAll().constData());
+		for (const auto &entry : j) {
+			gViewed.push_back(QString::fromStdString(entry.get<std::string>()));
+		}
+	} catch (...) {
+	}
+}
+
+void SaveViewed() {
+	const auto path = ViewedPath();
 	QFileInfo(path).dir().mkpath(u"."_q);
-	QFile file(path);
-	if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-		nlohmann::json j;
-		for (const auto &[k, v] : gDiskPayloads) {
-			j[k.toStdString()] = v.toStdString();
-		}
-		const auto dumped = j.dump(2);
-		file.write(dumped.data(), dumped.size());
-		file.close();
+	nlohmann::json j = nlohmann::json::array();
+	for (const auto &hash : gViewed) {
+		j.push_back(hash.toStdString());
 	}
-}
-
-void SaveDiskPayload(FullMsgId id, const QString &payload) {
-	if (!id.msg) {
-		return;
+	const auto dumped = j.dump();
+	QSaveFile file(path);
+	if (file.open(QIODevice::WriteOnly)) {
+		file.write(dumped.data(), qint64(dumped.size()));
+		file.commit();
 	}
-	EnsureDiskPayloadsLoaded();
-	const auto key = QString::number(id.peer.value) + '_' + QString::number(id.msg.bare);
-	gDiskPayloads[key] = payload;
-	SaveDiskPayloads();
-}
-
-QString ReadDiskPayload(FullMsgId id) {
-	if (!id.msg) {
-		return QString();
-	}
-	EnsureDiskPayloadsLoaded();
-	const auto key = QString::number(id.peer.value) + '_' + QString::number(id.msg.bare);
-	const auto it = gDiskPayloads.find(key);
-	if (it != gDiskPayloads.end()) {
-		return it->second;
-	}
-	return QString();
 }
 
 } // namespace
@@ -1068,13 +1165,6 @@ void RemapMessageId(FullMsgId wasId, FullMsgId nowId) {
 	const auto it = gPayloadsById.find(wasId);
 	if (it != gPayloadsById.end()) {
 		gPayloadsById[nowId] = it->second;
-		SaveDiskPayload(nowId, it->second);
-	} else {
-		const auto fromDisk = ReadDiskPayload(wasId);
-		if (!fromDisk.isEmpty()) {
-			gPayloadsById[nowId] = fromDisk;
-			SaveDiskPayload(nowId, fromDisk);
-		}
 	}
 	const auto itLocal = gLocalSentMessagesById.find(wasId);
 	if (itLocal != gLocalSentMessagesById.end()) {
@@ -1106,11 +1196,11 @@ void SaveEncryptedPayload(not_null<const HistoryItem*> item, const QString &payl
 	if (!ExtractPayloadBytes(payload).has_value() && !IsEncryptedMessage(payload)) {
 		return;
 	}
+	DropLegacyPayloadsCache();
 	gPayloadsByItem[item.get()] = payload;
 	const auto fullId = item->fullId();
 	if (fullId.msg) {
 		gPayloadsById[fullId] = payload;
-		SaveDiskPayload(fullId, payload);
 	}
 }
 
@@ -1124,11 +1214,6 @@ QString GetEncryptedPayload(not_null<const HistoryItem*> item) {
 		const auto itId = gPayloadsById.find(fullId);
 		if (itId != gPayloadsById.end() && !itId->second.isEmpty()) {
 			return itId->second;
-		}
-		const auto diskPayload = ReadDiskPayload(fullId);
-		if (!diskPayload.isEmpty()) {
-			gPayloadsById[fullId] = diskPayload;
-			return diskPayload;
 		}
 	}
 	if (IsEncryptedMessage(item->originalText().text)) {
@@ -1176,6 +1261,55 @@ std::optional<MessageContent> GetLocalSentMessage(const QString &text) {
 		}
 	}
 	return std::nullopt;
+}
+
+QString PacketHash(const QString &payload) {
+	const auto packet = ExtractPayloadBytes(payload);
+	if (!packet || packet->isEmpty()) {
+		return QString();
+	}
+	return QString::fromLatin1(QCryptographicHash::hash(
+		*packet,
+		QCryptographicHash::Sha256).left(16).toHex());
+}
+
+int PlaceholderTitleLength() {
+	const auto text = QString::fromUtf8(kPlaceholderText);
+	const auto end = text.indexOf(u'\n');
+	return (end > 0) ? end : 0;
+}
+
+QString NoRecipientKeyText() {
+	return QString::fromUtf8(
+		"Не удалось получить ключ шифрования собеседника. "
+		"Возможно, у него нет Whitegram или он ещё не входил в аккаунт. "
+		"Сообщение не отправлено.");
+}
+
+QString TooLongText() {
+	return QString::fromUtf8(
+		"Слишком длинное одноразовое сообщение. Сократите текст.");
+}
+
+bool WasViewed(const QString &payload) {
+	const auto hash = PacketHash(payload);
+	if (hash.isEmpty()) {
+		return false;
+	}
+	EnsureViewedLoaded();
+	return ranges::contains(gViewed, hash);
+}
+
+void MarkViewed(const QString &payload) {
+	const auto hash = PacketHash(payload);
+	if (hash.isEmpty() || WasViewed(payload)) {
+		return;
+	}
+	gViewed.push_back(hash);
+	if (gViewed.size() > kMaxViewedEntries) {
+		gViewed.erase(gViewed.begin(), gViewed.end() - kMaxViewedEntries);
+	}
+	SaveViewed();
 }
 
 bool IsWhitegramOneTimeMessage(not_null<const HistoryItem*> item) {

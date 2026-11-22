@@ -63,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtWidgets/QApplication>
 
 // AyuGram includes
+#include "ui/widgets/menu/menu_multiline_action.h"
 #include "ayu/ayu_settings.h"
 
 
@@ -752,42 +753,30 @@ FillMenuResult FillSendMenu(
 
 	if (sending && type != Type::Reminder && peerIsUser(PeerId(details.barePeerId))) {
 		auto ttlSubmenu = std::make_unique<Ui::PopupMenu>(menu, st::popupMenuWithIcons);
-
-		const auto ttlTitle = ttlSubmenu->addAction(
-			u"Сквозное E2E-шифрование • Whitegram"_q,
-			[] {});
-		ttlTitle->setEnabled(false);
+		const auto addHint = [&](const QString &text) {
+			ttlSubmenu->addAction(base::make_unique_q<Ui::Menu::MultilineAction>(
+				ttlSubmenu->menu(),
+				ttlSubmenu->st().menu,
+				st::historyHasCustomEmoji,
+				st::historyHasCustomEmojiPosition,
+				TextWithEntities{ text }));
+		};
+		const auto addTtl = [&](const QString &text, int ttl, const style::icon *icon) {
+			ttlSubmenu->addAction(text, [=] {
+				action({ .type = ActionType::OneTimeMessage, .whitegramTtl = ttl }, details);
+			}, icon);
+		};
+		addHint(u"Сквозное шифрование Whitegram: текст видит только получатель, и только в Whitegram."_q);
 		ttlSubmenu->addSeparator();
-
-		ttlSubmenu->addAction(u"👁  Один просмотр"_q, [=] {
-			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 0 }, details);
-		});
-		ttlSubmenu->addAction(u"3 секунды"_q, [=] {
-			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 3 }, details);
-		});
-		ttlSubmenu->addAction(u"10 секунд"_q, [=] {
-			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 10 }, details);
-		});
-		ttlSubmenu->addAction(u"30 секунд"_q, [=] {
-			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 30 }, details);
-		});
-		ttlSubmenu->addAction(u"1 минута"_q, [=] {
-			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = 60 }, details);
-		});
-		ttlSubmenu->addAction(u"Бессрочно"_q, [=] {
-			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = -1 }, details);
-		});
-		ttlSubmenu->addAction(u"Выбрать своё время…"_q, [=] {
-			action({ .type = ActionType::OneTimeMessage, .whitegramTtl = -999 }, details);
-		});
-
+		addTtl(u"Один просмотр"_q, 0, &st::menuIconStealth);
+		addTtl(u"3 секунды после открытия"_q, 3, &st::menuIconTimer);
+		addTtl(u"10 секунд после открытия"_q, 10, &st::menuIconTimer);
+		addTtl(u"30 секунд после открытия"_q, 30, &st::menuIconTimer);
+		addTtl(u"1 минута после открытия"_q, 60, &st::menuIconTimer);
+		addTtl(u"Своё время…"_q, -999, &st::menuIconTTL);
+		addTtl(u"Без исчезновения"_q, -1, &st::menuIconLock);
 		ttlSubmenu->addSeparator();
-
-		const auto descAction = ttlSubmenu->addAction(
-			u"Сообщение видно только вам и получателю. "_q
-				+ u"В других клиентах оно не откроется."_q,
-			[] {});
-		descAction->setEnabled(false);
+		addHint(u"Сообщение нигде не сохраняется: после просмотра оно удаляется у обоих, а его копии, пересланные или сохранённые ботами, не открываются."_q);
 
 		menu->addAction(
 			u"Одноразовое сообщение"_q,

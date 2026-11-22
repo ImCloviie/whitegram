@@ -205,6 +205,7 @@ private:
 	Ui::Animations::Simple _shownAnimation;
 	Ui::Animations::Simple _expandAnimation;
 	Ui::Animations::Basic _liveAnimation;
+	crl::time _liveUpdatedAt = 0;
 	QTimer _hoverPoll;
 
 	rpl::event_stream<bool> _shownChanges;

@@ -1288,7 +1288,11 @@ void WriteFinished(
 	// Sending it again would not help when the server already has it, or
 	// when it refuses it for good.
 	const auto done = stored
-		|| (status >= 400 && status < 500 && status != 408 && status != 429);
+		|| (status >= 400
+			&& status < 500
+			&& status != 401
+			&& status != 408
+			&& status != 429);
 	if (done && latest) {
 		SetPendingChange(userId, zone, PendingChange::None);
 	} else if (!latest) {

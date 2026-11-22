@@ -117,6 +117,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/utils/telegram_helpers.h"
 #include "ayu/features/forward/ayu_forward.h"
 #include "ayu/features/custom_archives/custom_archives.h"
+#include "ayu/features/whitegram_e2ee/whitegram_e2ee.h"
 
 
 namespace {
@@ -4961,7 +4962,8 @@ void ApiWrap::sendMessage(
 			mediaFlags |= MTPmessages_SendMedia::Flag::f_reply_to;
 		}
 		const auto ignoreWebPage = message.webPage.removed
-			|| (exactWebPage && !isLast);
+			|| (exactWebPage && !isLast)
+			|| Whitegram::E2EE::IsEncryptedMessage(sending.text);
 		const auto manualWebPage = exactWebPage
 			&& !ignoreWebPage
 			&& (message.webPage.manual || (isLast && !isFirst));

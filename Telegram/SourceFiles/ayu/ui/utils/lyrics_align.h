@@ -9,7 +9,11 @@ namespace Ayu::Ui::Lyrics {
 struct AlignReport {
 	bool changed = false;
 	bool autoSynced = false;
+	std::int64_t offsetMs = 0;
 };
+
+// Published timing made for another cut of the song: shifts it to where the voice starts.
+[[nodiscard]] AlignReport AlignOffset(Data &data, const Analysis::Result &analysis);
 
 // Approximate fallback for plain text only. Published timing is never modified.
 [[nodiscard]] AlignReport Align(Data &data, const Analysis::Result &analysis);

@@ -68,8 +68,9 @@ void EnsureCaptureGuard() {
 } // namespace
 
 bool isStreamerModeActive() {
-	return AyuSettings::getInstance().streamerMode()
-		|| (_viewOnceActiveCount > 0);
+	const auto &settings = AyuSettings::getInstance();
+	return settings.streamerMode()
+		|| (settings.hideTelegramOnViewOnce() && (_viewOnceActiveCount > 0));
 }
 
 void apply(bool enabled) {

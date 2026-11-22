@@ -43,8 +43,8 @@ namespace {
 
 rpl::producer<TextWithEntities> Text() {
 	const auto github = u"https://github.com/ImCloviie"_q;
-	const auto ruPrefix = QString::fromUtf8("Whitegram Desktop — улучшенный форк Telegram Desktop с дополнительными функциями, эксклюзивной кастомизацией и уникальными возможностями. Создан на основе открытого исходного кода Telegram Desktop и AyuGram. Распространяется под лицензией ");
-	const auto enPrefix = QString("Whitegram Desktop is an enhanced fork of Telegram Desktop with extra features, exclusive customization, and unique capabilities. Built on the open source code of Telegram Desktop and AyuGram. Distributed under the ");
+	const auto ruPrefix = QString::fromUtf8("Whitegram Desktop — клиент Telegram с дополнительными функциями и настройками. Основан на открытом коде Telegram Desktop. Распространяется под лицензией ");
+	const auto enPrefix = QString("Whitegram Desktop is a Telegram client with extra features and settings. Based on the open source code of Telegram Desktop. Distributed under the ");
 	const auto ruMiddle = QString::fromUtf8(". Исходный код — на ");
 	const auto enMiddle = QString(" license. Source code is on ");
 	return rpl::single(rpl::empty) | rpl::then(

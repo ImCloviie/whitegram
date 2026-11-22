@@ -2073,7 +2073,14 @@ void from_json(const nlohmann::json &j, AyuSettings &s) {
 	s._showChannelReactions = j.value("showChannelReactions", defaults._showChannelReactions.current());
 	s._showGroupReactions = j.value("showGroupReactions", defaults._showGroupReactions.current());
 	s._showPrivateChatReactions = j.value("showPrivateChatReactions", defaults._showPrivateChatReactions.current());
-	s._appIcon = j.value("appIcon", defaults._appIcon.current());
+	const auto icon = j.value("appIcon", defaults._appIcon.current());
+	if (icon == u"whitegram_ayu_light"_q) {
+		s._appIcon = AyuAssets::WHITEGRAM_LIGHT_ICON;
+	} else if (icon == u"whitegram_ayu_dark"_q) {
+		s._appIcon = AyuAssets::WHITEGRAM_DARK_ICON;
+	} else {
+		s._appIcon = icon;
+	}
 	s._simpleQuotesAndReplies = j.value("simpleQuotesAndReplies", defaults._simpleQuotesAndReplies.current());
 	s._hideFastShare = j.value("hideFastShare", defaults._hideFastShare.current());
 	s._replaceBottomInfoWithIcons = j.value("replaceBottomInfoWithIcons", defaults._replaceBottomInfoWithIcons.current());

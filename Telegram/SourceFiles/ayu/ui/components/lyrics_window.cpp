@@ -33,12 +33,14 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtGui/QGuiApplication>
+#include <QtGui/QScreen>
 #include <QtCore/QPointer>
 #include <QtCore/QSet>
 #include <QtCore/QLocale>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QTime>
 #include <QtGui/QAbstractTextDocumentLayout>
+#include <QtGui/QCloseEvent>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QTextDocument>
 #include <QtGui/QMouseEvent>
@@ -56,8 +58,8 @@ namespace {
 
 using namespace Ayu::Ui;
 
-constexpr auto kShowDuration = crl::time(650);
-constexpr auto kHideDuration = crl::time(380);
+constexpr auto kShowDuration = crl::time(560);
+constexpr auto kHideDuration = crl::time(420);
 constexpr auto kScrollLeadMs = 0;
 constexpr auto kWordLeadMs = 0;
 constexpr auto kSpring = 150.;
@@ -73,6 +75,7 @@ constexpr auto kAlarmHeart = 124.;
 constexpr auto kTimerLeadMs = 3600;
 constexpr auto kNextLines = 3;
 constexpr auto kPi = 3.14159265358979323846;
+constexpr auto kInterludeMs = 4000;
 
 const auto kRed = QColor(255, 46, 66);
 const auto kOrange = QColor(255, 159, 10);
@@ -124,21 +127,218 @@ void DrawImageToFill(QPainter &p, const QRectF &target, const QImage &image) {
 		QRectF(QPointF(), source));
 }
 
+// Stack blur rounding can leave a channel above alpha; such pixels overflow into blue/black specks.
+[[nodiscard]] QImage SafeBlur(QImage &&image, int radius) {
+	auto result = Images::BlurLargeImage(std::move(image), radius);
+	if (result.format() != QImage::Format_ARGB32_Premultiplied) {
+		return result;
+	}
+	for (auto y = 0; y != result.height(); ++y) {
+		auto line = reinterpret_cast<QRgb*>(result.scanLine(y));
+		for (auto x = 0; x != result.width(); ++x) {
+			const auto pixel = line[x];
+			const auto a = qAlpha(pixel);
+			line[x] = qRgba(
+				std::min(qRed(pixel), a),
+				std::min(qGreen(pixel), a),
+				std::min(qBlue(pixel), a),
+				a);
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] QRgb SampleBilinear(const QImage &image, double x, double y) {
+	x = std::clamp(x, 0., image.width() - 1.001);
+	y = std::clamp(y, 0., image.height() - 1.001);
+	const auto x0 = int(x), y0 = int(y);
+	const auto fx = x - x0, fy = y - y0;
+	const auto row0 = reinterpret_cast<const QRgb*>(image.constScanLine(y0));
+	const auto row1 = reinterpret_cast<const QRgb*>(image.constScanLine(y0 + 1));
+	const auto mix = [&](int shift) {
+		const auto channel = [&](QRgb pixel) { return double((pixel >> shift) & 0xFF); };
+		const auto top = channel(row0[x0]) * (1. - fx) + channel(row0[x0 + 1]) * fx;
+		const auto bottom = channel(row1[x0]) * (1. - fx) + channel(row1[x0 + 1]) * fx;
+		return int(top * (1. - fy) + bottom * fy);
+	};
+	return qRgb(mix(16), mix(8), mix(0));
+}
+
+// Liquid glass after https://github.com/dashersw/liquid-glass-js: the rim pulls the backdrop outward
+// along the shape normal like a lens edge, colour channels split slightly there, a top-lit tint.
+[[nodiscard]] QImage RefractedGlass(
+		const QImage &frost,
+		QSize window,
+		const QRectF &rect,
+		double radius,
+		double unit,
+		int ratio) {
+	auto result = QImage(rect.size().toSize() * ratio, QImage::Format_ARGB32_Premultiplied);
+	result.setDevicePixelRatio(ratio);
+	result.fill(Qt::transparent);
+	if (frost.isNull() || window.isEmpty()) {
+		return result;
+	}
+	const auto scaleX = double(frost.width()) / window.width();
+	const auto scaleY = double(frost.height()) / window.height();
+	const auto half = QPointF(rect.width() / 2., rect.height() / 2.);
+	const auto edge = 14. * unit;
+	const auto rim = 4. * unit;
+	for (auto y = 0; y != result.height(); ++y) {
+		auto line = reinterpret_cast<QRgb*>(result.scanLine(y));
+		const auto py = (y + 0.5) / ratio;
+		for (auto x = 0; x != result.width(); ++x) {
+			const auto px = (x + 0.5) / ratio;
+			const auto dx = px - half.x(), dy = py - half.y();
+			const auto qx = std::abs(dx) - (half.x() - radius);
+			const auto qy = std::abs(dy) - (half.y() - radius);
+			const auto outside = std::hypot(std::max(qx, 0.), std::max(qy, 0.));
+			const auto inside = std::min(std::max(qx, qy), 0.);
+			const auto distance = outside + inside - radius;
+			const auto coverage = std::clamp(0.5 - distance * ratio, 0., 1.);
+			if (coverage <= 0.) {
+				continue;
+			}
+			const auto depth = std::max(0., -distance);
+			const auto length = std::max(1e-6, std::hypot(dx / half.x(), dy / half.y()));
+			const auto nx = dx / half.x() / length, ny = dy / half.y() / length;
+			const auto corner = (qx > 0. && qy > 0.) ? 1.6 : 1.;
+			const auto pull = (22. * unit * std::exp(-depth / edge) + 8. * unit * std::exp(-depth / rim)) * corner;
+			const auto sample = [&](double factor) {
+				return SampleBilinear(
+					frost,
+					(rect.left() + px + nx * pull * factor) * scaleX,
+					(rect.top() + py + ny * pull * factor) * scaleY);
+			};
+			const auto red = sample(1.), green = sample(1.07), blue = sample(1.14);
+			const auto tint = 255. - 70. * (py / rect.height());
+			const auto mixed = [&](int channel) {
+				return int(channel + (tint - channel) * 0.08);
+			};
+			const auto alpha = int(255 * coverage);
+			const auto premultiply = [&](int channel) {
+				return std::clamp(mixed(channel), 0, 255) * alpha / 255;
+			};
+			line[x] = qRgba(
+				premultiply(qRed(red)),
+				premultiply(qGreen(green)),
+				premultiply(qBlue(blue)),
+				alpha);
+		}
+	}
+	return result;
+}
+
 struct Backdrop {
 	QImage background;
 	QImage frost;
 	QImage glow;
+	QImage light;
 };
+
+// The cover's colours: a monochrome cover gives a grey scene, a coloured one tints it.
+struct CoverTone {
+	QColor main;
+	QColor second;
+	bool mono = false;
+};
+
+[[nodiscard]] QColor Shade(QColor color, double saturation, double value, int alpha = 255) {
+	const auto hue = std::max(0., double(color.hsvHueF()));
+	auto result = QColor::fromHsvF(
+		hue,
+		std::clamp(saturation, 0., 1.),
+		std::clamp(value, 0., 1.));
+	result.setAlpha(alpha);
+	return result;
+}
+
+[[nodiscard]] CoverTone ExtractTone(const QImage &source) {
+	auto result = CoverTone();
+	if (source.isNull()) {
+		return result;
+	}
+	constexpr auto kBins = 18;
+	const auto image = source.scaled(
+		24,
+		24,
+		Qt::IgnoreAspectRatio,
+		Qt::SmoothTransformation).convertToFormat(QImage::Format_ARGB32);
+	auto weight = std::array<double, kBins>{};
+	auto saturation = std::array<double, kBins>{};
+	auto value = std::array<double, kBins>{};
+	auto colorful = 0.;
+	for (auto y = 0; y != image.height(); ++y) {
+		for (auto x = 0; x != image.width(); ++x) {
+			const auto color = QColor::fromRgb(image.pixel(x, y));
+			const auto h = double(color.hsvHueF());
+			const auto s = double(color.hsvSaturationF());
+			const auto v = double(color.valueF());
+			colorful += s * v;
+			if (h < 0. || s < 0.15 || v < 0.12) {
+				continue;
+			}
+			const auto bin = std::min(kBins - 1, int(h * kBins));
+			const auto w = s * v * (0.4 + v);
+			weight[bin] += w;
+			saturation[bin] += s * w;
+			value[bin] += v * w;
+		}
+	}
+	const auto pixels = double(image.width() * image.height());
+	if (colorful / pixels < 0.08) {
+		result.mono = true;
+		result.main = QColor(72, 72, 80);
+		result.second = QColor(160, 160, 172);
+		return result;
+	}
+	const auto best = int(std::max_element(weight.begin(), weight.end()) - weight.begin());
+	auto other = best;
+	for (auto i = 0; i != kBins; ++i) {
+		const auto distance = std::min(std::abs(i - best), kBins - std::abs(i - best));
+		if (distance >= 3 && weight[i] > weight[best] * 0.15
+			&& (other == best || weight[i] > weight[other])) {
+			other = i;
+		}
+	}
+	const auto make = [&](int bin) {
+		return QColor::fromHsvF(
+			(bin + 0.5) / kBins,
+			std::clamp(saturation[bin] / weight[bin], 0.35, 0.85),
+			std::clamp(value[bin] / weight[bin], 0.45, 0.9));
+	};
+	result.main = make(best);
+	result.second = make(other);
+	return result;
+}
 
 [[nodiscard]] Backdrop BuildBackdrop(
 		QSize size,
 		int ratio,
 		bool purple,
 		bool blue,
-		const QImage &blurred) {
+		const QImage &blurred,
+		const CoverTone &tone,
+		bool bleeding) {
 	auto result = Backdrop();
 	const auto width = size.width();
 	const auto height = size.height();
+	const auto toned = tone.main.isValid();
+	const auto inner = !toned
+		? (purple ? QColor(74, 48, 120) : blue ? QColor(44, 62, 112) : QColor(62, 62, 70))
+		: tone.mono
+		? QColor(58, 58, 64)
+		: Shade(tone.main, tone.main.hsvSaturationF() * 0.8, 0.42);
+	const auto outer = !toned
+		? (purple ? QColor(22, 14, 48) : blue ? QColor(14, 22, 48) : QColor(30, 30, 35))
+		: tone.mono
+		? QColor(16, 16, 19)
+		: Shade(tone.main, tone.main.hsvSaturationF() * 0.9, 0.11);
+	const auto cornerColor = !toned
+		? (purple ? QColor(200, 90, 255, 70) : blue ? QColor(90, 70, 220, 70) : QColor(170, 18, 34, 60))
+		: tone.mono
+		? QColor(200, 200, 215, 36)
+		: Shade(tone.second, tone.second.hsvSaturationF(), 0.85, 70);
 	auto background = QImage(size * ratio, QImage::Format_RGB32);
 	background.setDevicePixelRatio(ratio);
 	{
@@ -147,16 +347,39 @@ struct Backdrop {
 		const auto full = QRectF(QPointF(), QSizeF(size));
 		const auto side = std::max(width, height);
 		auto base = QRadialGradient(QPointF(width * 0.35, height * 0.35), side * 0.9);
-		base.setColorAt(0., purple ? QColor(74, 48, 120) : blue ? QColor(44, 62, 112) : QColor(62, 62, 70));
-		base.setColorAt(1., purple ? QColor(22, 14, 48) : blue ? QColor(14, 22, 48) : QColor(30, 30, 35));
+		base.setColorAt(0., inner);
+		base.setColorAt(1., outer);
 		q.fillRect(full, base);
 		if (!blurred.isNull()) {
-			q.setOpacity(0.28);
+			q.setOpacity(toned ? 0.34 : 0.28);
 			DrawImageToFill(q, full, blurred);
 			q.setOpacity(1.);
 		}
+		if (toned) {
+			// Soft light pools in the cover's colours sit behind the cards, so the glass has something to bend.
+			const auto blob = [&](QPointF center, double radius, QColor color) {
+				auto gradient = QRadialGradient(center, radius);
+				gradient.setColorAt(0., color);
+				color.setAlpha(0);
+				gradient.setColorAt(1., color);
+				q.fillRect(full, gradient);
+			};
+			const auto main = tone.mono
+				? QColor(200, 200, 212, 70)
+				: Shade(tone.main, tone.main.hsvSaturationF(), 0.8, 150);
+			const auto second = tone.mono
+				? QColor(150, 150, 165, 60)
+				: Shade(tone.second, tone.second.hsvSaturationF(), 0.75, 130);
+			const auto light = tone.mono
+				? QColor(255, 255, 255, 45)
+				: Shade(tone.main, tone.main.hsvSaturationF() * 0.5, 1., 90);
+			blob(QPointF(width * 0.2, height * 0.68), side * 0.26, main);
+			blob(QPointF(width * 0.06, height * 0.18), side * 0.2, second);
+			blob(QPointF(width * 0.4, height * 0.95), side * 0.16, light);
+			blob(QPointF(width * 0.78, height * 0.3), side * 0.24, Shade(second, second.hsvSaturationF(), 0.5, 70));
+		}
 		auto corner = QRadialGradient(QPointF(width * 0.92, height * 1.05), side * 0.55);
-		corner.setColorAt(0., purple ? QColor(200, 90, 255, 70) : blue ? QColor(90, 70, 220, 70) : QColor(170, 18, 34, 60));
+		corner.setColorAt(0., cornerColor);
 		corner.setColorAt(1., QColor(0, 0, 0, 0));
 		q.fillRect(full, corner);
 		auto vignette = QRadialGradient(full.center(), side * 0.72);
@@ -166,14 +389,22 @@ struct Backdrop {
 	}
 	{
 		auto small = background.scaled(
-			std::max(1, background.width() / 8),
-			std::max(1, background.height() / 8),
+			std::max(1, background.width() / 5),
+			std::max(1, background.height() / 5),
 			Qt::IgnoreAspectRatio,
 			Qt::SmoothTransformation);
 		small.setDevicePixelRatio(1.);
-		{
-			auto q = QPainter(&small);
-			q.fillRect(small.rect(), QColor(255, 255, 255, blue ? 26 : 20));
+		// Glass makes what is behind it more vivid: colours move away from grey, lightly brightened.
+		for (auto y = 0; y != small.height(); ++y) {
+			auto line = reinterpret_cast<QRgb*>(small.scanLine(y));
+			for (auto x = 0; x != small.width(); ++x) {
+				const auto pixel = line[x];
+				const auto luma = 0.3 * qRed(pixel) + 0.59 * qGreen(pixel) + 0.11 * qBlue(pixel);
+				const auto vivid = [&](int channel) {
+					return std::clamp(int((luma + (channel - luma) * 1.4) * 1.1 + 6.), 0, 255);
+				};
+				line[x] = qRgb(vivid(qRed(pixel)), vivid(qGreen(pixel)), vivid(qBlue(pixel)));
+			}
 		}
 		result.frost = Images::BlurLargeImage(std::move(small), 3);
 	}
@@ -186,18 +417,45 @@ struct Backdrop {
 		auto q = QPainter(&glow);
 		const auto full = QRectF(QPointF(), QSizeF(glowSize));
 		const auto side = std::max(glowSize.width(), glowSize.height());
+		// The red glow belongs to the health scene; any other track glows in its cover's colour.
+		const auto own = toned && !bleeding;
 		auto red = QRadialGradient(QPointF(full.width() * 0.5, full.height() * 1.15), side * 1.05);
-		red.setColorAt(0., purple ? QColor(210, 100, 255, 150) : blue ? QColor(90, 120, 255, 150) : QColor(200, 20, 38, 160));
-		red.setColorAt(0.6, purple ? QColor(130, 60, 220, 60) : blue ? QColor(60, 60, 200, 60) : QColor(140, 10, 26, 60));
+		red.setColorAt(0., own
+			? (tone.mono ? QColor(220, 220, 235, 110) : Shade(tone.main, tone.main.hsvSaturationF(), 0.95, 150))
+			: purple ? QColor(210, 100, 255, 150) : blue ? QColor(90, 120, 255, 150) : QColor(200, 20, 38, 160));
+		red.setColorAt(0.6, own
+			? (tone.mono ? QColor(150, 150, 165, 40) : Shade(tone.main, tone.main.hsvSaturationF(), 0.7, 60))
+			: purple ? QColor(130, 60, 220, 60) : blue ? QColor(60, 60, 200, 60) : QColor(140, 10, 26, 60));
 		red.setColorAt(1., QColor(0, 0, 0, 0));
 		q.fillRect(full, red);
 		auto corner = QRadialGradient(QPointF(full.width() * 0.92, full.height() * 1.05), side * 0.55);
-		corner.setColorAt(0., purple ? QColor(255, 120, 220, 120) : blue ? QColor(150, 110, 255, 120) : QColor(190, 20, 38, 120));
+		corner.setColorAt(0., own
+			? (tone.mono ? QColor(235, 235, 245, 80) : Shade(tone.second, tone.second.hsvSaturationF(), 1., 120))
+			: purple ? QColor(255, 120, 220, 120) : blue ? QColor(150, 110, 255, 120) : QColor(190, 20, 38, 120));
 		corner.setColorAt(1., QColor(0, 0, 0, 0));
 		q.fillRect(full, corner);
 	}
 	glow.setDevicePixelRatio(ratio);
 	result.glow = std::move(glow);
+
+	// Energetic passages warm the scene; baked once, then only its opacity changes per frame.
+	auto light = QImage(glowSize, QImage::Format_ARGB32_Premultiplied);
+	light.fill(Qt::transparent);
+	{
+		auto q = QPainter(&light);
+		const auto full = QRectF(QPointF(), QSizeF(glowSize));
+		auto gradient = QRadialGradient(
+			QPointF(full.width() * 0.3, full.height()),
+			double(std::max(glowSize.width(), glowSize.height())));
+		const auto warm = (toned && !tone.mono)
+			? Shade(tone.second, tone.second.hsvSaturationF(), 1., 70)
+			: QColor(255, 120, 35, 70);
+		gradient.setColorAt(0., warm);
+		gradient.setColorAt(1., QColor(0, 0, 0, 0));
+		q.fillRect(full, gradient);
+	}
+	light.setDevicePixelRatio(ratio);
+	result.light = std::move(light);
 	return result;
 }
 
@@ -464,6 +722,11 @@ const CategoryInfo *FindCategory(int id) {
 
 } // namespace
 
+std::pair<QColor, QColor> CoverTones(const QImage &cover) {
+	const auto tone = ExtractTone(cover);
+	return { tone.main, tone.second };
+}
+
 LyricsWindow::LyricsWindow(not_null<QWidget*> parent)
 : RpWidget(parent)
 , _ecg(kEcgSamples, 0.f)
@@ -486,7 +749,9 @@ LyricsWindow::LyricsWindow(not_null<QWidget*> parent)
 	}
 	base::install_event_filter(this, parent, [=](not_null<QEvent*> event) {
 		if (event->type() == QEvent::Resize) {
-			setGeometry(parentWidget()->rect());
+			if (!isWindow()) {
+				setGeometry(parentWidget()->rect());
+			}
 			_layoutSize = QSize();
 		}
 		return base::EventFilterResult::Continue;
@@ -529,14 +794,41 @@ void LyricsWindow::toggle(bool shown) {
 	_transitionBlur = QPixmap();
 	setAttribute(Qt::WA_OpaquePaintEvent, false);
 	if (shown) {
-		setGeometry(parentWidget()->rect());
+		if (!_home) {
+			_home = parentWidget();
+			// WHY: while it is a separate window the old parent no longer owns it.
+			connect(_home, &QObject::destroyed, this, &QObject::deleteLater);
+		}
+		const auto main = _home ? _home->window() : nullptr;
+		const auto windowed = main
+			&& !main->isMaximized()
+			&& !main->isFullScreen();
+		if (windowed) {
+			// WHY: a small Telegram window would squeeze the karaoke, so it opens over
+			// the whole screen while the Telegram window keeps its own place and size.
+			const auto screen = main->screen();
+			setParent(nullptr, Qt::Window | Qt::FramelessWindowHint);
+			setWindowTitle(QString::fromUtf8("Караоке"));
+			setGeometry(screen ? screen->geometry() : main->geometry());
+		} else if (isWindow() && _home) {
+			setParent(_home);
+			setGeometry(_home->rect());
+		} else {
+			setGeometry(parentWidget()->rect());
+		}
 		if (!_everShown) {
 			_everShown = true;
 			requestTranslation();
 		}
 		prewarm();
+		if (isWindow()) {
+			setWindowOpacity(0.);
+		}
 		show();
 		raise();
+		if (isWindow()) {
+			activateWindow();
+		}
 		setFocus();
 		_lastTick = 0;
 		if (!_animation.animating()) {
@@ -549,8 +841,14 @@ void LyricsWindow::toggle(bool shown) {
 			QString::fromUtf8("Сейчас играет"),
 			_artist.isEmpty() ? _title : (_artist + QString::fromUtf8(" — ") + _title));
 	}
+	if (isWindow()) {
+		setWindowOpacity(shown ? 0. : 1.);
+	}
 	_showAnimation.start([=] {
 		update();
+		if (isWindow()) {
+			setWindowOpacity(_showAnimation.value(_shown ? 1. : 0.));
+		}
 		if (_showAnimation.animating()) {
 			return;
 		} else if (_shown) {
@@ -560,6 +858,15 @@ void LyricsWindow::toggle(bool shown) {
 		} else {
 			hide();
 			_animation.stop();
+			if (isWindow() && _home) {
+				setWindowOpacity(1.);
+				setParent(_home);
+				setGeometry(_home->rect());
+				hide();
+				if (const auto main = _home->window()) {
+					main->activateWindow();
+				}
+			}
 		}
 	}, shown ? 0. : 1., shown ? 1. : 0., shown ? kShowDuration : kHideDuration, anim::easeOutCubic);
 }
@@ -568,7 +875,24 @@ bool LyricsWindow::shown() const {
 	return _shown;
 }
 
-void LyricsWindow::setTrack(const QString &artist, const QString &title) {
+void LyricsWindow::setTrack(const QString &rawArtist, const QString &rawTitle) {
+	// A file without tags shows its name: drop the extension and lift "(prod. X)" into the artist line.
+	static const auto extension = QRegularExpression(
+		uR"(\.(mp3|m4a|flac|ogg|opus|wav|aac)$)"_q,
+		QRegularExpression::CaseInsensitiveOption);
+	static const auto producer = QRegularExpression(
+		uR"(\s*[\(\[]\s*(prod\.?\s+[^\)\]]+)[\)\]])"_q,
+		QRegularExpression::CaseInsensitiveOption);
+	auto title = rawTitle.trimmed();
+	title.remove(extension);
+	auto artist = rawArtist.trimmed();
+	if (artist.isEmpty()) {
+		const auto match = producer.match(title);
+		if (match.hasMatch() && match.capturedStart() > 0) {
+			artist = match.captured(1).trimmed();
+			title.remove(match.capturedStart(), match.capturedLength());
+		}
+	}
 	const auto changed = (artist != _artist) || (title != _title);
 	_artist = artist;
 	_title = title;
@@ -595,6 +919,7 @@ void LyricsWindow::setCover(QPixmap art, QPixmap blurred, QColor accent) {
 	_art = std::move(art);
 	_blurred = std::move(blurred);
 	_accent = accent;
+	updateTone();
 	_cardArt = QPixmap();
 	requestBackdrop(false);
 	update();
@@ -622,6 +947,8 @@ void LyricsWindow::setLyrics(const Lyrics::Data &data, bool loading) {
 	_velocity = 0.;
 	_manualOffset = 0.;
 	_active = -1;
+	_interlude = 0.;
+	_interludeNext = -1;
 	_layoutSize = QSize();
 	detectTheme();
 	buildScenes();
@@ -679,6 +1006,53 @@ int LyricsWindow::activeIndex(std::int64_t position) const {
 	return _data.synced ? Lyrics::ActiveLineIndex(_data, position) : -1;
 }
 
+bool LyricsWindow::interludeAt(std::int64_t position, double *progress, int *next) const {
+	if (!_data.synced || _data.lines.empty()) {
+		return false;
+	}
+	const auto active = activeIndex(position);
+	const auto following = active + 1;
+	if (following >= int(_data.lines.size())) {
+		return false;
+	}
+	const auto from = (active >= 0)
+		? std::max(_data.lines[active].endMs, _data.lines[active].ms)
+		: std::int64_t(0);
+	const auto till = _data.lines[following].ms;
+	if (till - from < kInterludeMs || position < from + 300 || position >= till - 150) {
+		return false;
+	}
+	if (progress) {
+		*progress = std::clamp(double(position - from) / double(till - from), 0., 1.);
+	}
+	if (next) {
+		*next = following;
+	}
+	return true;
+}
+
+void LyricsWindow::paintInterlude(QPainter &p, double anchor) {
+	if (_interlude < 0.01 || _interludeNext < 0 || _interludeNext >= int(_lines.size())) {
+		return;
+	}
+	const auto &area = _geometry.lyrics;
+	const auto space = _rowHeight * 0.9;
+	const auto y = anchor + _lines[_interludeNext].top - _scroll - space * 0.55;
+	const auto radius = _rowHeight * 0.1;
+	const auto breath = 1. + 0.14 * std::sin(crl::now() / 1000. * 2. * kPi * 0.7);
+	// The dots fill one by one across the break and shrink away just before the next line.
+	const auto closing = std::clamp((1. - _interludeProgress) / 0.08, 0., 1.);
+	p.setPen(Qt::NoPen);
+	for (auto k = 0; k != 3; ++k) {
+		const auto fill = std::clamp(_interludeProgress * 3. - k, 0., 1.);
+		const auto r = radius * breath * (0.55 + 0.45 * closing);
+		p.setOpacity(_interlude * (0.28 + 0.72 * fill) * (0.3 + 0.7 * closing));
+		p.setBrush(QColor(255, 255, 255));
+		p.drawEllipse(QPointF(area.left() + radius * 1.3 + k * radius * 3.4, y), r, r);
+	}
+	p.setOpacity(1.);
+}
+
 QFont LyricsWindow::makeFont(double size, int weight) const {
 	const auto pixel = std::max(8, int(std::round(size)));
 	const auto key = (pixel << 10) | (weight & 0x3FF);
@@ -709,13 +1083,16 @@ QFont LyricsWindow::lyricFont() const {
 	const auto size = narrow
 		? std::clamp(_geometry.lyrics.width() * 0.08, 24., 64.)
 		: 72. * _geometry.unit;
-	return makeFont(size * scale, QFont::Bold);
+	// Display type is set tight, like SF Pro Display in the reference players.
+	auto result = makeFont(size * scale, QFont::Bold);
+	result.setLetterSpacing(QFont::PercentageSpacing, 96.);
+	return result;
 }
 
 double LyricsWindow::anchorY() const {
 	return _geometry.lyrics.top() + (_geometry.nowCard.isEmpty()
 		? _geometry.lyrics.height() * 0.18
-		: 132. * _geometry.unit);
+		: _geometry.lyrics.height() * 0.3);
 }
 
 bool LyricsWindow::inChorus(std::int64_t position) const {
@@ -1026,10 +1403,14 @@ void LyricsWindow::setLyricsOffset(std::int64_t offset, bool announce) {
 
 std::uint64_t LyricsWindow::backdropKey() const {
 	auto result = std::uint64_t(_blurred.isNull() ? 0 : _blurred.cacheKey());
+	result = result * 31 + std::uint64_t(_customBlurred.isNull() ? 0 : _customBlurred.cacheKey());
 	result = result * 31 + std::uint64_t(width());
 	result = result * 31 + std::uint64_t(height());
 	result = result * 31 + std::uint64_t(style::DevicePixelRatio());
 	result = result * 31 + (_purplePalette ? 1 : 0) + (_bluePalette ? 2 : 0);
+	result = result * 31 + (_theme == Theme::Health ? 1 : 0);
+	result = result * 31 + (_tone.isValid() ? _tone.rgb() : 0u);
+	result = result * 31 + (_toneSecond.isValid() ? _toneSecond.rgb() : 0u);
 	return result ? result : 1;
 }
 
@@ -1045,21 +1426,28 @@ void LyricsWindow::requestBackdrop(bool sync) {
 	const auto ratio = style::DevicePixelRatio();
 	const auto purple = _purplePalette;
 	const auto blue = _bluePalette;
-	auto blurred = _blurred.isNull() ? QImage() : _blurred.toImage();
+	const auto tone = CoverTone{ .main = _tone, .second = _toneSecond, .mono = _toneMono };
+	const auto bleeding = (_theme == Theme::Health);
+	auto blurred = !_customBlurred.isNull()
+		? _customBlurred
+		: _blurred.isNull()
+		? QImage()
+		: _blurred.toImage();
 	if (sync) {
 		_backdropPending = 0;
-		auto result = BuildBackdrop(size, ratio, purple, blue, blurred);
+		auto result = BuildBackdrop(size, ratio, purple, blue, blurred, tone, bleeding);
 		applyBackdrop(
 			key,
 			std::move(result.background),
 			std::move(result.frost),
-			std::move(result.glow));
+			std::move(result.glow),
+			std::move(result.light));
 		return;
 	}
 	_backdropPending = key;
 	const auto weak = QPointer<LyricsWindow>(this);
 	crl::async([=, blurred = std::move(blurred)] {
-		auto result = BuildBackdrop(size, ratio, purple, blue, blurred);
+		auto result = BuildBackdrop(size, ratio, purple, blue, blurred, tone, bleeding);
 		crl::on_main([=, result = std::move(result)]() mutable {
 			const auto strong = weak.data();
 			if (!strong || strong->_backdropPending != key) {
@@ -1070,7 +1458,8 @@ void LyricsWindow::requestBackdrop(bool sync) {
 				key,
 				std::move(result.background),
 				std::move(result.frost),
-				std::move(result.glow));
+				std::move(result.glow),
+				std::move(result.light));
 		});
 	});
 }
@@ -1079,8 +1468,11 @@ void LyricsWindow::applyBackdrop(
 		std::uint64_t key,
 		QImage background,
 		QImage frost,
-		QImage glow) {
+		QImage glow,
+		QImage light) {
 	_backgroundCache = Ui::PixmapFromImage(std::move(background));
+	_lightCache = Ui::PixmapFromImage(std::move(light));
+	_frostImage = frost.convertToFormat(QImage::Format_RGB32);
 	_frost = Ui::PixmapFromImage(std::move(frost));
 	_glowCache = Ui::PixmapFromImage(std::move(glow));
 	_backdropKey = key;
@@ -1139,7 +1531,7 @@ void LyricsWindow::ensureCache(int index) {
 		Qt::IgnoreAspectRatio,
 		Qt::SmoothTransformation);
 	small.setDevicePixelRatio(1.);
-	small = Images::BlurLargeImage(std::move(small), 2);
+	small = SafeBlur(std::move(small), 2);
 	auto soft = small.scaled(image.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 	soft.setDevicePixelRatio(ratio);
 	line.blurred = Ui::PixmapFromImage(std::move(soft));
@@ -1295,6 +1687,13 @@ void LyricsWindow::tick(crl::time now) {
 	_moodRain += (rain - _moodRain) * moodBlend;
 	_moodDark += (dark - _moodDark) * moodBlend;
 	_active = activeIndex(current + _lyricsOffset + kScrollLeadMs);
+	auto interludeNext = -1;
+	const auto interlude = interludeAt(current + _lyricsOffset, &_interludeProgress, &interludeNext)
+		&& interludeNext < int(_lines.size());
+	if (interlude) {
+		_interludeNext = interludeNext;
+	}
+	_interlude += ((interlude ? 1. : 0.) - _interlude) * (1. - std::exp(-dt / 0.18));
 	if (!_lines.empty()) {
 		const auto from = std::max(0, _active - 3);
 		const auto till = std::min(int(_lines.size()), std::max(_active, 0) + 9);
@@ -1309,7 +1708,9 @@ void LyricsWindow::tick(crl::time now) {
 		_manualOffset *= std::exp(-dt / 0.25);
 	}
 	auto target = 0.;
-	if (_active >= 0 && _active < int(_lines.size())) {
+	if (interlude) {
+		target = _lines[_interludeNext].top - _rowHeight * 0.9;
+	} else if (_active >= 0 && _active < int(_lines.size())) {
 		target = _lines[_active].top;
 	} else if (!_data.synced && _duration > 0 && !_lines.empty()) {
 		const auto progress = std::clamp(double(current) / _duration, 0., 1.);
@@ -1320,7 +1721,7 @@ void LyricsWindow::tick(crl::time now) {
 	_scroll += _velocity * dt;
 	const auto blend = 1. - std::exp(-dt / kEmphasisTime);
 	for (auto i = 0; i != int(_emphasis.size()); ++i) {
-		_emphasis[i] += (((i == _active) ? 1. : 0.) - _emphasis[i]) * blend;
+		_emphasis[i] += (((i == _active && !interlude) ? 1. : 0.) - _emphasis[i]) * blend;
 	}
 
 	auto keyword = false;
@@ -1400,13 +1801,17 @@ void LyricsWindow::tick(crl::time now) {
 		case Theme::Health:
 			break;
 		case Theme::Love:
-			showToast(ToastKind::Message, QString::fromUtf8("СООБЩЕНИЯ"), QString::fromUtf8("Она"), line.isEmpty() ? QString::fromUtf8("Я рядом. Держись.") : line);
+			if (!line.isEmpty()) {
+				showToast(ToastKind::Music, QString::fromUtf8("МУЗЫКА"), QString::fromUtf8("Припев"), line);
+			}
 			break;
 		case Theme::Night:
 			showToast(ToastKind::Calm, QString::fromUtf8("БУДИЛЬНИК"), QString::fromUtf8("Не спится"), clock + QString::fromUtf8(" — пора бы уснуть"));
 			break;
 		case Theme::Rain:
-			showToast(ToastKind::Calm, QString::fromUtf8("ПОГОДА"), QString::fromUtf8("Ливень усиливается"), QString::fromUtf8("+5°, ощущается как +1°"));
+			if (_weather.ok) {
+				showToast(ToastKind::Weather, QString::fromUtf8("ПОГОДА"), Weather::Describe(_weather.code) + u", "_q + Weather::FormatDegrees(_weather.temperature), _weather.city);
+			}
 			break;
 		default:
 			if (!line.isEmpty()) {
@@ -1433,13 +1838,21 @@ void LyricsWindow::tick(crl::time now) {
 	const auto mode = alarmed
 		? PillMode::Alert
 		: (_playing && next >= 0 && next - current <= kTimerLeadMs && !chorus)
-		? ((_theme == Theme::Love) ? PillMode::Call : PillMode::Timer)
+		? PillMode::Timer
 		: PillMode::Track;
 	_pillMode = mode;
 	const auto pillTarget = ((mode == PillMode::Track) ? 324. : 420.) * _geometry.unit;
 	_pillWidth = _pillWidth
 		? (_pillWidth + (pillTarget - _pillWidth) * (1. - std::exp(-dt / 0.12)))
 		: pillTarget;
+	// A slightly underdamped spring gives the island its soft overshoot.
+	const auto pillGoal = _pillHovered ? 1. : 0.;
+	_pillVelocity += (260. * (pillGoal - _pillExpand) - 24. * _pillVelocity) * dt;
+	_pillExpand += _pillVelocity * dt;
+	if (std::abs(_pillExpand - pillGoal) < 0.001 && std::abs(_pillVelocity) < 0.01) {
+		_pillExpand = pillGoal;
+		_pillVelocity = 0.;
+	}
 	if (now >= _nextFrameAt) {
 		update();
 	}
@@ -1473,7 +1886,10 @@ void LyricsWindow::paintEvent(QPaintEvent *e) {
 		}
 		// WHY: a heavy frame must leave the main thread room for the rest of the app,
 		// otherwise every Telegram animation and scroll stutters while karaoke is open.
-		_nextFrameAt = crl::now() + crl::time(spent * 0.6);
+		// Measured from the frame start: animation ticks come every 8 ms, so a 14 ms floor lands on the 16 ms tick.
+		// Behind an active Telegram window the karaoke drops to 25 fps so the main thread stays free for it.
+		const auto floor = (isWindow() && !isActiveWindow()) ? crl::time(38) : crl::time(14);
+		_nextFrameAt = started + std::max(floor, crl::time(std::lround(spent)) + 5);
 		if (started - _statsAt >= 3000) {
 			if (_statsAt) {
 				const auto frames = std::max(1, _paintFrames);
@@ -1507,10 +1923,23 @@ void LyricsWindow::paintEvent(QPaintEvent *e) {
 	if (_transitionSharp.isNull()) {
 		prepareTransition();
 	}
-	p.fillRect(rect(), QColor(0, 0, 0, int(170 * shown)));
-	p.setOpacity(std::min(1., shown * 1.8));
+	const auto alone = isWindow();
+	if (alone) {
+		p.fillRect(rect(), QColor(8, 8, 12));
+	} else {
+		p.fillRect(rect(), QColor(0, 0, 0, int(170 * shown)));
+	}
+	// The scene grows out of a soft blur: scale, blur and opacity settle together.
+	const auto zoom = (_shown ? 0.92 : 0.96) + (_shown ? 0.08 : 0.04) * shown;
+	const auto center = QPointF(width() / 2., height() / 2.);
+	p.translate(center);
+	p.scale(zoom, zoom);
+	p.translate(-center);
+	const auto fade = alone ? 1. : shown;
+	p.setOpacity(std::min(1., fade * 1.8) * (1. - 0.6 * shown * shown));
 	p.drawPixmap(0, 0, _transitionBlur);
-	p.setOpacity(shown * shown);
+	p.setRenderHint(QPainter::SmoothPixmapTransform);
+	p.setOpacity(alone ? std::min(1., shown * 1.4) : (shown * shown));
 	p.drawPixmap(0, 0, _transitionSharp);
 }
 
@@ -1555,15 +1984,23 @@ void LyricsWindow::paintContent(QPainter &p) {
 void LyricsWindow::paintBackground(QPainter &p, std::int64_t position) {
 	p.drawPixmap(0, 0, _backgroundCache);
 	p.save();
-	if (_moodEnergy > 0.35) {
-		auto light = QRadialGradient(QPointF(width() * 0.3, height()), double(std::max(width(), height())));
-		light.setColorAt(0., QColor(255, 120, 35, int(70 * (_moodEnergy - 0.35) / 0.65)));
-		light.setColorAt(1., QColor(120, 45, 220, 0));
-		p.fillRect(rect(), light);
+	// Every full-screen layer costs milliseconds at 1440p, so each one is skipped while invisible.
+	if (_moodEnergy > 0.4 && !_lightCache.isNull()) {
+		p.setOpacity((_moodEnergy - 0.4) / 0.6);
+		p.drawPixmap(0, 0, _lightCache);
+		p.setOpacity(1.);
 	}
-	if (_moodRain > 0.02) p.fillRect(rect(), QColor(15, 35, 65, int(55 * _moodRain)));
-	if (_moodDark > 0.02) {
-		p.fillRect(rect(), QColor(15, 5, 25, int(110 * _moodDark)));
+	const auto rainAlpha = (_moodRain > 0.05) ? 55. * _moodRain : 0.;
+	const auto darkAlpha = (_moodDark > 0.05) ? 110. * _moodDark : 0.;
+	if (rainAlpha + darkAlpha >= 3.) {
+		const auto total = rainAlpha + darkAlpha;
+		p.fillRect(rect(), QColor(
+			int((15 * rainAlpha + 15 * darkAlpha) / total),
+			int((35 * rainAlpha + 5 * darkAlpha) / total),
+			int((65 * rainAlpha + 25 * darkAlpha) / total),
+			int(std::min(160., total))));
+	}
+	if (_moodDark > 0.05) {
 		if (!_lowQuality) {
 			p.setPen(QPen(QColor(150, 100, 180, int(32 * _moodDark)), 2. * _geometry.unit));
 			p.setBrush(Qt::NoBrush);
@@ -1583,7 +2020,7 @@ void LyricsWindow::paintBackground(QPainter &p, std::int64_t position) {
 	const auto strength = std::min(1., std::max(double(pulse(position)) * 0.8, _redBoost * 0.9)
 		+ (inChorus(position) ? 0.12 : 0.)
 		+ (alarm() ? 0.2 : 0.));
-	if (strength > (_lowQuality ? 0.3 : 0.01)) {
+	if (strength > (_lowQuality ? 0.3 : 0.05)) {
 		p.save();
 		p.setOpacity(strength);
 		p.drawPixmap(0, 0, _glowCache);
@@ -1638,40 +2075,53 @@ void LyricsWindow::paintGlass(QPainter &p, const QRectF &rect, std::int64_t posi
 			auto path = QPainterPath();
 			path.addRoundedRect(local, radius, radius);
 			q.setClipPath(path);
-			const auto sx = double(_frost.width()) / std::max(1, width());
-			const auto sy = double(_frost.height()) / std::max(1, height());
-			q.drawPixmap(
-				local,
-				_frost,
-				QRectF(rect.left() * sx, rect.top() * sy, rect.width() * sx, rect.height() * sy));
-			q.fillRect(local, QColor(255, 255, 255, 26));
-			auto sheen = QLinearGradient(local.topLeft(), local.bottomLeft());
-			sheen.setColorAt(0., QColor(255, 255, 255, 34));
-			sheen.setColorAt(0.35, QColor(255, 255, 255, 8));
-			sheen.setColorAt(1., QColor(0, 0, 0, 30));
-			q.fillRect(local, sheen);
+			q.drawImage(local, RefractedGlass(_frostImage, size(), rect, radius, s, ratio));
+			// Frosted glass: a light veil, a specular bloom from the top-left and depth at the bottom.
+			q.fillRect(local, QColor(255, 255, 255, 14));
+			auto specular = QRadialGradient(
+				QPointF(local.width() * 0.18, -local.height() * 0.1),
+				std::max(local.width(), local.height()) * 0.8);
+			specular.setColorAt(0., QColor(255, 255, 255, 46));
+			specular.setColorAt(0.55, QColor(255, 255, 255, 10));
+			specular.setColorAt(1., QColor(255, 255, 255, 0));
+			q.fillRect(local, specular);
+			auto depth = QLinearGradient(local.topLeft(), local.bottomLeft());
+			depth.setColorAt(0., QColor(0, 0, 0, 0));
+			depth.setColorAt(0.65, QColor(0, 0, 0, 0));
+			depth.setColorAt(1., QColor(0, 0, 0, 38));
+			q.fillRect(local, depth);
 			q.setClipping(false);
-			auto border = QLinearGradient(local.topLeft(), local.bottomLeft());
-			border.setColorAt(0., QColor(255, 255, 255, 70));
-			border.setColorAt(1., QColor(255, 255, 255, 18));
-			q.setPen(QPen(QBrush(border), 1.4 * s));
 			q.setBrush(Qt::NoBrush);
-			q.drawRoundedRect(local.marginsRemoved(QMarginsF(0.7, 0.7, 0.7, 0.7)), radius, radius);
-			auto inner = QLinearGradient(local.topLeft(), local.topRight());
-			inner.setColorAt(0., QColor(255, 255, 255, 0));
-			inner.setColorAt(0.5, QColor(255, 255, 255, 90));
-			inner.setColorAt(1., QColor(255, 255, 255, 0));
-			q.setPen(QPen(QBrush(inner), 1.2 * s));
-			q.drawLine(QPointF(radius, 1.6 * s), QPointF(local.width() - radius, 1.6 * s));
+			auto rim = QLinearGradient(local.topLeft(), local.bottomRight());
+			rim.setColorAt(0., QColor(255, 255, 255, 120));
+			rim.setColorAt(0.35, QColor(255, 255, 255, 34));
+			rim.setColorAt(0.7, QColor(255, 255, 255, 14));
+			rim.setColorAt(1., QColor(255, 255, 255, 60));
+			q.setPen(QPen(QBrush(rim), 1.5 * s));
+			q.drawRoundedRect(local.marginsRemoved(QMarginsF(0.75, 0.75, 0.75, 0.75)), radius, radius);
+			auto glow = QLinearGradient(local.topLeft(), local.bottomLeft());
+			glow.setColorAt(0., QColor(255, 255, 255, 34));
+			glow.setColorAt(0.25, QColor(255, 255, 255, 0));
+			q.setPen(QPen(QBrush(glow), 3. * s));
+			const auto inset = 2.6 * s;
+			q.drawRoundedRect(local.marginsRemoved(QMarginsF(inset, inset, inset, inset)), radius - inset, radius - inset);
 		}
 		_glassCache.emplace_back(rect, Ui::PixmapFromImage(std::move(image)));
 		cached = &_glassCache.back().second;
 	}
 	p.drawPixmap(rect.topLeft().toPoint(), *cached);
-	const auto red = std::max(double(pulse(position)) * 0.6, _redBoost);
-	if (red > 0.01) {
+	// Beats light the glass in the track's own colour; red stays with the health scene.
+	const auto health = (_theme == Theme::Health);
+	const auto beat = health
+		? std::max(double(pulse(position)) * 0.6, _redBoost)
+		: double(pulse(position)) * 0.5;
+	if (beat > 0.03) {
+		auto tint = health
+			? QColor(210, 22, 40)
+			: (_tone.isValid() && !_toneMono) ? Shade(_tone, 0.6, 1.) : QColor(255, 255, 255);
+		tint.setAlpha(int((health ? 55 : 34) * std::min(1., beat)));
 		p.setPen(Qt::NoPen);
-		p.setBrush(QColor(210, 22, 40, int(55 * red)));
+		p.setBrush(tint);
 		p.drawRoundedRect(rect, radius, radius);
 	}
 }
@@ -1723,8 +2173,7 @@ void LyricsWindow::paintStar(QPainter &p, const QRectF &rect, bool filled) const
 
 void LyricsWindow::paintWeatherChip(QPainter &p) {
 	const auto u = _geometry.unit * 1.7;
-	const auto pillWidth = std::max(_pillWidth, 200. * _geometry.unit);
-	const auto pillRight = _geometry.pill.center().x() + pillWidth / 2.;
+	const auto pillRight = pillRect().right();
 	const auto height = _geometry.pill.height() * 0.72;
 	const auto real = _weather.ok;
 	const auto title = real
@@ -1815,14 +2264,104 @@ void LyricsWindow::paintWeatherChip(QPainter &p) {
 	p.restore();
 }
 
+QRectF LyricsWindow::pillRect() const {
+	const auto s = _geometry.unit;
+	const auto e = std::max(0., _pillExpand);
+	const auto collapsed = std::max(_pillWidth, 200. * s);
+	const auto width = collapsed + (600. * s - collapsed) * e;
+	const auto height = _geometry.pill.height() + (230. * s - _geometry.pill.height()) * e;
+	return QRectF(_geometry.pill.center().x() - width / 2., _geometry.pill.top(), width, height);
+}
+
+LyricsWindow::PillButtons LyricsWindow::pillButtons(const QRectF &rect) const {
+	const auto s = rect.height() / 230.;
+	const auto size = 48. * s;
+	const auto y = rect.top() + 188. * s - size / 2.;
+	const auto cx = rect.center().x();
+	return {
+		.previous = QRectF(cx - 84. * s - size / 2., y, size, size),
+		.play = QRectF(cx - size / 2., y, size, size),
+		.next = QRectF(cx + 84. * s - size / 2., y, size, size),
+	};
+}
+
+void LyricsWindow::paintPillExpanded(QPainter &p, const QRectF &rect, std::int64_t position) {
+	const auto s = rect.height() / 230.;
+	const auto pad = 22. * s;
+	const auto cover = QRectF(rect.left() + pad, rect.top() + pad, 100. * s, 100. * s);
+	{
+		auto path = QPainterPath();
+		path.addRoundedRect(cover, 18. * s, 18. * s);
+		p.save();
+		p.setClipPath(path);
+		paintArt(p, cover, 1., QPointF());
+		p.restore();
+	}
+	const auto bass = pulse(position);
+	const auto now = crl::now() / 1000.;
+	p.setPen(Qt::NoPen);
+	p.setBrush(_tone.isValid() && !_toneMono ? Shade(_tone, 0.55, 1.) : QColor(255, 255, 255, 230));
+	for (auto i = 0; i != 5; ++i) {
+		const auto level = _playing
+			? (0.35 + 0.65 * std::abs(std::sin(now * (2.3 + 0.5 * i) + i * 1.4)) * (0.6 + 0.4 * bass))
+			: 0.3;
+		const auto h = std::max(4. * s, 26. * s * level);
+		const auto x = rect.right() - pad - (5 - i) * 8. * s;
+		p.drawRoundedRect(QRectF(x, cover.top() + 22. * s - h / 2., 4.5 * s, h), 2.2 * s, 2.2 * s);
+	}
+	const auto textLeft = cover.right() + 18. * s;
+	const auto textWidth = rect.right() - pad - 50. * s - textLeft;
+	const auto titleFont = makeFont(24. * s, QFont::Bold);
+	const auto artistFont = makeFont(17. * s);
+	p.setFont(titleFont);
+	p.setPen(QColor(255, 255, 255));
+	drawText(p, QPointF(textLeft, cover.top() + 40. * s), QFontMetrics(titleFont).elidedText(_title, Qt::ElideRight, int(textWidth)));
+	p.setFont(artistFont);
+	p.setPen(QColor(255, 255, 255, 150));
+	drawText(p, QPointF(textLeft, cover.top() + 70. * s), QFontMetrics(artistFont).elidedText(_artist, Qt::ElideRight, int(textWidth)));
+	const auto progress = (_duration > 0) ? std::clamp(double(position) / _duration, 0., 1.) : 0.;
+	const auto bar = QRectF(rect.left() + pad, rect.top() + 140. * s, rect.width() - 2 * pad, 5. * s);
+	FillProgress(p, bar, progress, QColor(255, 255, 255, 235));
+	const auto timeFont = makeFont(13. * s, QFont::DemiBold);
+	p.setFont(timeFont);
+	p.setPen(QColor(255, 255, 255, 140));
+	drawText(p, QPointF(bar.left(), bar.bottom() + 20. * s), Time(position));
+	drawText(p, QRectF(bar.left(), bar.bottom() + 6. * s, bar.width(), 20. * s), Qt::AlignRight | Qt::AlignVCenter, u"-"_q + Time(_duration - position));
+	const auto buttons = pillButtons(rect);
+	for (const auto &[area, control, glyph] : {
+			std::tuple{ buttons.previous, Control::PillPrevious, Control::Previous },
+			std::tuple{ buttons.play, Control::PillPlay, Control::PlayPause },
+			std::tuple{ buttons.next, Control::PillNext, Control::Next } }) {
+		if (_hovered == control || _pressed == control) {
+			p.setPen(Qt::NoPen);
+			p.setBrush(QColor(255, 255, 255, (_pressed == control) ? 46 : 26));
+			p.drawEllipse(area);
+		}
+		const auto inner = area.marginsRemoved(QMarginsF(area.width() * 0.22, area.width() * 0.22, area.width() * 0.22, area.width() * 0.22));
+		paintGlyph(p, glyph, inner, QColor(255, 255, 255));
+	}
+}
+
 void LyricsWindow::paintPill(QPainter &p, std::int64_t position) {
 	const auto u = _geometry.unit * 1.7;
-	const auto width = std::max(_pillWidth, 200. * _geometry.unit);
-	const auto rect = QRectF(_geometry.pill.center().x() - width / 2., _geometry.pill.top(), width, _geometry.pill.height());
+	const auto rect = pillRect();
+	const auto width = rect.width();
+	const auto e = std::clamp(_pillExpand, 0., 1.);
+	const auto radius = std::min(rect.height() / 2., _geometry.pill.height() / 2. + (44. * _geometry.unit - _geometry.pill.height() / 2.) * e);
 	p.setPen(Qt::NoPen);
 	p.setBrush(QColor(0, 0, 0, 240));
-	p.drawRoundedRect(rect, rect.height() / 2., rect.height() / 2.);
+	p.drawRoundedRect(rect, radius, radius);
+	if (e > 0.3) {
+		p.save();
+		p.setOpacity((e - 0.3) / 0.7);
+		paintPillExpanded(p, rect, position);
+		p.restore();
+	}
+	if (e >= 0.5) {
+		return;
+	}
 	p.save();
+	p.setOpacity(1. - e * 2.);
 	p.setClipRect(rect.adjusted(4. * u, 0, -4. * u, 0));
 	const auto pad = 6. * u;
 	if (_pillMode == PillMode::Alert) {
@@ -1841,40 +2380,6 @@ void LyricsWindow::paintPill(QPainter &p, std::int64_t position) {
 			rect.adjusted(0, 0, -14. * u, 0),
 			Qt::AlignRight | Qt::AlignVCenter,
 			QString::number(int(std::round(_heart))));
-	} else if (_pillMode == PillMode::Call) {
-		const auto avatar = QRectF(rect.left() + 7. * u, rect.top() + 6. * u, 22. * u, 22. * u);
-		p.setPen(Qt::NoPen);
-		p.setBrush(QColor(120, 120, 128));
-		p.drawEllipse(avatar);
-		p.setFont(makeFont(11. * u, QFont::Bold));
-		p.setPen(QColor(255, 255, 255));
-		drawText(p, avatar, Qt::AlignCenter, QString::fromUtf8("О"));
-		p.setFont(makeFont(10.5 * u, QFont::DemiBold));
-		drawText(p, QPointF(avatar.right() + 8. * u, rect.top() + 15. * u), QString::fromUtf8("Она"));
-		p.setFont(makeFont(8.5 * u));
-		p.setPen(QColor(255, 255, 255, 140));
-		drawText(p, QPointF(avatar.right() + 8. * u, rect.top() + 27. * u), QString::fromUtf8("FaceTime Audio…"));
-		const auto button = 24. * u;
-		const auto accept = QRectF(rect.right() - 6. * u - button, rect.top() + 5. * u, button, button);
-		const auto decline = accept.translated(-button - 8. * u, 0.);
-		const auto ring = 1. + 0.06 * std::sin(crl::now() / 90.);
-		for (const auto &[circle, color, angle] : {
-				std::tuple{ decline, QColor(255, 59, 48), 135. },
-				std::tuple{ accept, QColor(52, 199, 89), 0. } }) {
-			const auto scaled = QRectF(
-				circle.center() - QPointF(circle.width() * ring / 2., circle.height() * ring / 2.),
-				circle.size() * ring);
-			p.setPen(Qt::NoPen);
-			p.setBrush(color);
-			p.drawEllipse(scaled);
-			p.save();
-			p.translate(circle.center());
-			p.rotate(angle);
-			p.setPen(QPen(QColor(255, 255, 255), 2.6 * u, Qt::SolidLine, Qt::RoundCap));
-			p.setBrush(Qt::NoBrush);
-			p.drawArc(QRectF(-6. * u, -4. * u, 12. * u, 12. * u), 30 * 16, 120 * 16);
-			p.restore();
-		}
 	} else if (_pillMode == PillMode::Timer) {
 		const auto next = nextChorusStart(position);
 		const auto left = std::max<std::int64_t>(0, next - position);
@@ -2650,11 +3155,13 @@ void LyricsWindow::paintActiveLine(
 		if (word.accent && keywordOn && progress > 0.) {
 			const auto info = FindCategory(word.accent);
 			if (info && info->accent.isValid()) {
-				paintBloom(p, text, baseline, info->accent, 0.85 * emphasis * std::min(1., progress * 2.), index * 31 + i);
+				paintBloom(p, text, baseline, info->accent, 0.45 * emphasis * std::min(1., progress * 2.), index * 31 + i);
 			}
 		}
 		if (progress > 0. && progress < 1.) {
-			const auto pop = 1. + 0.05 * std::sin(kPi * progress) * emphasis;
+			const auto bass = double(pulse(position));
+			const auto pop = 1. + (0.05 + 0.06 * bass) * std::sin(kPi * progress) * emphasis;
+			paintBloom(p, text, baseline, QColor(255, 255, 255), 0.3 * emphasis * std::sin(kPi * std::min(1., progress * 1.6)), index * 31 + i);
 			const auto center = QPointF(baseline.x() + box.width() / 2., baseline.y() - _ascent * 0.35);
 			p.save();
 			p.translate(center);
@@ -2754,8 +3261,11 @@ void LyricsWindow::paintLyrics(QPainter &p, std::int64_t position) {
 			opacity = std::min(1., opacity + 0.2);
 		}
 		const auto emphasis = _emphasis[i];
-		const auto scale = kInactiveScale + (1. - kInactiveScale) * emphasis;
-		const auto origin = QPointF(area.left(), y);
+		// Energetic tracks make the sung line bounce on the kick; calm ones keep it still.
+		const auto drive = std::clamp((_energySmooth - 0.3) / 0.4, 0., 1.) * emphasis;
+		const auto kick = double(pulse(position)) * drive;
+		const auto scale = kInactiveScale + (1. - kInactiveScale) * emphasis + 0.035 * kick;
+		const auto origin = QPointF(area.left(), y - _rowHeight * 0.06 * kick);
 		p.save();
 		if (scale != 1.) {
 			p.translate(origin);
@@ -2767,9 +3277,10 @@ void LyricsWindow::paintLyrics(QPainter &p, std::int64_t position) {
 			const auto ratio = style::DevicePixelRatio();
 			const auto pad = (line.sharp.width() / double(ratio) - area.width()) / 2.;
 			const auto at = QPointF(area.left() - pad, y - pad).toPoint();
+			// Only the sung line is sharp; its neighbours sit behind a soft focus as in the reference.
 			const auto blur = (past
-				? std::clamp(0.5 * distance, 0., 1.)
-				: std::clamp((distance - 1) * 0.55, 0., 1.)) * (1. - emphasis);
+				? std::clamp(0.55 * distance, 0., 1.)
+				: std::clamp(0.45 + (distance - 1) * 0.35, 0., 1.)) * (1. - emphasis);
 			const auto base = opacity * fade * (1. - emphasis);
 			if (_lowQuality) {
 				p.setOpacity(base * (1. - blur * 0.55));
@@ -2853,6 +3364,7 @@ void LyricsWindow::paintLyrics(QPainter &p, std::int64_t position) {
 		}
 		p.restore();
 	}
+	paintInterlude(p, anchor);
 	p.restore();
 	p.setOpacity(1.);
 }
@@ -3466,11 +3978,29 @@ void LyricsWindow::loadCustomCover(const QString &path) {
 			if (image.width() > 2000 || image.height() > 1200) {
 				image = image.scaled(2000, 1200, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 			}
+			_customBlurred = Images::BlurLargeImage(
+				image.scaled(64, 64, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
+					.convertToFormat(QImage::Format_RGB32),
+				6);
 			_customCover = Ui::PixmapFromImage(std::move(image));
 		}
 	}
+	if (_customCover.isNull()) {
+		_customBlurred = QImage();
+	}
 	_cardArt = QPixmap();
+	updateTone();
+	requestBackdrop(false);
 	update();
+}
+
+void LyricsWindow::updateTone() {
+	// The scene follows the cover that is on screen: a custom karaoke cover wins over the track's.
+	const auto &shown = !_customCover.isNull() ? _customCover : !_art.isNull() ? _art : _blurred;
+	const auto tone = ExtractTone(shown.toImage());
+	_tone = tone.main;
+	_toneSecond = tone.second;
+	_toneMono = tone.mono;
 }
 
 void LyricsWindow::paintEqualizer(QPainter &p, const QRectF &rect, std::int64_t position) const {
@@ -3664,7 +4194,7 @@ void LyricsWindow::updateScene(crl::time now, std::int64_t position) {
 					if (_weather.ok) {
 						showToast(ToastKind::Weather, QString::fromUtf8("ПОГОДА"), Weather::Describe(_weather.code) + u", "_q + Weather::FormatDegrees(_weather.temperature), _weather.city + QString::fromUtf8(" · ощущается как ") + Weather::FormatDegrees(_weather.feels));
 					} else {
-						showToast(ToastKind::Weather, QString::fromUtf8("ПОГОДА"), QString::fromUtf8("Снегопад"), QString::fromUtf8("Ощущается как −18°"));
+
 					}
 					break;
 				case kNight: showToast(ToastKind::Clock, QString::fromUtf8("ЧАСЫ"), QString::fromUtf8("Ночь прошла"), QString::fromUtf8("07:00 · будильник выключен")); break;
@@ -3677,7 +4207,7 @@ void LyricsWindow::updateScene(crl::time now, std::int64_t position) {
 					if (_weather.ok) {
 						showToast(ToastKind::Weather, QString::fromUtf8("ПОГОДА"), Weather::Describe(_weather.code) + u", "_q + Weather::FormatDegrees(_weather.temperature), _weather.city + QString::fromUtf8(" · ощущается как ") + Weather::FormatDegrees(_weather.feels));
 					} else {
-						showToast(ToastKind::Weather, QString::fromUtf8("ПОГОДА"), QString::fromUtf8("Дождь усиливается"), QString::fromUtf8("+5°, ощущается как +1°"));
+
 					}
 					break;
 				case kMemory: showToast(ToastKind::Photo, QString::fromUtf8("ФОТО"), QString::fromUtf8("Воспоминание"), lineText); break;
@@ -4077,7 +4607,7 @@ void LyricsWindow::paintBloom(
 			Qt::IgnoreAspectRatio,
 			Qt::SmoothTransformation);
 		reduced.setDevicePixelRatio(1.);
-		reduced = Images::BlurLargeImage(std::move(reduced), 3);
+		reduced = SafeBlur(std::move(reduced), 3);
 		auto soft = reduced.scaled(image.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 		soft.setDevicePixelRatio(ratio);
 		if (_blooms.size() > 256) {
@@ -4799,7 +5329,7 @@ bool LyricsWindow::paintFxWord(
 	}
 	case kFxGold: {
 		const auto glow = std::min(1., age * 2.) * emphasis;
-		paintBloom(p, text, baseline, QColor(255, 176, 70), glow, seed);
+		paintBloom(p, text, baseline, QColor(255, 176, 70), 0.6 * glow, seed);
 		auto gradient = QLinearGradient(QPointF(0., baseline.y() - _ascent), QPointF(0., baseline.y()));
 		gradient.setColorAt(0., QColor(255, 236, 170, int(255 * (0.4 + 0.6 * progress))));
 		gradient.setColorAt(1., QColor(255, 170, 60, int(255 * (0.4 + 0.6 * progress))));
@@ -4920,33 +5450,33 @@ bool LyricsWindow::paintFxWord(
 	}
 	case kFxShine: {
 		const auto glow = Smooth(std::min(1., age / 0.45)) * emphasis;
-		const auto center = QPointF(baseline.x() + box.width() * 0.5, baseline.y() - _ascent * 0.4);
-		const auto reach = std::max(box.width() * 0.75, _rowHeight * 0.9);
+		paintBloom(p, text, baseline, QColor(255, 236, 190), 0.55 * glow, seed);
+		auto gradient = QLinearGradient(QPointF(0., baseline.y() - _ascent), QPointF(0., baseline.y()));
+		const auto alpha = int(255 * std::max(0.4, progress));
+		gradient.setColorAt(0., QColor(255, 255, 255, alpha));
+		gradient.setColorAt(1., QColor(255, 226, 170, alpha));
+		p.setPen(QPen(QBrush(gradient), 1.));
+		drawText(p, baseline, text);
+		// Two four-point sparkles twinkle at the word's corners instead of a spinning sunburst.
 		p.save();
 		p.setPen(Qt::NoPen);
-		auto halo = QRadialGradient(center, reach);
-		halo.setColorAt(0., QColor(255, 255, 255, int(110 * glow)));
-		halo.setColorAt(1., QColor(255, 255, 255, 0));
-		p.setBrush(halo);
-		p.drawEllipse(center, reach, reach);
-		p.translate(center);
-		p.rotate(std::fmod(crl::now() / 90., 360.));
-		p.setBrush(QColor(255, 255, 255, int(110 * glow)));
-		for (auto k = 0; k != 16; ++k) {
-			const auto length = reach * (0.55 + 0.45 * Hash01(std::uint32_t(seed), std::uint32_t(k), 101)) * glow;
-			const auto width = ((k % 2) ? 1.6 : 3.2) * s;
-			auto ray = QPainterPath();
-			ray.moveTo(0., -width);
-			ray.lineTo(length, 0.);
-			ray.lineTo(0., width);
-			ray.closeSubpath();
-			p.drawPath(ray);
-			p.rotate(360. / 16.);
+		for (auto k = 0; k != 2; ++k) {
+			const auto phase = std::fmod(crl::now() / 1400. + k * 0.5 + seed * 0.13, 1.);
+			const auto twinkle = std::sin(phase * kPi) * glow;
+			const auto at = QPointF(
+				baseline.x() + (k ? box.width() + 4. * s : -6. * s),
+				baseline.y() - _ascent * (k ? 0.95 : 0.25));
+			const auto r = (6. + 7. * twinkle) * s;
+			p.setBrush(QColor(255, 248, 225, int(235 * twinkle)));
+			auto star = QPainterPath();
+			star.moveTo(at.x(), at.y() - r);
+			star.quadTo(at, QPointF(at.x() + r, at.y()));
+			star.quadTo(at, QPointF(at.x(), at.y() + r));
+			star.quadTo(at, QPointF(at.x() - r, at.y()));
+			star.quadTo(at, QPointF(at.x(), at.y() - r));
+			p.drawPath(star);
 		}
 		p.restore();
-		paintBloom(p, text, baseline, QColor(255, 244, 214), 0.7 * glow, seed);
-		p.setPen(QColor(255, 255, 255, int(255 * std::max(0.4, progress))));
-		drawText(p, baseline, text);
 		return true;
 	}
 	case kFxSlash: {
@@ -4987,28 +5517,22 @@ bool LyricsWindow::paintFxWord(
 	}
 	case kFxImpact: {
 		const auto center = QPointF(baseline.x() + box.width() / 2., baseline.y() - _ascent * 0.4);
-		const auto flash = std::clamp(1. - age / 0.35, 0., 1.);
-		const auto wave = std::clamp(age / 0.7, 0., 1.);
-		if (flash > 0. || wave < 1.) {
+		// A local shock ring, not a full-screen flash: the word hits, the scene stays readable.
+		const auto wave = std::clamp(age / 0.6, 0., 1.);
+		if (wave < 1.) {
 			p.save();
-			p.setClipping(false);
-			if (flash > 0.) {
-				p.fillRect(QRectF(rect()), QColor(255, 255, 255, int(110 * flash * flash)));
-			}
-			if (wave < 1.) {
-				const auto r = (30. + 520. * Smooth(wave)) * s;
-				p.setPen(QPen(QColor(255, 255, 255, int(200 * (1. - wave))), (14. * (1. - wave) + 2.) * s));
-				p.setBrush(Qt::NoBrush);
-				p.drawEllipse(center, r, r);
-			}
+			const auto r = (box.width() * 0.5 + 90. * s * Smooth(wave));
+			p.setPen(QPen(QColor(255, 255, 255, int(120 * (1. - wave))), (5. * (1. - wave) + 1.) * s));
+			p.setBrush(Qt::NoBrush);
+			p.drawEllipse(center, r, r * 0.55);
 			p.restore();
 		}
-		const auto scale = 1. + 0.6 * std::exp(-8. * age);
+		const auto scale = 1. + 0.28 * std::exp(-9. * age) * std::cos(14. * age);
 		p.save();
 		p.translate(center);
 		p.scale(scale, scale);
 		p.translate(-center);
-		paintBloom(p, text, baseline, QColor(255, 255, 255), 0.9 * emphasis, seed);
+		paintBloom(p, text, baseline, QColor(255, 255, 255), 0.5 * emphasis, seed);
 		p.setPen(QColor(255, 255, 255, int(255 * std::max(0.5, progress))));
 		drawText(p, baseline, text);
 		p.restore();
@@ -5021,7 +5545,7 @@ bool LyricsWindow::paintFxWord(
 		auto deep = Mix(QColor(255, 255, 255), QColor(255, 105, 160), warm);
 		light.setAlpha(alpha);
 		deep.setAlpha(alpha);
-		paintBloom(p, text, baseline, QColor(255, 100, 165), warm * emphasis, seed);
+		paintBloom(p, text, baseline, QColor(255, 100, 165), 0.45 * warm * emphasis, seed);
 		auto gradient = QLinearGradient(QPointF(0., baseline.y() - _ascent), QPointF(0., baseline.y()));
 		gradient.setColorAt(0., light);
 		gradient.setColorAt(1., deep);
@@ -5060,9 +5584,11 @@ void LyricsWindow::paintFxOverlay(
 			path.lineTo(box.left() + box.width() * t, y + std::sin(t * 6. + seed) * 1.6 * s);
 		}
 		auto brush = QLinearGradient(QPointF(box.left(), 0.), QPointF(box.right(), 0.));
+		auto end = (_tone.isValid() && !_toneMono) ? Shade(_tone, 0.5, 1.) : QColor(255, 255, 255);
+		end.setAlpha(int(200 * opacity));
 		brush.setColorAt(0., white);
-		brush.setColorAt(1., QColor(255, 255, 255, int(150 * opacity)));
-		p.setPen(QPen(QBrush(brush), 3. * s, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+		brush.setColorAt(1., end);
+		p.setPen(QPen(QBrush(brush), 2.6 * s, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
 		p.setBrush(Qt::NoBrush);
 		p.drawPath(path);
 	} break;
@@ -6047,7 +6573,7 @@ void LyricsWindow::prepareTransition() {
 		Qt::IgnoreAspectRatio,
 		Qt::SmoothTransformation);
 	small.setDevicePixelRatio(1.);
-	small = Images::BlurLargeImage(std::move(small), 2);
+	small = SafeBlur(std::move(small), 2);
 	auto soft = small.scaled(frame.size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 	soft.setDevicePixelRatio(ratio);
 	_transitionBlur = Ui::PixmapFromImage(std::move(soft));
@@ -6077,6 +6603,18 @@ LyricsWindow::Control LyricsWindow::controlAt(QPoint point) const {
 	};
 	if (g.close.contains(at)) {
 		return Control::Close;
+	} else if (const auto pill = pillRect(); pill.contains(at)) {
+		if (_pillExpand > 0.85) {
+			const auto buttons = pillButtons(pill);
+			if (buttons.previous.contains(at)) {
+				return Control::PillPrevious;
+			} else if (buttons.play.contains(at)) {
+				return Control::PillPlay;
+			} else if (buttons.next.contains(at)) {
+				return Control::PillNext;
+			}
+		}
+		return Control::Pill;
 	} else if (!g.playerCard.isEmpty()) {
 		if (_profileState && _profileState() >= 0 && g.save.contains(at)) {
 			return Control::Save;
@@ -6129,12 +6667,15 @@ void LyricsWindow::activate(Control control, QPoint point) {
 		toggle(false);
 		break;
 	case Control::Previous:
+	case Control::PillPrevious:
 		player->previous(type);
 		break;
 	case Control::PlayPause:
+	case Control::PillPlay:
 		player->playPause(type);
 		break;
 	case Control::Next:
+	case Control::PillNext:
 		player->next(type);
 		break;
 	case Control::Repeat:
@@ -6225,10 +6766,15 @@ void LyricsWindow::mouseMoveEvent(QMouseEvent *e) {
 	}
 	const auto control = controlAt(e->pos());
 	const auto line = (control == Control::Line) ? lineAt(e->pos()) : -1;
+	_pillHovered = (control == Control::Pill)
+		|| (control == Control::PillPrevious)
+		|| (control == Control::PillPlay)
+		|| (control == Control::PillNext);
 	if (_hovered != control || _hoveredLine != line) {
 		_hovered = control;
 		_hoveredLine = line;
-		setCursor((control != Control::None) ? style::cur_pointer : style::cur_default);
+		const auto clickable = (control != Control::None) && (control != Control::Pill);
+		setCursor(clickable ? style::cur_pointer : style::cur_default);
 		update();
 	}
 }
@@ -6252,6 +6798,7 @@ void LyricsWindow::leaveEventHook(QEvent *e) {
 	if (_pressed == Control::None) {
 		_hovered = Control::None;
 		_hoveredLine = -1;
+		_pillHovered = false;
 		update();
 	}
 	RpWidget::leaveEventHook(e);
@@ -6273,6 +6820,12 @@ void LyricsWindow::keyPressEvent(QKeyEvent *e) {
 		return;
 	}
 	RpWidget::keyPressEvent(e);
+}
+
+void LyricsWindow::closeEvent(QCloseEvent *e) {
+	// WHY: Alt+F4 on the separate window would hide it behind toggle()'s back.
+	e->ignore();
+	toggle(false);
 }
 
 } // namespace AyuUi

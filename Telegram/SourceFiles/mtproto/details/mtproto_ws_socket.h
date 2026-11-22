@@ -48,6 +48,7 @@ private:
 		QString address;
 		QString sni;
 		bool fronted = false;
+		bool plain = false;
 	};
 
 	void handleError(int errorCode);

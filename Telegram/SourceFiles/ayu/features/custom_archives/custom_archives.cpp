@@ -16,6 +16,7 @@
 #include "data/notify/data_peer_notify_settings.h"
 #include "dialogs/dialogs_main_list.h"
 #include "history/history.h"
+#include "lang/lang_instance.h"
 #include "main/main_session.h"
 #include "ui/layers/generic_box.h"
 #include "ui/delayed_activation.h"
@@ -24,6 +25,8 @@
 #include "window/window_session_controller.h"
 
 #include <QCryptographicHash>
+#include <QtNetwork/QPasswordDigestor>
+#include <map>
 #include <set>
 
 namespace AyuFeatures::CustomArchives {
@@ -38,11 +41,117 @@ std::set<int> &UnlockedArchives() {
 	return QString::number(base::RandomValue<uint64>(), 16);
 }
 
-[[nodiscard]] QString HashSecret(const QString &salt, const QString &secret) {
+// "p2:" hashes are PBKDF2; old single SHA-256 ones still match and get upgraded.
+constexpr auto kStrongHashPrefix = "p2:";
+constexpr auto kPbkdf2Iterations = 150000;
+constexpr auto kFreeAttempts = 5;
+constexpr auto kFirstLockout = crl::time(30 * 1000);
+constexpr auto kMaxLockout = crl::time(15 * 60 * 1000);
+
+[[nodiscard]] QString LegacyHash(const QString &salt, const QString &secret) {
 	const auto bytes = QCryptographicHash::hash(
 		(salt + secret).toUtf8(),
 		QCryptographicHash::Sha256);
 	return QString::fromLatin1(bytes.toHex());
+}
+
+[[nodiscard]] QString HashSecret(const QString &salt, const QString &secret) {
+	const auto key = QPasswordDigestor::deriveKeyPbkdf2(
+		QCryptographicHash::Sha256,
+		secret.toUtf8(),
+		salt.toUtf8(),
+		kPbkdf2Iterations,
+		32);
+	return QString::fromLatin1(kStrongHashPrefix)
+		+ QString::fromLatin1(key.toHex());
+}
+
+[[nodiscard]] bool MatchSecret(
+		const QString &salt,
+		const QString &hash,
+		const QString &secret) {
+	return hash.startsWith(QLatin1String(kStrongHashPrefix))
+		? (HashSecret(salt, secret) == hash)
+		: (LegacyHash(salt, secret) == hash);
+}
+
+struct Attempts {
+	int failed = 0;
+	crl::time until = 0;
+};
+
+std::map<int, Attempts> &AttemptsMap() {
+	static auto result = std::map<int, Attempts>();
+	return result;
+}
+
+void RegisterFailure(int archiveId) {
+	auto &entry = AttemptsMap()[archiveId];
+	if (++entry.failed < kFreeAttempts) {
+		return;
+	}
+	const auto extra = std::min(entry.failed - kFreeAttempts, 5);
+	entry.until = crl::now()
+		+ std::min(kFirstLockout * (crl::time(1) << extra), kMaxLockout);
+}
+
+void ResetFailures(int archiveId) {
+	AttemptsMap().erase(archiveId);
+}
+
+// Checks a secret with brute-force protection and upgrades old hashes.
+[[nodiscard]] bool Verify(
+		int archiveId,
+		const QString &secret,
+		bool pin,
+		bool password) {
+	if (secret.isEmpty() || UnlockLockoutRemaining(archiveId) > 0) {
+		return false;
+	}
+	auto &settings = AyuSettings::getInstance();
+	const auto archive = settings.findCustomArchive(archiveId);
+	if (!archive) {
+		return false;
+	}
+	const auto pinOk = pin
+		&& archive->hasPin()
+		&& MatchSecret(archive->pinSalt, archive->pinHash, secret);
+	const auto passwordOk = !pinOk
+		&& password
+		&& archive->hasPassword()
+		&& MatchSecret(archive->passwordSalt, archive->passwordHash, secret);
+	if (!pinOk && !passwordOk) {
+		RegisterFailure(archiveId);
+		return false;
+	}
+	ResetFailures(archiveId);
+	const auto &hash = pinOk ? archive->pinHash : archive->passwordHash;
+	if (!hash.startsWith(QLatin1String(kStrongHashPrefix))) {
+		auto updated = *archive;
+		const auto salt = MakeSalt();
+		(pinOk ? updated.pinSalt : updated.passwordSalt) = salt;
+		(pinOk ? updated.pinHash : updated.passwordHash)
+			= HashSecret(salt, secret);
+		settings.updateCustomArchive(updated);
+	}
+	return true;
+}
+
+[[nodiscard]] QString Tr(const QString &ru, const QString &en) {
+	const auto id = Lang::GetInstance().id();
+	return (id.startsWith(u"ru"_q)
+		|| Lang::GetInstance().baseId().startsWith(u"ru"_q)) ? ru : en;
+}
+
+[[nodiscard]] QString ChatsCountText(int count) {
+	const auto mod10 = count % 10;
+	const auto mod100 = count % 100;
+	const auto ru = (mod10 == 1 && mod100 != 11)
+		? QString::fromUtf8("%1 чат")
+		: (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
+		? QString::fromUtf8("%1 чата")
+		: QString::fromUtf8("%1 чатов");
+	return Tr(ru, (count == 1) ? u"%1 chat"_q : u"%1 chats"_q).arg(count);
 }
 
 void ApplyMute(not_null<PeerData*> peer, bool muted) {
@@ -114,36 +223,23 @@ void LockArchive(int archiveId) {
 	UnlockedArchives().erase(archiveId);
 }
 
+crl::time UnlockLockoutRemaining(int archiveId) {
+	const auto i = AttemptsMap().find(archiveId);
+	return (i == AttemptsMap().end())
+		? 0
+		: std::max(i->second.until - crl::now(), crl::time(0));
+}
+
 bool CheckArchiveSecret(int archiveId, const QString &secret) {
-	const auto archive = AyuSettings::getInstance().findCustomArchive(archiveId);
-	if (!archive || secret.isEmpty()) {
-		return false;
-	}
-	if (archive->hasPin()
-		&& HashSecret(archive->pinSalt, secret) == archive->pinHash) {
-		return true;
-	}
-	if (archive->hasPassword()
-		&& HashSecret(archive->passwordSalt, secret) == archive->passwordHash) {
-		return true;
-	}
-	return false;
+	return Verify(archiveId, secret, true, true);
 }
 
 bool CheckArchivePin(int archiveId, const QString &pin) {
-	const auto archive = AyuSettings::getInstance().findCustomArchive(archiveId);
-	if (!archive || !archive->hasPin() || pin.isEmpty()) {
-		return false;
-	}
-	return HashSecret(archive->pinSalt, pin) == archive->pinHash;
+	return Verify(archiveId, pin, true, false);
 }
 
 bool CheckArchivePassword(int archiveId, const QString &password) {
-	const auto archive = AyuSettings::getInstance().findCustomArchive(archiveId);
-	if (!archive || !archive->hasPassword() || password.isEmpty()) {
-		return false;
-	}
-	return HashSecret(archive->passwordSalt, password) == archive->passwordHash;
+	return Verify(archiveId, password, false, true);
 }
 
 void SetArchivePin(int archiveId, const QString &pin) {
@@ -265,10 +361,14 @@ QString FolderSubtitle(
 		return QString();
 	}
 	if (archive->isLocked() && !IsArchiveUnlocked(folderId)) {
-		return QString::fromUtf8("Защищённая папка");
+		return Tr(
+			QString::fromUtf8("Защищённая папка"),
+			QString("Protected folder"));
 	}
 	if (archive->peerIds.empty()) {
-		return QString::fromUtf8("Пустая папка");
+		return Tr(
+			QString::fromUtf8("Пустая папка"),
+			QString("Empty folder"));
 	}
 	auto names = QStringList();
 	constexpr auto kMax = 3;
@@ -282,7 +382,7 @@ QString FolderSubtitle(
 		}
 	}
 	if (names.isEmpty()) {
-		return QString::fromUtf8("%1 чат(ов)").arg(int(archive->peerIds.size()));
+		return ChatsCountText(int(archive->peerIds.size()));
 	}
 	auto text = names.join(u", "_q);
 	if (int(archive->peerIds.size()) > names.size()) {
@@ -302,7 +402,9 @@ QString FolderIconEmoji(const QString &iconPath) {
 
 QString FolderTitle(int folderId) {
 	const auto archive = AyuSettings::getInstance().findCustomArchive(folderId);
-	return archive ? archive->name : QString::fromUtf8("Папка");
+	return archive
+		? archive->name
+		: Tr(QString::fromUtf8("Папка"), QString("Folder"));
 }
 
 not_null<Dialogs::MainList*> FolderChatsList(

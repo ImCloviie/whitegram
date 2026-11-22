@@ -6,25 +6,13 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
-#include "settings/settings_common.h"
-#include "settings/settings_common_session.h"
-
-namespace Window {
-class SessionController;
-} // namespace Window
+namespace Settings::Builder {
+class SectionBuilder;
+} // namespace Settings::Builder
 
 namespace Settings {
 
-class AyuGeneral : public Section<AyuGeneral> {
-public:
-	AyuGeneral(QWidget *parent, not_null<Window::SessionController*> controller);
-
-	[[nodiscard]] rpl::producer<QString> title() override;
-
-private:
-	void setupContent();
-};
-
-[[nodiscard]] Type AyuGeneralId();
+// Adds the former AyuGram "General" settings to a Whitegram page.
+void BuildAyuGeneralContent(Builder::SectionBuilder &builder);
 
 } // namespace Settings

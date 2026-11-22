@@ -15,9 +15,16 @@
 #include <QtGui/QScreen>
 #include <QtGui/QtEvents>
 
+#include <atomic>
 #include <cmath>
+#include <thread>
 #include <mutex>
 #include <random>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <dwmapi.h>
+#endif // Q_OS_WIN
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -489,6 +496,7 @@ struct WhitegramStartupScene::BackdropState {
 
 WhitegramStartupScene::WhitegramStartupScene()
 : _logo(AyuAssets::currentAppLogo())
+, _font(st::semiboldFont->f)
 , _backdropState(std::make_shared<BackdropState>()) {
 }
 
@@ -651,7 +659,7 @@ void WhitegramStartupScene::drawWordmark(
 		float64 opacity,
 		Fn<void(int, int, float64, float64&, QPointF&)> letter) {
 	const auto word = u"Whitegram"_q;
-	auto font = st::semiboldFont->f;
+	auto font = _font;
 	font.setPixelSize(std::max(8, int(minDim * 0.058)));
 	font.setLetterSpacing(QFont::PercentageSpacing, 112.);
 	const auto metrics = QFontMetricsF(font);
@@ -1497,22 +1505,418 @@ float64 WhitegramStartupFrameInterval(not_null<QWidget*> widget, int fps) {
 	return 1000. / std::max(rate, 1.);
 }
 
+#ifdef Q_OS_WIN
+// WHY: app startup stalls the main thread for seconds, so the splash draws on its own thread.
+class WhitegramStartupAnimation::Presenter final {
+public:
+	Presenter(HWND owner, int style, bool showIcon, int fps)
+	: _owner(owner)
+	, _style(style)
+	, _showIcon(showIcon)
+	, _fps(fps)
+	, _scene(std::make_unique<WhitegramStartupScene>()) {
+		RegisterWindowClass();
+		_thread = std::thread([=] { run(); });
+	}
+
+	~Presenter() {
+		_stop = true;
+		if (_thread.joinable()) {
+			_thread.join();
+		}
+	}
+
+	void setMargins(QMargins margins) {
+		auto lock = std::unique_lock(_mutex);
+		_margins = margins;
+	}
+
+	void skip() {
+		_skip = true;
+	}
+
+	[[nodiscard]] bool done() const {
+		return _done;
+	}
+
+	[[nodiscard]] bool failed() const {
+		return _failed;
+	}
+
+private:
+	static constexpr auto kClassName = L"WhitegramStartupSplash";
+
+	static void RegisterWindowClass() {
+		static auto registered = false;
+		if (registered) {
+			return;
+		}
+		registered = true;
+		auto wc = WNDCLASSEXW();
+		wc.cbSize = sizeof(wc);
+		wc.lpfnWndProc = DefWindowProcW;
+		wc.hInstance = GetModuleHandleW(nullptr);
+		wc.lpszClassName = kClassName;
+		RegisterClassExW(&wc);
+	}
+
+	static constexpr auto kHighResolutionTimer = DWORD(0x00000002);
+
+	// Keeps a steady cadence without queueing frames after a slow one.
+	static void waitForCadence(
+			HANDLE timer,
+			const QElapsedTimer &clock,
+			float64 &nextAt,
+			float64 interval) {
+		const auto now = clock.nsecsElapsed() / 1e6;
+		nextAt = std::max(nextAt + interval, now);
+		const auto wait = nextAt - now;
+		if (wait <= 0.05) {
+			return;
+		}
+		if (timer) {
+			auto due = LARGE_INTEGER();
+			due.QuadPart = -std::max(qint64(1), qint64(wait * 10000.));
+			if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+				WaitForSingleObject(timer, 100);
+				return;
+			}
+		}
+		Sleep(DWORD(std::max(1., std::round(wait))));
+	}
+
+	[[nodiscard]] QRect targetRect() const {
+		auto client = RECT();
+		if (!IsWindowVisible(_owner)
+			|| IsIconic(_owner)
+			|| !GetClientRect(_owner, &client)) {
+			return QRect();
+		}
+		auto origin = POINT{ 0, 0 };
+		ClientToScreen(_owner, &origin);
+		const auto margins = [&] {
+			auto lock = std::unique_lock(_mutex);
+			return _margins;
+		}();
+		return QRect(
+			origin.x + margins.left(),
+			origin.y + margins.top(),
+			client.right - margins.left() - margins.right(),
+			client.bottom - margins.top() - margins.bottom());
+	}
+
+	void run() {
+		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+		const auto hwnd = CreateWindowExW(
+			WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+			kClassName,
+			L"",
+			WS_POPUP,
+			0,
+			0,
+			1,
+			1,
+			_owner,
+			nullptr,
+			GetModuleHandleW(nullptr),
+			nullptr);
+		if (!hwnd) {
+			LOG(("Whitegram startup animation: no layered window, error %1"
+				).arg(GetLastError()));
+			_failed = true;
+			_done = true;
+			return;
+		}
+		const auto screen = GetDC(nullptr);
+		const auto memory = CreateCompatibleDC(screen);
+		auto bitmap = HBITMAP(nullptr);
+		auto previous = HGDIOBJ(nullptr);
+		auto image = QImage();
+		auto clock = QElapsedTimer();
+		auto shown = false;
+		auto hiding = false;
+		auto hideAt = qint64(0);
+		auto frames = 0;
+		auto slow = 0;
+		auto paintNs = qint64(0);
+		auto maxGapNs = qint64(0);
+		auto lastFrameNs = qint64(0);
+		auto presentNs = qint64(0);
+		auto waitNs = qint64(0);
+		const auto minInterval = (_fps > 0) ? (1000. / _fps) : 0.;
+		const auto frameInterval = [&] {
+			auto info = DWM_TIMING_INFO();
+			info.cbSize = sizeof(info);
+			auto frequency = LARGE_INTEGER();
+			QueryPerformanceFrequency(&frequency);
+			const auto refresh = (SUCCEEDED(DwmGetCompositionTimingInfo(nullptr, &info))
+				&& info.qpcRefreshPeriod
+				&& frequency.QuadPart)
+				? (info.qpcRefreshPeriod * 1000. / frequency.QuadPart)
+				: (1000. / 60.);
+			return std::max(refresh, minInterval);
+		}();
+		auto nextFrameAt = 0.;
+		const auto timer = CreateWaitableTimerExW(
+			nullptr,
+			nullptr,
+			kHighResolutionTimer,
+			TIMER_ALL_ACCESS);
+		const auto holdMs = WhitegramStartupScene::HoldDuration(_style);
+		const auto exitMs = WhitegramStartupScene::ExitDuration();
+
+		while (!_stop) {
+			auto msg = MSG();
+			while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+				TranslateMessage(&msg);
+				DispatchMessageW(&msg);
+			}
+			const auto rect = targetRect();
+			if (rect.width() <= 0 || rect.height() <= 0) {
+				Sleep(10);
+				continue;
+			}
+			if (image.size() != rect.size()) {
+				if (bitmap) {
+					SelectObject(memory, previous);
+					DeleteObject(bitmap);
+					bitmap = nullptr;
+				}
+				auto info = BITMAPINFO();
+				info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+				info.bmiHeader.biWidth = rect.width();
+				info.bmiHeader.biHeight = -rect.height();
+				info.bmiHeader.biPlanes = 1;
+				info.bmiHeader.biBitCount = 32;
+				info.bmiHeader.biCompression = BI_RGB;
+				auto bits = static_cast<void*>(nullptr);
+				bitmap = CreateDIBSection(
+					screen,
+					&info,
+					DIB_RGB_COLORS,
+					&bits,
+					nullptr,
+					0);
+				if (!bitmap || !bits) {
+					_failed = !shown;
+					break;
+				}
+				previous = SelectObject(memory, bitmap);
+				image = QImage(
+					static_cast<uchar*>(bits),
+					rect.width(),
+					rect.height(),
+					rect.width() * 4,
+					QImage::Format_ARGB32_Premultiplied);
+			}
+			if (!clock.isValid()) {
+				_scene->prewarm(rect.size(), 1., _style, _showIcon);
+				clock.start();
+			} else {
+				const auto waitStart = clock.nsecsElapsed();
+				waitForCadence(timer, clock, nextFrameAt, frameInterval);
+				waitNs += clock.nsecsElapsed() - waitStart;
+			}
+			const auto frameStart = clock.nsecsElapsed();
+			const auto elapsed = frameStart / 1000000;
+			if (!hiding && (_skip || elapsed >= holdMs)) {
+				hiding = true;
+				hideAt = elapsed;
+			}
+			const auto exit = hiding
+				? std::min(1., (elapsed - hideAt) / float64(exitMs))
+				: 0.;
+			if (exit > 0.) {
+				image.fill(Qt::transparent);
+			}
+			{
+				auto p = QPainter(&image);
+				_scene->paint(
+					p,
+					QSizeF(rect.size()),
+					elapsed,
+					_style,
+					_showIcon,
+					exit);
+			}
+			GdiFlush();
+			const auto presentStart = clock.nsecsElapsed();
+			auto position = POINT{ rect.x(), rect.y() };
+			auto size = SIZE{ rect.width(), rect.height() };
+			auto source = POINT{ 0, 0 };
+			auto blend = BLENDFUNCTION{ AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+			UpdateLayeredWindow(
+				hwnd,
+				screen,
+				&position,
+				&size,
+				memory,
+				&source,
+				0,
+				&blend,
+				ULW_ALPHA);
+			if (!shown) {
+				shown = true;
+				SetWindowPos(
+					hwnd,
+					nullptr,
+					0,
+					0,
+					0,
+					0,
+					(SWP_NOMOVE
+						| SWP_NOSIZE
+						| SWP_NOZORDER
+						| SWP_NOACTIVATE
+						| SWP_SHOWWINDOW));
+			}
+			++frames;
+			presentNs += clock.nsecsElapsed() - presentStart;
+			paintNs += presentStart - frameStart;
+			if (lastFrameNs) {
+				const auto gap = frameStart - lastFrameNs;
+				maxGapNs = std::max(maxGapNs, gap);
+				if (gap > 12000000) {
+					++slow;
+				}
+			}
+			lastFrameNs = frameStart;
+			if (hiding && exit >= 1.) {
+				break;
+			}
+
+		}
+		const auto total = clock.isValid() ? clock.elapsed() : 0;
+		LOG(("Whitegram startup animation: %1 frames in %2 ms (%3 fps), "
+			"paint avg %4 ms, max gap %5 ms, gaps over 12 ms %6, "
+			"size %7x%8, own thread, present %9 ms, wait %10 ms"
+			).arg(frames
+			).arg(total
+			).arg(total ? (frames * 1000. / total) : 0., 0, 'f', 1
+			).arg(paintNs / 1e6 / std::max(frames, 1), 0, 'f', 2
+			).arg(maxGapNs / 1e6, 0, 'f', 1
+			).arg(slow
+			).arg(image.width()
+			).arg(image.height()
+			).arg(presentNs / 1e6 / std::max(frames, 1), 0, 'f', 2
+			).arg(waitNs / 1e6 / std::max(frames, 1), 0, 'f', 2));
+		image = QImage();
+		ShowWindow(hwnd, SW_HIDE);
+		DestroyWindow(hwnd);
+		if (bitmap) {
+			SelectObject(memory, previous);
+			DeleteObject(bitmap);
+		}
+		DeleteDC(memory);
+		ReleaseDC(nullptr, screen);
+		if (timer) {
+			CloseHandle(timer);
+		}
+		_done = true;
+	}
+
+	const HWND _owner = nullptr;
+	const int _style = 0;
+	const bool _showIcon = true;
+	const int _fps = 0;
+	const std::unique_ptr<WhitegramStartupScene> _scene;
+	mutable std::mutex _mutex;
+	QMargins _margins;
+	std::atomic<bool> _stop = false;
+	std::atomic<bool> _skip = false;
+	std::atomic<bool> _done = false;
+	std::atomic<bool> _failed = false;
+	std::thread _thread;
+
+};
+#else // Q_OS_WIN
+class WhitegramStartupAnimation::Presenter final {
+public:
+	void setMargins(QMargins) {
+	}
+	void skip() {
+	}
+	[[nodiscard]] bool done() const {
+		return true;
+	}
+	[[nodiscard]] bool failed() const {
+		return true;
+	}
+};
+#endif // Q_OS_WIN
+
 WhitegramStartupAnimation::WhitegramStartupAnimation(QWidget *parent)
 : RpWidget(parent)
 , _style(NormalizeWhitegramStartupStyle(
 	AyuSettings::getInstance().startupAnimationType()))
 , _showIcon(AyuSettings::getInstance().startupAnimationShowIcon())
 , _hideTimer([=] { startHiding(); })
-, _updateTimer([=] { update(); }) {
-	// WHY: without this Qt repaints the whole window under the splash on
-	// every frame, which was what capped the frame rate.
-	setAttribute(Qt::WA_OpaquePaintEvent);
+, _updateTimer([=] { update(); })
+, _pollTimer([=] { pollPresenter(); }) {
 	setFocusPolicy(Qt::StrongFocus);
 	setCursor(style::cur_pointer);
+#ifdef Q_OS_WIN
+	if (const auto owner = HWND(window()->winId())) {
+		_presenter = std::make_unique<Presenter>(
+			owner,
+			_style,
+			_showIcon,
+			AyuSettings::getInstance().startupAnimationFps());
+		updatePresenterGeometry();
+		_pollTimer.callEach(30);
+	}
+#endif // Q_OS_WIN
+	if (!_presenter) {
+		startOwnPainting();
+	}
 	show();
 	raise();
 	setFocus();
+}
+
+WhitegramStartupAnimation::~WhitegramStartupAnimation() = default;
+
+void WhitegramStartupAnimation::startOwnPainting() {
+	// WHY: otherwise Qt repaints the whole window under the splash every frame.
+	setAttribute(Qt::WA_OpaquePaintEvent);
 	update();
+}
+
+void WhitegramStartupAnimation::pollPresenter() {
+	if (!_presenter || !_presenter->done()) {
+		return;
+	}
+	const auto failed = _presenter->failed();
+	_presenter = nullptr;
+	_pollTimer.cancel();
+	if (failed) {
+		startOwnPainting();
+	} else {
+		hide();
+		deleteLater();
+	}
+}
+
+void WhitegramStartupAnimation::updatePresenterGeometry() {
+	if (!_presenter) {
+		return;
+	}
+	const auto ratio = devicePixelRatioF();
+	const auto topLeft = mapTo(window(), QPoint());
+	const auto outer = window()->size();
+	_presenter->setMargins(QMargins(
+		int(std::round(topLeft.x() * ratio)),
+		int(std::round(topLeft.y() * ratio)),
+		int(std::round((outer.width() - topLeft.x() - width()) * ratio)),
+		int(std::round((outer.height() - topLeft.y() - height()) * ratio))));
+}
+
+void WhitegramStartupAnimation::resizeEvent(QResizeEvent *e) {
+	updatePresenterGeometry();
+}
+
+void WhitegramStartupAnimation::moveEvent(QMoveEvent *e) {
+	updatePresenterGeometry();
 }
 
 void WhitegramStartupAnimation::scheduleNextFrame() {
@@ -1550,14 +1954,25 @@ void WhitegramStartupAnimation::startHiding() {
 }
 
 void WhitegramStartupAnimation::mousePressEvent(QMouseEvent *e) {
-	startHiding();
+	if (_presenter) {
+		_presenter->skip();
+	} else {
+		startHiding();
+	}
 }
 
 void WhitegramStartupAnimation::keyPressEvent(QKeyEvent *e) {
-	startHiding();
+	if (_presenter) {
+		_presenter->skip();
+	} else {
+		startHiding();
+	}
 }
 
 void WhitegramStartupAnimation::paintEvent(QPaintEvent *e) {
+	if (_presenter) {
+		return;
+	}
 	auto timer = QElapsedTimer();
 	timer.start();
 	auto p = QPainter(this);

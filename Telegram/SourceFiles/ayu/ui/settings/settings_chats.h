@@ -6,25 +6,13 @@
 // Copyright @Radolyn, 2026
 #pragma once
 
-#include "settings/settings_common.h"
-#include "settings/settings_common_session.h"
-
-namespace Window {
-class SessionController;
-} // namespace Window
+namespace Settings::Builder {
+class SectionBuilder;
+} // namespace Settings::Builder
 
 namespace Settings {
 
-class AyuChats : public Section<AyuChats> {
-public:
-	AyuChats(QWidget *parent, not_null<Window::SessionController*> controller);
-
-	[[nodiscard]] rpl::producer<QString> title() override;
-
-private:
-	void setupContent();
-};
-
-[[nodiscard]] Type AyuChatsId();
+// Adds the former AyuGram "Chats" settings to a Whitegram page.
+void BuildAyuChatsContent(Builder::SectionBuilder &builder);
 
 } // namespace Settings

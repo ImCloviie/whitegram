@@ -95,6 +95,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 
 // AyuGram includes
+#include "ayu/features/whitegram_e2ee/whitegram_one_time_media.h"
 #include "ayu/ayu_settings.h"
 #include "ayu/features/filters/filters_controller.h"
 #include "ayu/features/message_shot/message_shot.h"
@@ -3096,6 +3097,11 @@ void HistoryItem::updateSentContent(
 			refreshSentMedia(media);
 		}
 	}
+	if (Whitegram::E2EE::IsEncryptedMessage(textWithEntities.text)
+		&& !dynamic_cast<Whitegram::E2EE::OneTimeMedia*>(_media.get())) {
+		setText(textWithEntities);
+		history()->owner().requestItemViewRefresh(this);
+	}
 	history()->owner().requestItemResize(this);
 }
 
@@ -4954,6 +4960,9 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 	auto text = textWithEntities;
 	if (Whitegram::E2EE::IsEncryptedMessage(text.text)) {
 		Whitegram::E2EE::SaveEncryptedPayload(this, text.text);
+		if (!dynamic_cast<Whitegram::E2EE::OneTimeMedia*>(_media.get())) {
+			_media = std::make_unique<Whitegram::E2EE::OneTimeMedia>(this);
+		}
 
 		const auto peerId = history()->peer->id.value;
 		const auto msgId = id.bare;
@@ -4966,7 +4975,7 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 		// profile, but they cannot decrypt the zero-width payload.
 		const auto bubbleText = u"🔒 Одноразовое сообщение Whitegram"_q;
 		const auto hintLine = u"Нажмите, чтобы открыть"_q;
-		const auto profileLine = u"Установка: https://t.me/imcloviie"_q;
+		const auto profileLine = u"Скачать Whitegram: https://t.me/whitegrambeta"_q;
 
 		auto finalText = TextWithEntities();
 		finalText.text = bubbleText + u"\n\n"_q + hintLine + u"\n\n"_q + profileLine;
@@ -4984,7 +4993,7 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 			EntityType::Url,
 			finalText.text.length() - profileLine.length(),
 			profileLine.length(),
-			u"https://t.me/imcloviie"_q));
+			u"https://t.me/whitegrambeta"_q));
 
 		text = finalText;
 	} else {

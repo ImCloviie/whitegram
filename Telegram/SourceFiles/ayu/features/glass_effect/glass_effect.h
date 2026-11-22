@@ -3,6 +3,7 @@
 #pragma once
 
 class QPainter;
+class QRect;
 class QWidget;
 
 namespace AyuFeatures::GlassEffect {
@@ -23,6 +24,9 @@ void PaintLayerBackdrop(QPainter &p, QWidget *layer, int radius);
 // A widget on the window glass that uses the emoji panel colors, like the
 // sticker column: while it is visible those colors follow the glass too.
 void RegisterSidePanel(QWidget *panel);
+
+// Same glass for a popup over the chat (emoji panel), inside `area`.
+void PaintPopupBackdrop(QPainter &p, QWidget *popup, QRect area, int radius);
 
 // Applies the saved state; called once after settings are loaded.
 void init();

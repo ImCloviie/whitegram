@@ -4280,15 +4280,22 @@ void ComposeControls::setupSendMenu(
 				const auto peer = _history->peer;
 				const auto recipientId = peerToUser(peer->id).bare;
 
-				const auto doEncryptAndSend = [=](const QByteArray &pubKey) {
+				const auto doEncryptAndSend = [=](std::vector<QByteArray> keys) {
+					if (keys.empty()) {
+						_show->showToast(Whitegram::E2EE::NoRecipientKeyText());
+						return;
+					}
 					const auto encryptedText = Whitegram::E2EE::Encrypt(
 						textWithTags.text,
 						effectiveTtl,
 						myUserId,
 						recipientId,
-						pubKey);
-
-					if (!encryptedText.isEmpty()) {
+						keys);
+					if (encryptedText.isEmpty()) {
+						_show->showToast(Whitegram::E2EE::TooLongText());
+						return;
+					}
+					{
 						auto options = action.options;
 						options.scheduled = 0;
 						const auto nextLocalMessageId = session().data().nextLocalMessageId();
@@ -4303,18 +4310,18 @@ void ComposeControls::setupSendMenu(
 							sentContent);
 
 						if (_sendWithText) {
-							_sendWithText(TextWithEntities{ encryptedText }, options, nullptr);
+							_sendWithText(TextWithEntities{ encryptedText, { EntityInText(EntityType::Bold, 0, Whitegram::E2EE::PlaceholderTitleLength()) } }, options, nullptr);
 						} else {
-							_field->setTextWithTags(TextWithTags{ encryptedText }, Ui::InputField::HistoryAction::Clear);
+							_field->setTextWithTags(TextWithTags{ encryptedText, { { 0, Whitegram::E2EE::PlaceholderTitleLength(), Ui::InputField::kTagBold } } }, Ui::InputField::HistoryAction::Clear);
 							send(options);
 						}
 					}
 				};
 
 				if (recipientId == myUserId) {
-					doEncryptAndSend(Whitegram::E2EE::GetMyPublicKey());
+					doEncryptAndSend({ Whitegram::E2EE::GetMyPublicKey() });
 				} else {
-					Whitegram::E2EE::KeyManager::Instance().withPeerKey(
+					Whitegram::E2EE::KeyManager::Instance().withPeerKeys(
 						_show,
 						recipientId,
 						doEncryptAndSend);

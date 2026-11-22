@@ -80,7 +80,7 @@ void BuildTranslator(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		| rpl::map([=](int val) { return availableOptions[val].second; });
 
 	const auto button = builder.addButton({
-		.id = u"ayu/translationProvider"_q,
+		.id = u"white/translationProvider"_q,
 		.title = tr::ayu_TranslationProvider(),
 		.st = &st::settingsButtonNoIcon,
 		.label = std::move(currentVal),
@@ -132,8 +132,8 @@ void BuildShowPeerId(SectionBuilder &builder) {
 
 	const auto controller = builder.controller();
 	builder.addButton({
-		.id = u"ayu/showPeerId"_q,
-		.altIds = { u"ayu/showIdAndDc"_q },
+		.id = u"white/showPeerId"_q,
+		.altIds = { u"white/showIdAndDc"_q },
 		.title = tr::ayu_SettingsShowID(),
 		.st = &st::settingsButtonNoIcon,
 		.label = std::move(currentVal),
@@ -163,20 +163,10 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 
 	builder.addSubsectionTitle(tr::ayu_CategoryGeneral());
 
-	const auto viewOnceTitle = Lang::Id().startsWith(u"ru"_q)
-		? u"Скрывать Telegram в режиме стримера при просмотре одноразового контента"_q
-		: u"Hide Telegram like streamer mode while viewing view-once media"_q;
-	ayu.addSettingToggle({
-		.id = u"whitegram/hideTelegramOnViewOnce"_q,
-		.title = rpl::single(QString(viewOnceTitle)),
-		.getter = &AyuSettings::hideTelegramOnViewOnce,
-		.setter = &AyuSettings::setHideTelegramOnViewOnce,
-	});
-
 	const auto controller = builder.controller();
 	ayu.addToggle({
-		.id = u"ayu/disableStories"_q,
-		.altIds = { u"ayu/hideStories"_q },
+		.id = u"white/disableStories"_q,
+		.altIds = { u"white/hideStories"_q },
 		.title = tr::ayu_DisableStories(),
 		.getter = [=] { return settings->disableStories(); },
 		.setter = [=](bool enabled) {
@@ -186,14 +176,14 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 
 	ayu.addSettingToggle({
-		.id = u"ayu/disableOpenLinkWarning"_q,
+		.id = u"white/disableOpenLinkWarning"_q,
 		.title = tr::ayu_DisableOpenLinkWarning(),
 		.getter = &AyuSettings::disableOpenLinkWarning,
 		.setter = &AyuSettings::setDisableOpenLinkWarning,
 	});
 
 	ayu.addCollapsibleToggle({
-		.id = u"ayu/similarChannels"_q,
+		.id = u"white/similarChannels"_q,
 		.title = tr::ayu_DisableSimilarChannels(),
 		.checkboxes = {
 			NestedEntry{
@@ -211,7 +201,7 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 
 	ayu.addSettingToggle({
-		.id = u"ayu/disableNotificationsDelay"_q,
+		.id = u"white/disableNotificationsDelay"_q,
 		.title = tr::ayu_DisableNotificationsDelay(),
 		.getter = &AyuSettings::disableNotificationsDelay,
 		.setter = &AyuSettings::setDisableNotificationsDelay,
@@ -220,7 +210,7 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	ayu.addSectionDivider();
 
 	const auto zalgoButton = builder.addButton({
-		.id = u"ayu/filterZalgo"_q,
+		.id = u"white/filterZalgo"_q,
 		.title = tr::ayu_FilterZalgo(),
 		.st = &st::settingsButtonNoIcon,
 		.toggled = rpl::single(settings->filterZalgo()),
@@ -241,13 +231,13 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	}
 
 	ayu.addSettingToggle({
-		.id = u"ayu/improveLinkPreviews"_q,
+		.id = u"white/improveLinkPreviews"_q,
 		.title = tr::ayu_ImproveLinkPreviews(),
 		.getter = &AyuSettings::improveLinkPreviews,
 		.setter = &AyuSettings::setImproveLinkPreviews,
 	});
 	ayu.addCollapsibleToggle({
-		.id = u"ayu/confirmations"_q,
+		.id = u"white/confirmations"_q,
 		.title = tr::ayu_ConfirmationsTitle(),
 		.checkboxes = {
 			NestedEntry{
@@ -274,8 +264,8 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 		.toggledWhenAll = false,
 	});
 	ayu.addSettingToggle({
-		.id = u"ayu/showMessageSeconds"_q,
-		.altIds = { u"ayu/formatTimeWithSeconds"_q },
+		.id = u"white/showMessageSeconds"_q,
+		.altIds = { u"white/formatTimeWithSeconds"_q },
 		.title = tr::ayu_SettingsShowMessageSeconds(),
 		.getter = &AyuSettings::showMessageSeconds,
 		.setter = &AyuSettings::setShowMessageSeconds,
@@ -288,14 +278,14 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	builder.addSubsectionTitle(rpl::single(QString("Webview")));
 
 	ayu.addSettingToggle({
-		.id = u"ayu/spoofWebviewAsAndroid"_q,
+		.id = u"white/spoofWebviewAsAndroid"_q,
 		.title = tr::ayu_SettingsSpoofWebviewAsAndroid(),
 		.getter = &AyuSettings::spoofWebviewAsAndroid,
 		.setter = &AyuSettings::setSpoofWebviewAsAndroid,
 	});
 
 	ayu.addCollapsibleToggle({
-		.id = u"ayu/biggerWindow"_q,
+		.id = u"white/biggerWindow"_q,
 		.title = tr::ayu_SettingsBiggerWindow(),
 		.checkboxes = {
 			NestedEntry{
@@ -313,40 +303,14 @@ void BuildQoLToggles(SectionBuilder &builder, AyuSectionBuilder &ayu) {
 	});
 }
 
-const auto kMeta = BuildHelper({
-	.id = AyuGeneral::Id(),
-	.parentId = AyuMain::Id(),
-	.title = &tr::ayu_CategoryGeneral,
-	.icon = &st::menuIconShowAll,
-}, [](SectionBuilder &builder) {
+} // namespace
+
+void BuildAyuGeneralContent(SectionBuilder &builder) {
 	auto ayu = AyuSectionBuilder(builder);
 
 	builder.addSkip();
 	BuildQoLToggles(builder, ayu);
 	builder.addSkip();
-});
-
-} // namespace
-
-rpl::producer<QString> AyuGeneral::title() {
-	return tr::ayu_CategoryGeneral();
-}
-
-AyuGeneral::AyuGeneral(
-	QWidget *parent,
-	not_null<Window::SessionController*> controller)
-: Section(parent, controller) {
-	setupContent();
-}
-
-void AyuGeneral::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	build(content, kMeta.build);
-	Ui::ResizeFitChild(this, content);
-}
-
-Type AyuGeneralId() {
-	return AyuGeneral::Id();
 }
 
 } // namespace Settings

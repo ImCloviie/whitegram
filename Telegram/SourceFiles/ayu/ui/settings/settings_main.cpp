@@ -30,7 +30,6 @@
 #include "ayu/ui/settings/settings_chats.h"
 #include "ayu/ui/settings/settings_filters.h"
 #include "ayu/ui/settings/settings_general.h"
-#include "ayu/ui/settings/settings_other.h"
 #include "core/version.h"
 #include "core/update_checker.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
@@ -49,6 +48,7 @@
 #include "ayu/ui/components/typing_animation_picker.h"
 #include "ui/toast/toast.h"
 #include "ui/painter.h"
+#include "lottie/lottie_icon.h"
 #include "ui/boxes/single_choice_box.h"
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
@@ -137,94 +137,6 @@ void BuildLogo(SectionBuilder &builder) {
 	});
 }
 
-void BuildVersionInfo(SectionBuilder &builder) {
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				rpl::single(
-					QString("AyuGram Desktop v")
-					+ QString::fromLatin1(AppVersionStr)),
-				st::boxTitle),
-			.align = style::al_top,
-		};
-	});
-
-	builder.addSkip();
-
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				tr::ayu_SettingsDescription(),
-				st::centeredBoxLabel),
-			.align = style::al_top,
-		};
-	});
-}
-
-void BuildAyuCategories(SectionBuilder &builder) {
-	builder.addSkip();
-	builder.addSkip();
-	builder.addSkip();
-	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
-
-	builder.addSubsectionTitle(tr::ayu_CategoriesHeader());
-
-	builder.addSectionButton({
-		.title = rpl::single(QString("AyuGram")),
-		.targetSection = AyuGhost::Id(),
-		.icon = { &st::menuIconGroupReactions },
-		.keywords = { u"ghost"_q, u"ayugram"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryFilters(),
-		.targetSection = AyuFilters::Id(),
-		.icon = { &st::menuIconTagFilter },
-		.keywords = { u"filters"_q, u"regex"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryGeneral(),
-		.targetSection = AyuGeneral::Id(),
-		.icon = { &st::menuIconShowAll },
-		.keywords = { u"general"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryAppearance(),
-		.targetSection = AyuAppearance::Id(),
-		.icon = { &st::menuIconPalette },
-		.keywords = { u"appearance"_q, u"theme"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryChats(),
-		.targetSection = AyuChats::Id(),
-		.icon = { &st::menuIconChatBubble },
-		.keywords = { u"chats"_q, u"messages"_q },
-	});
-	builder.addSectionButton({
-		.title = tr::ayu_CategoryOther(),
-		.targetSection = AyuOther::Id(),
-		.icon = { &st::menuIconFave },
-		.keywords = { u"other"_q, u"donate"_q },
-	});
-}
-
-const auto kAyuMeta = BuildHelper({
-	.id = AyuMain::Id(),
-	.parentId = MainId(),
-	.title = &tr::ayu_AyuPreferences,
-	.icon = &st::menuIconPremium,
-}, [](SectionBuilder &builder) {
-	BuildLogo(builder);
-	builder.addSkip();
-	BuildVersionInfo(builder);
-	BuildAyuCategories(builder);
-	builder.addSkip();
-});
-
-
 // Whitegram
 
 void BuildWhitegramVersionInfo(SectionBuilder &builder) {
@@ -259,8 +171,8 @@ void BuildWhitegramVersionInfo(SectionBuilder &builder) {
 			.widget = object_ptr<Ui::FlatLabel>(
 				ctx.container,
 				trWhitegram(
-					QString::fromUtf8("Улучшенный форк AyuGram с дополнительными функциями, эксклюзивной кастомизацией и уникальными возможностями."),
-					QString("An enhanced fork of AyuGram with additional features, exclusive customization, and unique capabilities.")),
+					QString::fromUtf8("Telegram Desktop с дополнительными функциями и настройками."),
+					QString("Telegram Desktop with extra features and settings.")),
 				st::centeredBoxLabel),
 			.align = style::al_top,
 		};
@@ -1299,133 +1211,237 @@ void BuildWhitegramUpdatesPage(SectionBuilder &builder) {
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
 }
 
+// One line of a "what will be removed" list: a muted icon and text.
+void AddSelfDestructInfoLine(
+		not_null<Ui::VerticalLayout*> container,
+		const style::icon &icon,
+		rpl::producer<QString> text) {
+	const auto &bst = st::settingsButton;
+	const auto row = container->add(object_ptr<Ui::RpWidget>(container));
+	const auto label = Ui::CreateChild<Ui::FlatLabel>(
+		row,
+		std::move(text),
+		st::whitegramSelfDestructInfoLabel);
+	const auto vskip = st::whitegramSelfDestructInfoSkip;
+	row->widthValue(
+	) | rpl::on_next([=](int width) {
+		const auto left = bst.padding.left();
+		label->resizeToWidth(std::max(width - left - bst.padding.right(), 1));
+		label->moveToLeft(left, vskip);
+		row->resize(
+			width,
+			std::max(label->height(), icon.height()) + 2 * vskip);
+	}, row->lifetime());
+	row->paintOn([=, &icon](QPainter &p) {
+		icon.paint(
+			p,
+			bst.iconLeft,
+			(row->height() - icon.height()) / 2,
+			row->width(),
+			st::windowSubTextFg->c);
+	});
+}
+
 void BuildWhitegramSelfDestructPage(SectionBuilder &builder) {
 	const auto controller = builder.controller();
-
-	// =========================================================================
-	// SECTION 1: Локальное самоуничтожение (Whitegram)
-	// =========================================================================
-	builder.addSkip();
-	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Локальное самоуничтожение Whitegram"),
-		QString("Local Whitegram self-destruct")));
-	builder.addDividerText(trWhitegram(
-		QString::fromUtf8(
-			"Удаляет всю папку с Whitegram на этом компьютере — клиент, "
-			"кэш, модули, tdata и логи. Ваши аккаунты Telegram останутся "
-			"нетронутыми на серверах. Для выполнения требуется пароль."),
-		QString(
-			"Removes the entire Whitegram folder on this computer — client, "
-			"cache, modules, tdata, and logs. Your Telegram accounts remain "
-			"untouched on servers. Requires a password to execute.")));
-	builder.addSkip();
-
-	builder.addButton({
-		.id = u"whitegram/localSelfDestructPassword"_q,
-		.title = trWhitegram(
-			QString::fromUtf8("Пароль"),
-			QString("Password")),
-		.icon = { &st::menuIconPermissions },
-		.label = rpl::combine(
-			Whitegram::SelfDestruct::HasPasswordValue(),
+	const auto passwordLabel = [](rpl::producer<bool> has) {
+		return rpl::combine(
+			std::move(has),
 			rpl::single(rpl::empty) | rpl::then(
 				Lang::GetInstance().idChanges() | rpl::to_empty)
 		) | rpl::map([](bool has, auto) {
 			const auto id = Lang::GetInstance().id();
 			const auto baseId = Lang::GetInstance().baseId();
-			const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
+			const auto isRu = id.startsWith(u"ru"_q)
+				|| baseId.startsWith(u"ru"_q);
 			return has
-				? (isRu ? QString::fromUtf8("Задан") : QString("Configured"))
+				? (isRu ? QString::fromUtf8("Задан") : QString("Set"))
 				: (isRu ? QString::fromUtf8("Не задан") : QString("Not set"));
-		}),
+		});
+	};
+	using InfoLines = std::vector<
+		std::pair<const style::icon*, std::pair<QString, QString>>>;
+	const auto lines = [](InfoLines list) {
+		return [=](const BuildContext &ctx) {
+			v::match(ctx, [&](const WidgetContext &wctx) {
+				for (const auto &[icon, text] : list) {
+					AddSelfDestructInfoLine(
+						wctx.container,
+						*icon,
+						trWhitegram(text.first, text.second));
+				}
+			}, [](const SearchContext &) {
+			});
+		};
+	};
+
+	// Header: a red circle with the auto-delete timer animation.
+	builder.add([](const BuildContext &ctx) {
+		v::match(ctx, [&](const WidgetContext &wctx) {
+			const auto container = wctx.container;
+			auto icon = CreateLottieIcon(
+				container,
+				{
+					.name = u"ttl"_q,
+					.sizeOverride = st::dialogsSuggestionDeniedAuthLottie,
+				},
+				st::dialogsSuggestionDeniedAuthLottieMargins,
+				[] { return st::windowFgActive->c; });
+			const auto animate = std::move(icon.animate);
+			const auto iconRow = container->add(
+				std::move(icon.widget),
+				st::settingsBlockedListIconPadding,
+				style::al_top);
+			const auto circle = Ui::CreateChild<Ui::RpWidget>(
+				container.get());
+			circle->lower();
+			circle->setAttribute(Qt::WA_TransparentForMouseEvents);
+			circle->paintOn([=](QPainter &p) {
+				auto hq = PainterHighQualityEnabler(p);
+				const auto size = st::dialogsSuggestionDeniedAuthLottieCircle;
+				p.setPen(Qt::NoPen);
+				p.setBrush(st::attentionButtonFg);
+				p.drawEllipse(QRect(
+					QPoint(
+						(circle->width() - size.width()) / 2,
+						(circle->height() - size.height()) / 2),
+					size));
+			});
+			iconRow->geometryValue(
+			) | rpl::on_next([=](const QRect &g) {
+				circle->setGeometry(g);
+			}, circle->lifetime());
+			animate(anim::repeat::once);
+
+			Ui::AddSkip(container);
+			container->add(
+				object_ptr<Ui::FlatLabel>(
+					container,
+					trWhitegram(
+						QString::fromUtf8("Самоуничтожение"),
+						QString("Self-destruct")),
+					st::boxTitle),
+				style::margins(),
+				style::al_top);
+			Ui::AddSkip(container, st::settingsCheckboxesSkip);
+			container->add(
+				object_ptr<Ui::FlatLabel>(
+					container,
+					trWhitegram(
+						QString::fromUtf8(
+							"Удаляет Whitegram за пару секунд, если к "
+							"компьютеру может получить доступ кто-то "
+							"другой. Пароль задаётся заранее."),
+						QString(
+							"Removes Whitegram in seconds if someone else "
+							"may get access to this computer. The password "
+							"is set in advance.")),
+					st::centeredBoxLabel),
+				st::boxRowPadding,
+				style::al_top);
+			Ui::AddSkip(container);
+		}, [](const SearchContext &) {
+		});
+	});
+
+	builder.addDivider();
+	builder.addSkip();
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Удалить Whitegram"),
+		QString("Remove Whitegram")));
+	builder.add(lines({
+		{ &st::menuIconChatBubble, {
+			QString::fromUtf8("Переписка и медиа на этом компьютере"),
+			QString("Chats and media on this computer") } },
+		{ &st::menuIconClear, {
+			QString::fromUtf8("Кэш, логи и временные файлы"),
+			QString("Cache, logs and temporary files") } },
+		{ &st::menuIconShortcut, {
+			QString::fromUtf8("Ярлыки и записи в Windows"),
+			QString("Shortcuts and Windows entries") } },
+	}));
+	builder.addSkip();
+	builder.addButton({
+		.id = u"whitegram/localSelfDestructPassword"_q,
+		.title = trWhitegram(
+			QString::fromUtf8("Пароль"),
+			QString("Password")),
+		.icon = { &st::menuIconLock },
+		.label = passwordLabel(Whitegram::SelfDestruct::HasPasswordValue()),
 		.onClick = [=] {
 			Whitegram::SelfDestruct::ShowSettings(controller);
 		},
 	});
-
-	builder.addSkip();
-
 	builder.addButton({
 		.id = u"whitegram/localSelfDestructExecute"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Уничтожить Whitegram"),
-			QString("Destroy Whitegram")),
+			QString::fromUtf8("Удалить Whitegram"),
+			QString("Remove Whitegram")),
 		.st = &st::settingsAttentionButtonWithIcon,
 		.icon = { &st::menuIconDeleteAttention },
 		.onClick = [=] {
 			Whitegram::SelfDestruct::ShowExecuteBox(controller);
 		},
 	});
-
 	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
-
-	// =========================================================================
-	// SECTION 2: Тотальное уничтожение (Whitegram + Аккаунты Telegram)
-	// =========================================================================
-	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Тотальное уничтожение (Whitegram + Аккаунты)"),
-		QString("Total destruction (Whitegram + Accounts)")));
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Экстренный режим: безвозвратно удаляет ВСЕ авторизованные "
-			"аккаунты Telegram с серверов (включая каналы, чаты, группы и данные), "
-			"после чего стирает Whitegram с ПК.\n\n"
-			"Для включения задаётся отдельный пароль и подтверждаются 2FA-пароли аккаунтов."),
+			"Аккаунты Telegram не затрагиваются: на телефоне и других "
+			"устройствах всё останется."),
 		QString(
-			"Emergency mode: permanently deletes ALL authorized "
-			"Telegram accounts from servers (including channels, chats, groups, data), "
-			"then erases Whitegram from this PC.\n\n"
-			"Requires a separate password and confirming 2FA passwords for accounts.")));
-	builder.addSkip();
+			"Telegram accounts are not affected: everything stays on "
+			"your phone and other devices.")));
 
+	builder.addSkip();
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Удалить вместе с аккаунтами"),
+		QString("Remove with accounts")));
+	builder.add(lines({
+		{ &st::menuIconProfile, {
+			QString::fromUtf8("Все аккаунты, в которые выполнен вход"),
+			QString("Every account you are logged into") } },
+		{ &st::menuIconChatBubble, {
+			QString::fromUtf8("Их переписка и контакты"),
+			QString("Their chats and contacts") } },
+		{ &st::menuIconDelete, {
+			QString::fromUtf8("Whitegram с этого компьютера"),
+			QString("Whitegram on this computer") } },
+	}));
+	builder.addSkip();
 	builder.addButton({
 		.id = u"whitegram/totalDestructPassword"_q,
 		.title = trWhitegram(
 			QString::fromUtf8("Пароль"),
 			QString("Password")),
-		.icon = { &st::menuIconPermissions },
-		.label = rpl::combine(
-			Whitegram::SelfDestruct::HasTotalDestructPasswordValue(),
-			rpl::single(rpl::empty) | rpl::then(
-				Lang::GetInstance().idChanges() | rpl::to_empty)
-		) | rpl::map([](bool has, auto) {
-			const auto id = Lang::GetInstance().id();
-			const auto baseId = Lang::GetInstance().baseId();
-			const auto isRu = id.startsWith(u"ru"_q) || baseId.startsWith(u"ru"_q);
-			return has
-				? (isRu ? QString::fromUtf8("Задан") : QString("Configured"))
-				: (isRu ? QString::fromUtf8("Не задан") : QString("Not set"));
-		}),
+		.icon = { &st::menuIconLock },
+		.label = passwordLabel(
+			Whitegram::SelfDestruct::HasTotalDestructPasswordValue()),
 		.onClick = [=] {
 			Whitegram::SelfDestruct::ShowTotalDestructSettingsBox(controller);
 		},
 	});
-
-	builder.addSkip();
-
 	builder.addButton({
 		.id = u"whitegram/totalDestructExecute"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Уничтожить Whitegram и удалить аккаунты"),
-			QString("Destroy Whitegram & delete accounts")),
+			QString::fromUtf8("Удалить Whitegram и аккаунты"),
+			QString("Remove Whitegram and accounts")),
 		.st = &st::settingsAttentionButtonWithIcon,
 		.icon = { &st::menuIconDeleteAttention },
 		.onClick = [=] {
 			Whitegram::SelfDestruct::ShowTotalDestructExecuteBox(controller);
 		},
 	});
-
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Внимание: удаление аккаунтов Telegram необратимо. Восстановление "
-			"каналов, переписок и прав владельца будет невозможно. "
-			"Забыли пароль? Удалите папку с Whitegram вручную."),
+			"Отменить нельзя. Созданные вами каналы и группы останутся "
+			"без владельца.\n\n"
+			"Нужен отдельный пароль и облачные пароли аккаунтов. Забыли "
+			"пароль — удалите папку Whitegram вручную."),
 		QString(
-			"Warning: Telegram account deletion is irreversible. Restoring "
-			"channels, messages, and ownership will be impossible. "
+			"This can't be undone. Channels and groups you created are "
+			"left without an owner.\n\n"
+			"Needs a separate password and the accounts' cloud passwords. "
 			"Forgot the password? Delete the Whitegram folder manually.")));
 	builder.addSkip();
 }
@@ -1441,31 +1457,52 @@ const auto kWhitegramUpdatesMeta = BuildHelper({
 	builder.addSkip();
 });
 
+void BuildWhitegramCrashReports(SectionBuilder &builder) {
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
+	auto ayu = AyuSectionBuilder(builder);
+	builder.addDivider();
+	builder.addSkip();
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Отчёты о сбоях"),
+		QString("Crash reports")));
+	ayu.addSettingToggle({
+		.id = u"white/crashReporting"_q,
+		.altIds = { u"white/crashlytics"_q },
+		.title = trWhitegram(
+			QString::fromUtf8("Предлагать отправку отчёта"),
+			QString("Offer to send a report")),
+		.getter = &AyuSettings::crashReporting,
+		.setter = &AyuSettings::setCrashReporting,
+		.icon = { &st::menuIconReport },
+	});
+	builder.addSkip();
+	builder.addDividerText(trWhitegram(
+		QString::fromUtf8(
+			"Если Whitegram аварийно закроется, при следующем запуске он "
+			"предложит отправить отчёт разработчикам. В отчёт входят "
+			"технический лог и дамп памяти приложения. Без вашего "
+			"согласия ничего не отправляется."),
+		QString(
+			"If Whitegram crashes, it offers to send a report to the "
+			"developers on the next launch. The report contains the "
+			"technical log and the app memory dump. Nothing is sent "
+			"without your consent.")));
+	builder.addSkip();
+#endif // !TDESKTOP_DISABLE_AUTOUPDATE
+}
+
 const auto kWhitegramGeneralMeta = BuildHelper({
 	.id = WhitegramGeneral::Id(),
 	.parentId = WhitegramMain::Id(),
 	.title = QString::fromUtf8("Основное"),
 	.icon = &st::menuIconShowAll,
 }, [](SectionBuilder &builder) {
-	builder.addSkip();
-
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Обновления, виджеты бокового меню и настройки "
-						"нескольких аккаунтов в одном окне."),
-					QString(
-						"Updates, side menu widgets, and multi-account "
-						"profiles in one window.")),
-				st::boxDividerLabel),
-		};
-	});
-
-	builder.addSkip();
-	builder.addDivider();
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Обновления, аккаунты и приватность."),
+			QString(
+				"Updates, accounts and privacy.")));
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
@@ -1627,9 +1664,6 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 			"Profiles let you keep multiple accounts in one window and "
 			"switch between them quickly. The limit is the maximum number "
 			"of profiles you can create.")));
-
-	builder.addSkip();
-	builder.addDivider();
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
@@ -1639,8 +1673,8 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 	ayu.addSettingToggle({
 		.id = u"whitegram/hideTelegramOnViewOnce"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Скрывать Telegram в режиме стримера при просмотре одноразового контента"),
-			QString("Hide Telegram like streamer mode while viewing view-once media")),
+			QString::fromUtf8("Скрывать окно от записи экрана при просмотре одноразовых медиа"),
+			QString("Hide window from screen capture while viewing view-once media")),
 		.getter = &AyuSettings::hideTelegramOnViewOnce,
 		.setter = &AyuSettings::setHideTelegramOnViewOnce,
 		.icon = { &st::ayuStreamerModeMenuIcon },
@@ -1721,6 +1755,10 @@ const auto kWhitegramGeneralMeta = BuildHelper({
 			"The 'On hover' mode is a Whitegram extension: the number shows "
 			"while the cursor is over it.")));
 	builder.addSkip();
+
+	BuildAyuGeneralContent(builder);
+	BuildAyuOtherToggles(builder);
+	BuildWhitegramCrashReports(builder);
 });
 
 void BuildWhitegramStartupSound(SectionBuilder &builder) {
@@ -1737,22 +1775,16 @@ void BuildWhitegramStartupSound(SectionBuilder &builder) {
 		.icon = { &st::menuIconSoundOn },
 	});
 
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Короткий звук при запуске Whitegram. Можно выбрать "
-						"свой файл (WAV, MP3, OGG, M4A) или оставить "
-						"стандартный звук Telegram."),
-					QString(
-						"A short sound when Whitegram starts. Pick your own "
-						"file (WAV, MP3, OGG, M4A) or keep the default "
-						"Telegram sound.")),
-				st::boxDividerLabel),
-		};
-	});
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Короткий звук при запуске Whitegram. Можно выбрать "
+				"свой файл (WAV, MP3, OGG, M4A) или оставить "
+				"стандартный звук Telegram."),
+			QString(
+				"A short sound when Whitegram starts. Pick your own "
+				"file (WAV, MP3, OGG, M4A) or keep the default "
+				"Telegram sound.")));
 
 	builder.addSkip();
 
@@ -1773,46 +1805,26 @@ void BuildWhitegramStartupSound(SectionBuilder &builder) {
 		QString::fromUtf8("Файл"),
 		QString("Sound file")));
 
-	builder.add([=](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		const auto label = Ui::CreateChild<Ui::FlatLabel>(
-			ctx.container.get(),
-			rpl::single(QString()),
-			st::boxLabel);
-		label->setAttribute(Qt::WA_TransparentForMouseEvents);
-		label->setTextColorOverride(st::windowActiveTextFg->c);
-
-		AyuSettings::getInstance().startupSoundPathValue(
-		) | rpl::on_next([=](const QString &path) {
-			const auto id = Lang::GetInstance().id();
-			const auto baseId = Lang::GetInstance().baseId();
-			const auto isRu = id.startsWith(u"ru"_q)
-				|| baseId.startsWith(u"ru"_q);
-			const auto missing = !path.isEmpty() && !QFileInfo::exists(path);
-			label->setText(formatCurrentSound(path));
-			label->setTextColorOverride(missing
-				? st::boxTextFgError->c
-				: st::windowActiveTextFg->c);
-			if (missing || !path.isEmpty()) {
-				label->setToolTip(path);
-			} else {
-				label->setToolTip(isRu
-					? QString::fromUtf8("Встроенный звук Telegram")
-					: QString("Built-in Telegram sound"));
-			}
-		}, label->lifetime());
-
-		return {
-			.widget = object_ptr<Ui::FlatLabel>::fromRaw(label),
-			.margin = st::boxRowPadding,
-		};
-	});
-
 	builder.addButton({
 		.id = u"whitegram/startupSoundChoose"_q,
 		.title = trWhitegram(
-			QString::fromUtf8("Выбрать файл…"),
-			QString("Choose file…")),
+			QString::fromUtf8("Звук"),
+			QString("Sound")),
 		.icon = { &st::menuIconFile },
+		.label = AyuSettings::getInstance().startupSoundPathValue(
+		) | rpl::map([=](const QString &path) {
+			const auto name = formatCurrentSound(path);
+			const auto missing = !path.isEmpty() && !QFileInfo::exists(path);
+			if (!missing) {
+				return name;
+			}
+			const auto id = Lang::GetInstance().id();
+			const auto isRu = id.startsWith(u"ru"_q)
+				|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+			return name + (isRu
+				? QString::fromUtf8(" (не найден)")
+				: QString(" (not found)"));
+		}),
 		.onClick = [=] {
 			const auto filters = u"Audio files (*.wav *.mp3 *.ogg *.m4a);;"_q
 				+ FileDialog::AllFilesFilter();
@@ -2158,11 +2170,9 @@ void BuildArchivesList(SectionBuilder &builder) {
 						layout,
 						trWhitegram(
 							QString::fromUtf8(
-								"Пока нет папок. Создайте первую — "
-								"можно сразу поставить PIN или пароль."),
+								"Папок пока нет."),
 							QString(
-								"No folders yet. Create the first one — "
-								"you can set a PIN or password right away.")),
+								"No folders yet.")),
 						st::boxDividerLabel),
 					st::boxRowPadding);
 			}
@@ -2213,32 +2223,21 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 	.title = QString::fromUtf8("Папки чатов"),
 	.icon = &st::menuIconArchive,
 }, [](SectionBuilder &builder) {
-	builder.addSkip();
-
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Свои папки в списке чатов — отдельно от обычного "
-						"архива Telegram. Чаты можно скрыть из основного "
-						"списка и защитить PIN или паролем."),
-					QString(
-						"Your own folders in the chat list — separate from "
-						"Telegram’s archive. Hide chats from the main list "
-						"and protect folders with a PIN or password.")),
-				st::boxDividerLabel),
-		};
-	});
-
-	builder.addSkip();
-	builder.addDivider();
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Отдельные папки для чатов. Чаты из них можно убрать "
+				"из общего списка, а саму папку закрыть PIN-кодом "
+				"или паролем."),
+			QString(
+				"Separate folders for chats. You can remove their "
+				"chats from the main list and lock the folder with "
+				"a PIN or password.")));
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Основное"),
-		QString("General")));
+		QString::fromUtf8("Настройки"),
+		QString("Settings")));
 
 	auto ayu = AyuSectionBuilder(builder);
 	ayu.addSettingToggle({
@@ -2263,16 +2262,15 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"«Сохранять папки вручную» — правки применяются после "
-			"«Сохранить». Если выключить, изменения входят в силу сразу "
-			"и кнопки «Сохранить» не будет.\n\n"
-			"Если выключить сами папки, они исчезнут из списка чатов. "
-			"Настройки сохранятся. Архив Telegram не меняется."),
+			"При ручном сохранении изменения применяются только после "
+			"нажатия «Сохранить».\n\n"
+			"Если выключить папки, они пропадут из списка чатов, но "
+			"их настройки останутся."),
 		QString(
-			"“Save folder edits manually” applies changes after Save. "
-			"If disabled, edits apply immediately and Save is hidden.\n\n"
-			"If Chat folders is disabled, they disappear from the list. "
-			"Settings are kept. Telegram’s archive is unchanged.")));
+			"With manual saving, changes apply only after you press "
+			"Save.\n\n"
+			"If you turn folders off, they disappear from the chat "
+			"list, but their settings are kept.")));
 
 	builder.addSkip();
 	builder.addSubsectionTitle(trWhitegram(
@@ -2284,10 +2282,11 @@ const auto kWhitegramArchivesMeta = BuildHelper({
 	builder.addSkip();
 	builder.addDividerText(trWhitegram(
 		QString::fromUtf8(
-			"Совет: ПКМ по чату → «Папки». Папки видны вверху списка чатов."),
+			"Чтобы добавить чат в папку, нажмите на него правой кнопкой "
+			"мыши и выберите «Папки»."),
 		QString(
-			"Tip: right-click a chat → Folders. Folders appear at the top "
-			"of the chat list.")));
+			"To add a chat to a folder, right-click it and choose "
+			"Folders.")));
 	builder.addSkip();
 });
 
@@ -2495,6 +2494,10 @@ const auto kWhitegramAppearanceMeta = BuildHelper({
 		.targetSection = WhitegramStartupAnim::Id(),
 		.icon = { &st::menuIconShowAll },
 	});
+
+	builder.addSkip();
+	builder.addDivider();
+	BuildAyuAppearanceContent(builder);
 	// "Фон профиля" lives on the "My Profile" page (settings_information.cpp),
 	// next to the photo and the bio, so it is not listed here.
 });
@@ -2512,21 +2515,15 @@ const auto kWhitegramProfileBackgroundMeta = BuildHelper({
 	const auto controller = builder.controller();
 
 	builder.addSkip();
-	builder.add([](const WidgetContext &ctx) -> SectionBuilder::WidgetToAdd {
-		return {
-			.widget = object_ptr<Ui::FlatLabel>(
-				ctx.container,
-				trWhitegram(
-					QString::fromUtf8(
-						"Свой фон для твоего профиля: шапка, весь профиль "
-						"или блок «Информация». Поддерживаются фото и видео."),
-					QString(
-						"Custom background for your profile: header, full "
-						"profile or the info block. Photos and videos "
-						"are supported.")),
-				st::boxDividerLabel),
-		};
-	});
+	builder.addDividerText(
+		trWhitegram(
+			QString::fromUtf8(
+				"Свой фон для вашего профиля: шапка, весь профиль "
+				"или блок «Информация». Поддерживаются фото и видео."),
+			QString(
+				"Custom background for your profile: header, full "
+				"profile or the info block. Photos and videos "
+				"are supported.")));
 	builder.addSkip();
 
 	auto addZone = [&](
@@ -3390,8 +3387,8 @@ void ShowBypassCustomMirrorBox(not_null<Ui::GenericBox*> box) {
 
 void ShowBypassAboutBox(not_null<Ui::GenericBox*> box) {
 	box->setTitle(trWhitegram(
-		QString::fromUtf8("Простыми словами"),
-		QString("In simple words")));
+		QString::fromUtf8("Как работает обход"),
+		QString("How bypass works")));
 	box->setWidth(st::boxWideWidth);
 
 	const auto addBlock = [&](
@@ -3406,212 +3403,79 @@ void ShowBypassAboutBox(not_null<Ui::GenericBox*> box) {
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Зачем это нужно"),
-			QString("Why it exists")),
+			QString::fromUtf8("Когда нужен"),
+			QString("When you need it")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Иногда Telegram не открывается: крутится загрузка, "
-				"чаты не приходят, хотя интернет есть и сайты в браузере "
-				"работают. Так бывает, когда сеть (домашний Wi‑Fi, "
-				"мобильный интернет, офис) мешает именно Telegram, "
-				"а остальной интернет не трогает.\n\n"
-				"Обход — это встроенная помощь Whitegram в такой ситуации. "
-				"Ничего устанавливать, покупать и настраивать руками "
-				"не нужно: выбрали режим — и всё."),
+				"Интернет работает, сайты открываются, а Telegram висит "
+				"на «Соединение…». Значит, сеть блокирует именно "
+				"Telegram. Если всё и так работает, обход не нужен."),
 			QString(
-				"Sometimes Telegram will not open: it keeps loading and "
-				"chats do not arrive, even though the internet works and "
-				"websites open. That happens when the network (home Wi‑Fi, "
-				"mobile data, office) interferes with Telegram, but leaves "
-				"the rest of the internet alone.\n\n"
-				"Bypass is Whitegram’s built-in help for that case. You do "
-				"not install, buy, or configure anything by hand: pick a "
-				"mode and you are done.")));
+				"The internet works and websites open, but Telegram "
+				"hangs on \"Connecting…\". The network blocks Telegram "
+				"itself. If everything works, you don't need bypass.")));
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Что делает обход"),
-			QString("What bypass does")),
+			QString::fromUtf8("Что он делает"),
+			QString("What it does")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Обычно Whitegram стучится к Telegram «напрямую». В части "
-				"сетей этот прямой путь режут.\n\n"
-				"Обход отправляет те же сообщения другим путём — так, "
-				"чтобы для сети это выглядело как обычный защищённый "
-				"сайт (как когда вы открываете банк или почту в браузере). "
-				"Содержимое чатов по-прежнему шифруется, как в обычном "
-				"Telegram. Меняется только «дорога» до серверов.\n\n"
-				"Включать обход, если Telegram и так нормально работает, "
-				"не обязательно."),
+				"Подключение к серверам Telegram идёт через WebSocket, "
+				"поэтому для сети оно выглядит как обычный HTTPS-сайт. "
+				"Шифрование сообщений не меняется."),
 			QString(
-				"Normally Whitegram reaches Telegram directly. Some "
-				"networks cut that direct path.\n\n"
-				"Bypass sends the same messages another way, so the "
-				"network sees something closer to a normal secure website "
-				"(like opening a bank or mailbox in a browser). Chat "
-				"contents stay encrypted like in regular Telegram. Only "
-				"the route to the servers changes.\n\n"
-				"You do not need bypass if Telegram already works fine.")));
-
-	addBlock(
-		trWhitegram(
-			QString::fromUtf8("Как именно меняется дорога"),
-			QString("How the route actually changes")),
-		trWhitegram(
-			QString::fromUtf8(
-				"Представьте, что каждое сообщение — это письмо.\n\n"
-				"Обычно Whitegram кладёт письмо в специальный конверт "
-				"«Telegram» и несёт его напрямую в почтовое отделение "
-				"Telegram. В некоторых сетях на входе стоит проверка: "
-				"увидела конверт «Telegram» — и не пускает. Содержимое "
-				"письма она прочитать не может, оно зашифровано, но сам "
-				"конверт узнаёт сразу.\n\n"
-				"Обход кладёт тот же зашифрованный конверт «Telegram» "
-				"внутрь обычного сайтового конверта — такого же, как "
-				"когда вы открываете банк или почту в браузере. Снаружи "
-				"видно только «защищённый сайт», а не Telegram. Проверка "
-				"на такой конверт обычно не смотрит, и письмо проходит.\n\n"
-				"Внутри ничего не меняется: сообщения шифруются тем же "
-				"способом, что и всегда. Меняется только внешняя "
-				"упаковка, по которой сеть узнаёт, куда вы идёте."),
-			QString(
-				"Think of every message as a letter.\n\n"
-				"Normally Whitegram puts the letter in a special "
-				"“Telegram” envelope and carries it straight to the "
-				"Telegram post office. Some networks have a guard at the "
-				"entrance: it sees the “Telegram” envelope and stops it. "
-				"The guard cannot read the letter itself — it is "
-				"encrypted — but it recognizes the envelope at once.\n\n"
-				"Bypass puts the same encrypted “Telegram” envelope "
-				"inside an ordinary website envelope — the same kind you "
-				"get when you open a bank or mailbox in a browser. From "
-				"the outside it looks like just a secure website, not "
-				"Telegram. The guard usually ignores that envelope, and "
-				"the letter goes through.\n\n"
-				"Inside nothing changes: messages are encrypted the same "
-				"way as always. Only the outer packaging changes — the "
-				"part the network uses to tell where you are going.")));
+				"The connection to Telegram servers goes over "
+				"WebSocket, so to the network it looks like a regular "
+				"HTTPS site. Message encryption stays the same.")));
 
 	addBlock(
 		trWhitegram(
 			QString::fromUtf8("Это не VPN"),
-			QString("This is not a VPN")),
+			QString("It is not a VPN")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Обход не прячет вас и не меняет ваш IP-адрес. Провайдер "
-				"по-прежнему видит, что с телефона или компьютера идёт "
-				"интернет.\n\n"
-				"Он не включает VPN на весь компьютер: YouTube, браузер "
-				"и игры обход не касается. Работает только соединение "
-				"самого Whitegram с Telegram.\n\n"
-				"Это не отдельный сервер Whitegram и не «прокси, который "
-				"нужно вписать руками». Всё уже внутри приложения."),
+				"Обход работает только для Whitegram. IP-адрес не "
+				"меняется, браузер и другие программы идут напрямую. "
+				"Ваш прокси из настроек Telegram продолжит работать."),
 			QString(
-				"Bypass does not hide you and does not change your IP "
-				"address. Your provider still sees that this phone or "
-				"computer is using the internet.\n\n"
-				"It does not turn on a VPN for the whole computer: "
-				"YouTube, the browser, and games are unaffected. Only "
-				"Whitegram’s connection to Telegram changes.\n\n"
-				"It is not a Whitegram server and not a proxy you have "
-				"to type in by hand. It is already inside the app.")));
+				"Bypass only affects Whitegram. Your IP address stays "
+				"the same, the browser and other apps connect directly. "
+				"Your proxy from Telegram settings keeps working.")));
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Какой режим выбрать"),
-			QString("Which mode to pick")),
+			QString::fromUtf8("Режимы"),
+			QString("Modes")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Выкл — обычное прямое соединение. Подходит, если "
-				"Telegram открывается без проблем.\n\n"
-				"Авто — сначала пробует напрямую. Если за несколько "
-				"секунд (около 12) так и не подключится, обход включится "
-				"сам. Удобно, если сеть то работает, то нет: в поездке, "
-				"в другой стране, на чужом Wi‑Fi. Пока Telegram "
-				"подключается нормально, обход не трогает соединение. "
-				"Если обход уже включился сам, он останется до смены "
-				"режима или перезапуска приложения.\n\n"
-				"Всегда — обход включён сразу, без ожидания. Выбирайте, "
-				"если Telegram у вас стабильно не открывается, а сайты "
-				"открываются. Это самый надёжный вариант при блокировке."),
+				"Выкл — обычное соединение.\n"
+				"Авто — обход включается сам, если Telegram не "
+				"подключился примерно за 12 секунд.\n"
+				"Всегда — обход включён сразу. Выбирайте, если Telegram "
+				"у вас не открывается постоянно."),
 			QString(
-				"Off — the normal direct connection. Use it if Telegram "
-				"opens without problems.\n\n"
-				"Auto — tries direct first. If it still cannot connect "
-				"for a few seconds (about 12), bypass turns on by itself. "
-				"Handy when the network is hit-or-miss: travel, another "
-				"country, someone else’s Wi‑Fi. While Telegram connects "
-				"normally, bypass stays out of the way. If bypass has "
-				"already turned itself on, it stays until you change the "
-				"mode or restart the app.\n\n"
-				"Always — bypass is on immediately, with no waiting. "
-				"Choose this if Telegram reliably fails to open while "
-				"websites still work. This is the most reliable option "
-				"when Telegram is blocked.")));
+				"Off — regular connection.\n"
+				"Auto — bypass turns on by itself if Telegram doesn't "
+				"connect in about 12 seconds.\n"
+				"Always — bypass is on from the start. Pick it if "
+				"Telegram never opens for you.")));
 
 	addBlock(
 		trWhitegram(
-			QString::fromUtf8("Что будет после переключения"),
-			QString("What happens after you switch")),
+			QString::fromUtf8("Если не помогло"),
+			QString("If it didn't help")),
 		trWhitegram(
 			QString::fromUtf8(
-				"Whitegram заново устанавливает соединение. На секунду "
-				"может появиться «подключение…» — это нормально, ничего "
-				"нажимать ещё раз не нужно.\n\n"
-				"Подождите 10–20 секунд. Если чаты ожили — всё получилось. "
-				"Настройки запоминаются: при следующем запуске будет "
-				"тот же режим."),
+				"После смены режима подождите 10–20 секунд. Если чаты "
+				"так и не загрузились, проверьте время на компьютере и "
+				"попробуйте другую сеть, например раздачу с телефона. "
+				"Через обход соединение может быть чуть медленнее."),
 			QString(
-				"Whitegram reconnects. You may briefly see “connecting…” "
-				"— that is normal, do not tap anything again.\n\n"
-				"Wait 10–20 seconds. If chats come back, it worked. The "
-				"setting is remembered: the next launch uses the same "
-				"mode.")));
-
-	addBlock(
-		trWhitegram(
-			QString::fromUtf8("Частые вопросы"),
-			QString("Common questions")),
-		trWhitegram(
-			QString::fromUtf8(
-				"Нужно ли что-то вводить? Нет. Секрет, логин и пароль "
-				"для обхода не нужны.\n\n"
-				"Это платно? Нет, это функция Whitegram.\n\n"
-				"Безопасно ли это? Сообщения шифруются так же, как в "
-				"обычном Telegram. Обход не читает ваши чаты.\n\n"
-				"У меня уже стоит свой прокси в настройках Telegram. "
-				"Можно оставить. Свои SOCKS и HTTP-прокси по-прежнему "
-				"работают. Старые локальные «заглушки» Whitegram при "
-				"включённом обходе убирает сам — это не ваш настоящий "
-				"прокси.\n\n"
-				"Обход включил, а Telegram всё равно не заходит. Тогда "
-				"дело не только в «прямой дороге»: попробуйте другую "
-				"сеть (раздать интернет с телефона), проверьте системное "
-				"время на компьютере и что интернет вообще есть. Обход "
-				"помогает, когда режут именно Telegram, а не весь "
-				"интернет.\n\n"
-				"Стало чуть медленнее. Так бывает: обходный путь длиннее "
-				"прямого. Если Telegram без обхода открывается — можно "
-				"вернуть «Выкл»."),
-			QString(
-				"Do I need to type anything? No. Bypass needs no secret, "
-				"login, or password.\n\n"
-				"Does it cost money? No. It is a Whitegram feature.\n\n"
-				"Is it safe? Messages are encrypted like in regular "
-				"Telegram. Bypass does not read your chats.\n\n"
-				"I already have my own proxy in Telegram settings. You "
-				"can keep it. Your own SOCKS and HTTP proxies still work. "
-				"When bypass is on, Whitegram only removes old local "
-				"dummy proxies — not your real one.\n\n"
-				"I turned bypass on and Telegram still will not connect. "
-				"Then it is not only the “direct road”: try another "
-				"network (phone hotspot), check the computer clock, and "
-				"make sure the internet works at all. Bypass helps when "
-				"Telegram is blocked, not when the whole internet is "
-				"down.\n\n"
-				"It feels a bit slower. That can happen: the bypass route "
-				"is longer than the direct one. If Telegram opens without "
-				"bypass, you can switch back to Off.")));
+				"After switching modes, wait 10–20 seconds. If chats "
+				"still don't load, check the computer clock and try "
+				"another network, like a phone hotspot. The connection "
+				"may be a bit slower through bypass.")));
 
 	box->addButton(tr::lng_close(), [=] { box->closeBox(); });
 }
@@ -3643,17 +3507,17 @@ void AddTgWsProxyBlock(not_null<Ui::VerticalLayout*> layout) {
 			card,
 			trWhitegram(
 				QString::fromUtf8(
-					"Встроенный tg-ws-proxy от Flowseal: локальный прокси, "
-					"который держит заранее открытые соединения с Telegram "
-					"и при сбое уходит на Cloudflare. Пробуйте, если первый "
-					"обход не помогает. Включение выключает первый обход, "
-					"ваш прокси вернётся после выключения."),
+					"Запасной способ: встроенный tg-ws-proxy от Flowseal. "
+					"Держит открытые соединения с Telegram, при сбое "
+					"переключается на Cloudflare. Включайте, если обычный "
+					"обход не помог. Пока он работает, обычный обход и ваш "
+					"прокси отключены, после выключения они вернутся."),
 				QString(
-					"Built-in tg-ws-proxy by Flowseal: a local proxy that "
-					"keeps pre-opened connections to Telegram and falls back "
-					"to Cloudflare. Try it if the first bypass does not help. "
-					"Turning it on turns the first bypass off; your own proxy "
-					"comes back when you turn it off.")),
+					"Fallback option: the built-in tg-ws-proxy by Flowseal. "
+					"It keeps connections to Telegram open and switches to "
+					"Cloudflare on failure. Turn it on if the regular bypass "
+					"didn't help. While it runs, the regular bypass and your "
+					"proxy are off; they come back when you turn it off.")),
 			st::whitegramBypassMirrorHint));
 
 	Ui::AddSkip(card, st::settingsCheckboxesSkip);
@@ -4338,23 +4202,13 @@ void AddGhostTargetModeControls(
 }
 
 void BuildWhitegramGhostMode(SectionBuilder &builder) {
-	builder.addSectionButton({
-		.title = trWhitegram(
-			QString::fromUtf8("Настройки Ghost Mode (AyuGram)"),
-			QString("Ghost Mode settings (AyuGram)")),
-		.targetSection = AyuGhost::Id(),
-		.icon = { &st::menuIconStealth },
-		.keywords = {
-			u"ghost"_q,
-			u"ayugram"_q,
-			QString::fromUtf8("ghost"),
-			QString::fromUtf8("невидимка"),
-		},
-	});
+	builder.addSkip();
+	BuildAyuGhostEssentials(builder);
 
 	builder.addSkip();
-	builder.addDivider();
-	builder.addSkip();
+	builder.addSubsectionTitle(trWhitegram(
+		QString::fromUtf8("Где работает"),
+		QString("Where it works")));
 
 	builder.add([](const BuildContext &ctx) {
 		v::match(ctx, [&](const WidgetContext &wctx) {
@@ -4384,8 +4238,8 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 	builder.addSkip();
 
 	builder.addSubsectionTitle(trWhitegram(
-		QString::fromUtf8("Расписание Ghost Mode"),
-		QString("Ghost Mode Schedule")));
+		QString::fromUtf8("Расписание"),
+		QString("Schedule")));
 
 	builder.add([](const BuildContext &ctx) {
 		v::match(ctx, [&](const WidgetContext &wctx) {
@@ -4416,8 +4270,8 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 
 			AddSkip(container);
 			AddDividerText(container, trWhitegram(
-				QString::fromUtf8("Ghost Mode будет автоматически включаться и выключаться по заданным интервалам времени и дням недели."),
-				QString("Ghost Mode will automatically turn on and off based on scheduled time intervals and days of the week.")));
+				QString::fromUtf8("Режим призрака сам включается в выбранные часы и дни недели и выключается вне их."),
+				QString("Ghost mode turns on by itself during the chosen hours and days and turns off outside them.")));
 
 			const auto scheduleWrap = container->add(
 				object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -4440,10 +4294,10 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 					auto emptyLabel = object_ptr<Ui::FlatLabel>(
 						intervalsList,
 						trWhitegram(
-							QString::fromUtf8("Нет интервалов (нажмите «Добавить интервал»)"),
-							QString("No intervals (click \"Add interval\")")),
+							QString::fromUtf8("Интервалов пока нет."),
+							QString("No intervals yet.")),
 						st::boxDividerLabel);
-					holder->widgets.push_back(base::make_unique_q<QWidget>(intervalsList->add(std::move(emptyLabel))));
+					holder->widgets.push_back(base::make_unique_q<QWidget>(intervalsList->add(std::move(emptyLabel), st::boxRowPadding)));
 				} else {
 					for (int i = 0; i < int(entries.size()); ++i) {
 						const auto &entry = entries[i];
@@ -4475,9 +4329,9 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 			const auto addIntervalBtn = AddButtonWithIcon(
 				scheduleInner,
 				trWhitegram(
-					QString::fromUtf8("+ Добавить интервал"),
-					QString("+ Add interval")),
-				st::settingsButtonNoIcon);
+					QString::fromUtf8("Добавить интервал"),
+					QString("Add interval")),
+				st::settingsButtonLightNoIcon);
 			addIntervalBtn->addClickHandler([=] {
 				ShowGhostScheduleIntervalBox(controller, userId, std::nullopt);
 			});
@@ -4493,20 +4347,35 @@ void BuildWhitegramGhostMode(SectionBuilder &builder) {
 		}, [&](const SearchContext &sctx) {
 			sctx.entries->push_back({
 				.id = u"whitegram/ghostSchedule"_q,
-				.title = QString::fromUtf8("Расписание Ghost Mode"),
+				.title = QString::fromUtf8("Расписание режима призрака"),
 				.section = sctx.sectionId,
 			});
 		});
 	});
+
+	builder.addSkip();
+	builder.addDivider();
+	builder.addSkip();
+	BuildAyuSpyContent(builder);
+	builder.addSkip();
 }
 
 const auto kWhitegramGhostModeMeta = BuildHelper({
 	.id = WhitegramGhostMode::Id(),
 	.parentId = WhitegramMain::Id(),
-	.title = QString::fromUtf8("Ghost Mode"),
+	.title = QString::fromUtf8("Режим призрака"),
 	.icon = &st::menuIconStealth,
 }, [](SectionBuilder &builder) {
 	BuildWhitegramGhostMode(builder);
+});
+
+const auto kWhitegramChatsMeta = BuildHelper({
+	.id = WhitegramChats::Id(),
+	.parentId = WhitegramMain::Id(),
+	.title = QString::fromUtf8("Чаты и сообщения"),
+	.icon = &st::menuIconChatBubble,
+}, [](SectionBuilder &builder) {
+	BuildAyuChatsContent(builder);
 });
 
 const auto kWhitegramMeta = BuildHelper({
@@ -4528,7 +4397,7 @@ const auto kWhitegramMeta = BuildHelper({
 
 	builder.addSectionButton({
 		.title = trWhitegram(
-			QString::fromUtf8("Общие"),
+			QString::fromUtf8("Основное"),
 			QString("General")),
 		.targetSection = WhitegramGeneral::Id(),
 		.icon = { &st::menuIconShowAll },
@@ -4536,7 +4405,7 @@ const auto kWhitegramMeta = BuildHelper({
 
 	builder.addSectionButton({
 		.title = trWhitegram(
-			QString::fromUtf8("Ghost Mode"),
+			QString::fromUtf8("Режим призрака"),
 			QString("Ghost Mode")),
 		.targetSection = WhitegramGhostMode::Id(),
 		.icon = { &st::menuIconStealth },
@@ -4550,6 +4419,34 @@ const auto kWhitegramMeta = BuildHelper({
 			QString::fromUtf8("область"),
 			QString::fromUtf8("whitelist"),
 			QString::fromUtf8("blacklist"),
+		},
+	});
+
+	builder.addSectionButton({
+		.title = trWhitegram(
+			QString::fromUtf8("Чаты и сообщения"),
+			QString("Chats and messages")),
+		.targetSection = WhitegramChats::Id(),
+		.icon = { &st::menuIconChatBubble },
+		.keywords = {
+			u"chats"_q,
+			u"messages"_q,
+			QString::fromUtf8("стикеры"),
+			QString::fromUtf8("контекстное меню"),
+			QString::fromUtf8("сообщения"),
+		},
+	});
+
+	builder.addSectionButton({
+		.title = trWhitegram(
+			QString::fromUtf8("Фильтры сообщений"),
+			QString("Message filters")),
+		.targetSection = AyuFilters::Id(),
+		.icon = { &st::menuIconTagFilter },
+		.keywords = {
+			u"filters"_q,
+			u"regex"_q,
+			QString::fromUtf8("фильтр"),
 		},
 	});
 
@@ -4710,7 +4607,9 @@ Type WhitegramUpdatesId() {
 }
 
 rpl::producer<QString> WhitegramGhostMode::title() {
-	return rpl::single(QString("Ghost Mode"));
+	return trWhitegram(
+		QString::fromUtf8("Режим призрака"),
+		QString("Ghost Mode"));
 }
 
 WhitegramGhostMode::WhitegramGhostMode(
@@ -4870,6 +4769,25 @@ Type WhitegramPluginsId() {
 	return WhitegramPlugins::Id();
 }
 
+rpl::producer<QString> WhitegramChats::title() {
+	return trWhitegram(
+		QString::fromUtf8("Чаты и сообщения"),
+		QString("Chats and messages"));
+}
+
+WhitegramChats::WhitegramChats(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent, controller) {
+	setupContent();
+}
+
+void WhitegramChats::setupContent() {
+	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
+	build(content, kWhitegramChatsMeta.build);
+	Ui::ResizeFitChild(this, content);
+}
+
 WhitegramStartupSound::WhitegramStartupSound(QWidget *parent, not_null<Window::SessionController*> controller)
 : Section(parent, controller) {
 	setupContent();
@@ -4947,27 +4865,6 @@ void WhitegramStartupAnim::setupContent() {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 	build(content, kWhitegramStartupAnimMeta.build);
 	Ui::ResizeFitChild(this, content);
-}
-
-rpl::producer<QString> AyuMain::title() {
-	return rpl::single(QString(""));
-}
-
-AyuMain::AyuMain(
-	QWidget *parent,
-	not_null<Window::SessionController*> controller)
-: Section(parent, controller) {
-	setupContent();
-}
-
-void AyuMain::setupContent() {
-	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
-	build(content, kAyuMeta.build);
-	Ui::ResizeFitChild(this, content);
-}
-
-Type AyuMainId() {
-	return AyuMain::Id();
 }
 
 void ShowConnectionBypassBox(not_null<Ui::GenericBox*> box) {

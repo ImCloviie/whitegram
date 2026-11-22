@@ -39,6 +39,7 @@ constexpr auto kCrossfadeDuration = crl::time(480);
 constexpr auto kSliderApplyDelay = crl::time(30);
 constexpr auto kMinAlpha = 3;
 constexpr auto kLayerTintAlpha = 70;
+constexpr auto kPopupTintAlpha = 30;
 constexpr auto kBlurProperty = "WhitegramGlassBlur";
 constexpr auto kBackdropName = "WhitegramLayerBackdrop";
 
@@ -47,7 +48,7 @@ enum class Kind {
 	Inner, // rows drawn over an already filled panel: a light extra layer
 	Hover, // hover and active rows: a bit denser than the base
 	Layer, // boxes, side menu, profiles: glass over a strong blur
-	Panel, // emoji panel: almost opaque over the chat, glass as a column
+	Panel, // emoji panel: a glass popup over the chat, or a glass column
 };
 
 struct Entry {
@@ -112,7 +113,7 @@ struct Entry {
 	case Kind::Inner: return base * 0.35;
 	case Kind::Hover: return base + (1. - base) * 0.35;
 	case Kind::Layer: return base + (1. - base) * 0.4;
-	case Kind::Panel: return sidePanel ? base : std::max(base, 0.97);
+	case Kind::Panel: return sidePanel ? base : (base + (1. - base) * 0.12);
 	}
 	return base;
 }
@@ -501,32 +502,39 @@ private:
 // Keeps a downscaled blurred snapshot of the window content under a layer.
 class LayerBackdrop final : public QObject {
 public:
-	explicit LayerBackdrop(not_null<QWidget*> layer)
+	LayerBackdrop(
+		not_null<QWidget*> layer,
+		QWidget *host,
+		QWidget *excluded,
+		bool withHostPaint,
+		int tintAlpha)
 	: QObject(layer.get())
-	, _layer(layer) {
+	, _layer(layer)
+	, _host(host)
+	, _excluded(excluded)
+	, _withHostPaint(withHostPaint)
+	, _tintAlpha(tintAlpha) {
 		setObjectName(QLatin1String(kBackdropName));
 		layer->installEventFilter(this);
 		schedule();
 	}
 
-	void paint(QPainter &p, int radius) {
-		const auto host = this->host();
+	void paint(QPainter &p, QRect area, int radius) {
+		const auto host = _host.data();
 		if (_blurred.isNull() || !host) {
 			return;
 		}
 		const auto origin = _layer->mapTo(host, QPoint());
 		p.save();
-		if (radius > 0) {
-			auto path = QPainterPath();
-			path.addRoundedRect(QRectF(_layer->rect()), radius, radius);
-			p.setClipPath(path, Qt::IntersectClip);
-		}
+		auto path = QPainterPath();
+		path.addRoundedRect(QRectF(area), radius, radius);
+		p.setClipPath(path, Qt::IntersectClip);
 		p.setRenderHint(QPainter::SmoothPixmapTransform);
 		p.drawImage(QRect(-origin, _hostSize), _blurred);
 		// Translucent rows of the layer lie on this, so text stays readable.
 		auto tint = st::boxBg->c;
-		tint.setAlpha(kLayerTintAlpha);
-		p.fillRect(_layer->rect(), tint);
+		tint.setAlpha(_tintAlpha);
+		p.fillRect(area, tint);
 		p.restore();
 	}
 
@@ -544,19 +552,13 @@ private:
 	static constexpr auto kMinBlurRadius = 9;
 	static constexpr auto kGrabDelay = crl::time(150);
 
-	[[nodiscard]] QWidget *host() const {
-		const auto stack = _layer->parentWidget();
-		return stack ? stack->parentWidget() : nullptr;
-	}
-
 	void schedule() {
 		// A layer resizes every frame while it animates: grab once it rests.
 		_grabTimer.callOnce(kGrabDelay);
 	}
 
 	void grab() {
-		const auto stack = _layer->parentWidget();
-		const auto host = this->host();
+		const auto host = _host.data();
 		if (!host || host->size().isEmpty()) {
 			return;
 		}
@@ -568,10 +570,14 @@ private:
 		full.fill(Qt::transparent);
 		{
 			auto p = QPainter(&full);
+			if (_withHostPaint) {
+				// The chat wallpaper is painted by the host itself.
+				host->render(&p, QPoint(), QRegion(), {});
+			}
 			for (const auto child : host->children()) {
 				const auto widget = qobject_cast<QWidget*>(child);
 				if (!widget
-					|| widget == stack
+					|| widget == _excluded.data()
 					|| widget->isWindow()
 					|| widget->isHidden()) {
 					continue;
@@ -596,6 +602,10 @@ private:
 	}
 
 	const not_null<QWidget*> _layer;
+	const QPointer<QWidget> _host;
+	const QPointer<QWidget> _excluded;
+	const bool _withHostPaint = false;
+	const int _tintAlpha = 0;
 	QImage _blurred;
 	QSize _hostSize;
 	base::Timer _grabTimer = base::Timer([=] {
@@ -641,10 +651,47 @@ void PaintLayerBackdrop(QPainter &p, QWidget *layer, int radius) {
 	const auto found = layer->findChild<QObject*>(
 		QLatin1String(kBackdropName),
 		Qt::FindDirectChildrenOnly);
+	const auto stack = layer->parentWidget();
 	const auto backdrop = found
 		? static_cast<LayerBackdrop*>(found)
-		: new LayerBackdrop(layer);
-	backdrop->paint(p, radius);
+		: new LayerBackdrop(
+			layer,
+			stack ? stack->parentWidget() : nullptr,
+			stack,
+			false,
+			kLayerTintAlpha);
+	backdrop->paint(p, layer->rect(), radius);
+}
+
+void PaintPopupBackdrop(
+		QPainter &p,
+		QWidget *popup,
+		QRect area,
+		int radius) {
+	const auto instance = Instance();
+	if (!popup || !instance || instance->backgroundOpacity() >= 1.) {
+		return;
+	} else if (!instance->layerBlurActive()) {
+		auto tint = st::boxBg->c;
+		tint.setAlpha(kPopupTintAlpha);
+		auto hq = PainterHighQualityEnabler(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(tint);
+		p.drawRoundedRect(area, radius, radius);
+		return;
+	}
+	const auto found = popup->findChild<QObject*>(
+		QLatin1String(kBackdropName),
+		Qt::FindDirectChildrenOnly);
+	const auto backdrop = found
+		? static_cast<LayerBackdrop*>(found)
+		: new LayerBackdrop(
+			popup,
+			popup->parentWidget(),
+			popup,
+			true,
+			kPopupTintAlpha);
+	backdrop->paint(p, area, radius);
 }
 
 void RegisterSidePanel(QWidget *panel) {

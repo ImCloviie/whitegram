@@ -6,6 +6,8 @@
 // Copyright @Radolyn, 2026
 #include "ayu/ui/components/music_island.h"
 
+#include <QtCore/QRegularExpression>
+
 #include "ayu/ui/components/lyrics_window.h"
 #include "ayu/ui/utils/lyrics_engine.h"
 
@@ -25,6 +27,7 @@
 #include "data/data_document.h"
 #include "data/data_saved_music.h"
 #include "data/data_document_media.h"
+#include "ayu/features/music/music_service.h"
 #include "data/data_file_origin.h"
 #include "data/data_session.h"
 #include "history/history_item.h"
@@ -290,10 +293,16 @@ MusicIsland::MusicIsland(
 	setCursor(style::cur_default);
 	hide();
 
-	_liveAnimation.init([=] {
+	_liveAnimation.init([=](crl::time now) {
 		if (_lyricsWindow && _lyricsWindow->shown()) {
 			return _shown;
 		}
+		// WHY: the island is translucent, so each repaint also repaints the chat under it.
+		const auto interactive = _expanded || _expandAnimation.animating();
+		if (!interactive && now - _liveUpdatedAt < 40) {
+			return _shown && _playing;
+		}
+		_liveUpdatedAt = now;
 		updateLyricsPosition();
 		update();
 		return _shown
@@ -395,6 +404,14 @@ void MusicIsland::setupPlayer() {
 	) | rpl::on_next([=] {
 		_trackState = Media::Player::TrackState();
 		checkVisibility();
+	}, lifetime());
+
+	// Only the close button sends this, so the karaoke stays open between tracks.
+	player->closePlayerRequests(
+	) | rpl::on_next([=] {
+		if (_lyricsWindow && _lyricsWindow->shown()) {
+			_lyricsWindow->toggle(false);
+		}
 	}, lifetime());
 }
 
@@ -515,6 +532,11 @@ void MusicIsland::handleTrackChanged() {
 
 	const auto name = Ui::Text::FormatSongNameFor(document).composedName();
 	_titleRaw = name.title;
+	// Untagged files show their file name; the extension is noise in the island and karaoke.
+	static const auto extension = QRegularExpression(
+		uR"(\.(mp3|m4a|flac|ogg|opus|wav|aac)$)"_q,
+		QRegularExpression::CaseInsensitiveOption);
+	_titleRaw.remove(extension);
 	_performerRaw = name.performer;
 	_title.setText(TitleStyle(), _titleRaw, Ui::NameTextOptions());
 	_performer.setText(PerformerStyle(), _performerRaw, Ui::NameTextOptions());
@@ -540,9 +562,8 @@ void MusicIsland::handleStateUpdate(const Media::Player::TrackState &state) {
 	_trackState = state;
 	_playback->updateState(state);
 
-	const auto playing = !Media::Player::IsStoppedOrStopping(state.state)
-		&& !Media::Player::IsPausedOrPausing(state.state)
-		&& !state.waitingForData;
+	// WHY: streamed songs keep waitingForData set while downloading, so follow the player button.
+	const auto playing = Media::Player::ShowPauseIcon(state.state);
 	if (_playing != playing) {
 		_playing = playing;
 		checkLiveAnimation();
@@ -1088,6 +1109,17 @@ void MusicIsland::loadCover() {
 	}
 	_mediaView = document->createMediaView();
 
+	if (const auto external = Whitegram::Music::ExternalTrack(document)) {
+		const auto url = external->artworkUrl;
+		Whitegram::Music::CoverLoaded(
+		) | rpl::filter(rpl::mappers::_1 == url) | rpl::take(
+			1
+		) | rpl::on_next([=](const QString &) {
+			buildCover(Whitegram::Music::Cover(url));
+		}, _coverLifetime);
+		buildCover(Whitegram::Music::Cover(url));
+		return;
+	}
 	const auto ready = [=] {
 		return _mediaView && _mediaView->thumbnail();
 	};
@@ -1298,7 +1330,9 @@ void MusicIsland::showTrackMessage() {
 
 bool MusicIsland::canSaveToProfile() const {
 	const auto document = _songId.audio();
-	if (!document || !document->isMusicForProfile()) {
+	if (!document
+		|| !document->isMusicForProfile()
+		|| Whitegram::Music::IsExternal(document)) {
 		return false;
 	}
 	return !_controller->session().data().savedMusic().has(document);
@@ -1306,7 +1340,9 @@ bool MusicIsland::canSaveToProfile() const {
 
 int MusicIsland::profileMusicState() const {
 	const auto document = _songId.audio();
-	if (!document || !document->isMusicForProfile()) {
+	if (!document
+		|| !document->isMusicForProfile()
+		|| Whitegram::Music::IsExternal(document)) {
 		return -1;
 	}
 	return _controller->session().data().savedMusic().has(document) ? 1 : 0;
@@ -2454,7 +2490,9 @@ void MusicIsland::alignLyrics() {
 	const auto weak = base::make_weak(this);
 	crl::async([=, data = _lyrics]() mutable {
 		auto report = Ayu::Ui::Lyrics::AlignReport();
-		if (Ayu::Ui::Lyrics::AlignWithModel(data, audioPath, audioBytes)) {
+		if (data.synced) {
+			report = Ayu::Ui::Lyrics::AlignOffset(data, *analysis);
+		} else if (Ayu::Ui::Lyrics::AlignWithModel(data, audioPath, audioBytes)) {
 			report.changed = true;
 		} else {
 			report = Ayu::Ui::Lyrics::Align(data, *analysis);
@@ -2465,7 +2503,11 @@ void MusicIsland::alignLyrics() {
 				return;
 			}
 			LOG(("Karaoke sync: %1, %2 lines").arg(
-				report.autoSynced ? u"approximate spectral timing"_q : u"local model alignment"_q,
+				report.offsetMs
+					? (u"voice-matched shift "_q + QString::number(report.offsetMs) + u" ms"_q)
+					: report.autoSynced
+					? u"approximate spectral timing"_q
+					: u"local model alignment"_q,
 				QString::number(data.lines.size())));
 			strong->_lyrics = std::move(data);
 			strong->_lyricsActive = -1;

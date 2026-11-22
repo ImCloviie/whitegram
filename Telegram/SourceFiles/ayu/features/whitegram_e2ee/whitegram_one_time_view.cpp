@@ -96,7 +96,7 @@ TextWithEntities FormatOneTimeMessageBubbleText(not_null<const HistoryItem*> ite
 	auto result = TextWithEntities();
 	const auto bubbleText = u"🔒 Одноразовое сообщение Whitegram"_q;
 	const auto hintLine = u"Нажмите, чтобы открыть"_q;
-	const auto profileLine = u"Установка: https://t.me/imcloviie"_q;
+	const auto profileLine = u"Скачать Whitegram: https://t.me/whitegrambeta"_q;
 
 	result.text = bubbleText + u"\n\n"_q + hintLine + u"\n\n"_q + profileLine;
 	result.entities.push_back(EntityInText(
@@ -113,7 +113,7 @@ TextWithEntities FormatOneTimeMessageBubbleText(not_null<const HistoryItem*> ite
 		EntityType::Url,
 		result.text.length() - profileLine.length(),
 		profileLine.length(),
-		u"https://t.me/imcloviie"_q));
+		u"https://t.me/whitegrambeta"_q));
 
 	return result;
 }

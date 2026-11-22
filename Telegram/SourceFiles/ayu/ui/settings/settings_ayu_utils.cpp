@@ -86,14 +86,14 @@ void SetupCopyLinkMenus(
 		not_null<Window::SessionController*> controller,
 		const HighlightRegistry &highlights,
 		rpl::lifetime &lifetime) {
-	const auto prefix = u"ayu/"_q;
+	const auto prefix = u"white/"_q;
 	const auto menu = lifetime.make_state<base::unique_qptr<Ui::PopupMenu>>();
 	for (const auto &[id, entry] : highlights) {
 		const auto widget = entry.widget.data();
 		if (!widget || id.size() <= prefix.size() || !id.startsWith(prefix)) {
 			continue;
 		}
-		const auto link = u"https://t.me/ayuSettings?s="_q
+		const auto link = u"https://t.me/whiteSettings?s="_q
 			+ id.mid(prefix.size());
 		base::install_event_filter(widget, [=](not_null<QEvent*> e) {
 			if (e->type() != QEvent::ContextMenu) {

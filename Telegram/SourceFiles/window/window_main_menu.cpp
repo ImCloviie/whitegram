@@ -100,6 +100,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ayu/features/whitegram_crypto.h"
 #include "ayu/features/whitegram_crypto_charts.h"
 #include "ayu/features/whitegram_backend/whitegram_backend.h"
+#include "ayu/ui/components/music_page.h"
 #include "ui/layers/generic_box.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/vertical_layout.h"
@@ -831,7 +832,7 @@ void MainMenu::setupAccountsToggle() {
 
 void MainMenu::setupSetEmojiStatus() {
 	_setEmojiStatus->overrideLinkClickHandler([=] {
-		_controller->showSettings(Settings::AyuMain::Id());
+		_controller->showSettings(Settings::WhitegramMain::Id());
 	});
 }
 
@@ -943,6 +944,15 @@ void MainMenu::setupMenu() {
 			{ &st::menuIconSavedMessages }
 		)->setClickedCallback([=] {
 			controller->showPeerHistory(controller->session().user());
+		});
+		addAction(
+			Settings::trWhitegram(QString::fromUtf8("Музыка"), u"Music"_q),
+			{ &st::menuIconSoundOn }
+		)->setClickedCallback([=] {
+			// Hiding the layer destroys this menu and the lambda with it.
+			const auto window = controller;
+			AyuUi::MusicPage::Show(window);
+			window->hideLayer(anim::type::normal);
 		});
 		if (settings.showLReadToggleInDrawer()) {
 			addAction(

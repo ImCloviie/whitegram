@@ -86,10 +86,6 @@ void initWorker() {
 	AyuWorker::initialize();
 }
 
-void initRCManager() {
-	RCManager::getInstance().start();
-}
-
 void initTranslator() {
 	Ayu::Translator::TranslateManager::init();
 }
@@ -116,7 +112,6 @@ void init() {
 	initUiSettings();
 	initIcon();
 	initWorker();
-	initRCManager();
 	initTranslator();
 	initConnectionBypass();
 	initGlassEffect();

@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/whitegram_backend/whitegram_backend.h"
 
 
 namespace {
@@ -615,25 +616,10 @@ void LastCrashedWindow::checkingFinished() {
 	{
 		QString version = getReportField(qstr("version"), qstr("Version:"));
 		if (!version.isEmpty()) {
-			const auto sentryVersion = QString("ayugram-desktop@%1").arg(version);
-
 			QHttpPart reportPart;
 			reportPart.setHeader(QNetworkRequest::ContentDispositionHeader,
-			                     QVariant(u"form-data; name=\"%1\""_q.arg("sentry[release]")));
-			reportPart.setBody(sentryVersion.toUtf8());
-			multipart->append(reportPart);
-		}
-	}
-
-	{
-		QString dumpFile = minidumpFileName();
-		if (!dumpFile.isEmpty()) {
-			const auto dumpId = dumpFile.replace(".dmp", "");
-
-			QHttpPart reportPart;
-			reportPart.setHeader(QNetworkRequest::ContentDispositionHeader,
-			                     QVariant(u"form-data; name=\"%1\""_q.arg("sentry[tags][dump-id]")));
-			reportPart.setBody(dumpId.toUtf8());
+			                     QVariant(u"form-data; name=\"version\""_q));
+			reportPart.setBody(version.toUtf8());
 			multipart->append(reportPart);
 		}
 	}
@@ -661,7 +647,11 @@ void LastCrashedWindow::checkingFinished() {
 		}
 	}
 
-	_sendReply = _sendManager.post(QNetworkRequest(u"https://sentry.radolyn.com/api/2/minidump/?sentry_key=cad638b2ec4a692e57c3dcc4af1508bf"_q), multipart);
+	// Crash reports go to the Whitegram backend only.
+	auto request = QNetworkRequest(
+		QUrl(Whitegram::Backend::BaseUrl() + u"/api/v1/crashes"_q));
+	Whitegram::Backend::ApplyTlsPinning(request);
+	_sendReply = _sendManager.post(request, multipart);
 	multipart->setParent(_sendReply);
 
 	connect(

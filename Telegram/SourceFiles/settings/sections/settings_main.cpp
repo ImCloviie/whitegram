@@ -394,12 +394,6 @@ void BuildSectionButtons(SectionBuilder &builder) {
 	const auto showOther = builder.showOther();
 
 	builder.addSectionButton({
-		.title = rpl::single(QString::fromUtf8("Настройки AyuGram")),
-		.targetSection = AyuMain::Id(),
-		.icon = { &st::menuIconPremium },
-		.keywords = { u"ayugram"_q },
-	});
-	builder.addSectionButton({
 		.title = rpl::single(QString::fromUtf8("Настройки Whitegram")),
 		.targetSection = WhitegramMain::Id(),
 		.icon = { &st::menuIconPremium },

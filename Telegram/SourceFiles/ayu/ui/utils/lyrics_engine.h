@@ -38,6 +38,7 @@ struct Data {
 	QString keyword;
 	bool autoSynced = false;
 	int revision = 0;
+	std::int64_t sourceDurationMs = 0; // length of the recording the timing was made for
 };
 
 [[nodiscard]] std::vector<Line> ParseLrc(const QString &lrc);

@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
 
+#include "ayu/features/glass_effect/glass_effect.h"
+
 #include "dialogs/dialogs_three_state_icon.h"
 #include "dialogs/ui/chat_search_empty.h"
 #include "dialogs/ui/chat_search_in.h"
@@ -337,7 +339,11 @@ InnerWidget::InnerWidget(
 	+ st::defaultDialogRow.padding.left())
 , _childListShown(std::move(childListShown))
 , _freezeTimer([=] { _shownList->unfreeze(); update(); }) {
-	setAttribute(Qt::WA_OpaquePaintEvent, true);
+	// Glass can be toggled after construction. Qt must always repaint the
+	// pixels underneath translucent rows instead of reusing their old contents.
+	setAttribute(
+		Qt::WA_OpaquePaintEvent,
+		!AyuFeatures::GlassEffect::CreateTranslucent());
 	setAccessibleName(tr::lng_recent_chats(tr::now));
 
 	_communityViewable.setRepaint([=] { update(); });

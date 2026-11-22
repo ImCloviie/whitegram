@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 // AyuGram includes
 #include "ayu/ayu_settings.h"
+#include "ayu/features/glass_effect/glass_effect.h"
 
 
 namespace ChatHelpers {
@@ -253,6 +254,11 @@ void TabbedPanel::paintEvent(QPaintEvent *e) {
 	} else {
 		if (!_cache.isNull()) _cache = QPixmap();
 		_shadow.paint(p, innerRect(), st::emojiPanRadius);
+		AyuFeatures::GlassEffect::PaintPopupBackdrop(
+			p,
+			this,
+			innerRect(),
+			st::emojiPanRadius);
 	}
 }
 

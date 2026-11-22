@@ -1887,7 +1887,9 @@ void LyricsWindow::paintEvent(QPaintEvent *e) {
 		// WHY: a heavy frame must leave the main thread room for the rest of the app,
 		// otherwise every Telegram animation and scroll stutters while karaoke is open.
 		// Measured from the frame start: animation ticks come every 8 ms, so a 14 ms floor lands on the 16 ms tick.
-		_nextFrameAt = started + std::max(crl::time(14), crl::time(std::lround(spent)) + 5);
+		// Behind an active Telegram window the karaoke drops to 25 fps so the main thread stays free for it.
+		const auto floor = (isWindow() && !isActiveWindow()) ? crl::time(38) : crl::time(14);
+		_nextFrameAt = started + std::max(floor, crl::time(std::lround(spent)) + 5);
 		if (started - _statsAt >= 3000) {
 			if (_statsAt) {
 				const auto frames = std::max(1, _paintFrames);

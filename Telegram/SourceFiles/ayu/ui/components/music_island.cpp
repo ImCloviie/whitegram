@@ -405,6 +405,14 @@ void MusicIsland::setupPlayer() {
 		_trackState = Media::Player::TrackState();
 		checkVisibility();
 	}, lifetime());
+
+	// Only the close button sends this, so the karaoke stays open between tracks.
+	player->closePlayerRequests(
+	) | rpl::on_next([=] {
+		if (_lyricsWindow && _lyricsWindow->shown()) {
+			_lyricsWindow->toggle(false);
+		}
+	}, lifetime());
 }
 
 void MusicIsland::setupSettings() {

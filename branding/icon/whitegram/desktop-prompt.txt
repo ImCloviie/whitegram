@@ -1,0 +1,17 @@
+Tool: built-in image_gen
+Input: ayugram-reference.png (user-provided 640 x 640 reference)
+Output: desktop-master.png
+
+Final correction: built-in image_gen, using the previous desktop-master.png as
+edit target and light-master.png as the internal W reference.
+Prompt: Preserve the target's outer airplane silhouette, size, position and white
+background. Correct only the internal W cutout, which was too high and diagonal.
+Restore the reference W proportions: two rounded valleys at the same vertical
+level across the lower middle, one hump between them, a shallow horizontal lead-in
+from a narrow slit at the left tip, and a narrow taper rising only after the second
+valley toward the upper-right tip. Keep a large solid upper wing. No separate
+letter, extra shapes, gradients or shadows. Output one black-on-white square master.
+
+Initial generation prompt:
+
+Precise minimal edit to this icon. Keep exact original outer airplane shape, scale, position, orientation, proportions, and padding. Replace red with pure white and pale pink airplane with pure solid black. Cut one white smooth flowing W-shaped stripe INSIDE this black airplane, like an integrated Whitegram logo. W has two rounded valleys and a middle peak, readable at tiny sizes. Stripe goes from left tip across the middle to upper right tip. Everything outside the interior stripe must exactly match the supplied original silhouette. Do NOT elongate vertically, rotate, enlarge, or recenter. Especially retain the shallow upper edge and strongly curved concave lower-left edge. Entire airplane bounding box stays x=22.5%..71.1%, y=28.9%..77.5% of square canvas. Output one plain flat square monochrome logo master, black on white, no circle, no lettering beyond the integrated W stripe, no gradients, no shadows. Keep the width and height of silhouette EQUAL, just as in original.

@@ -4305,6 +4305,13 @@ void Widget::closeChildList(anim::type animated) {
 		_hideChildListCanvas->paintRequest(
 		) | rpl::on_next([=] {
 			QPainter p(_hideChildListCanvas.get());
+			if (AyuFeatures::GlassEffect::BackgroundOpacity() < 1.) {
+				// The snapshots already contain the chat list. Replace the live
+				// list underneath instead of blending a second copy over it.
+				p.setCompositionMode(QPainter::CompositionMode_Source);
+				p.fillRect(_hideChildListCanvas->rect(), Qt::transparent);
+				p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+			}
 			animation->paintContents(p);
 		}, _hideChildListCanvas->lifetime());
 	}

@@ -33,6 +33,7 @@ constexpr auto kOpcodePong = quint8(0xA);
 constexpr auto kMaxFramePayload = quint64(4 * 1024 * 1024);
 constexpr auto kMaxUpgradeResponse = 16 * 1024;
 constexpr auto kWsPort = 443;
+constexpr auto kWsPlainPort = 80;
 constexpr auto kPerHostTimeout = crl::time(3500);
 constexpr auto kFrontedHostTimeout = crl::time(7000);
 constexpr auto kFrontTcpTryTimeout = crl::time(1500);
@@ -50,6 +51,13 @@ std::atomic<bool> FrontingFirst = true;
 std::atomic<crl::time> FrontDownUntil = 0;
 std::atomic<crl::time> FrontLastOk = 0;
 constexpr auto kFrontDownCooldown = crl::time(2 * 60 * 1000);
+
+// Remembers whether the mirrors answered over plain ws:// last time.
+std::atomic<bool> MirrorPlainFirst = false;
+
+[[nodiscard]] bool IsOfficialHost(const QString &host) {
+	return host.endsWith(u".web.telegram.org"_q, Qt::CaseInsensitive);
+}
 
 } // namespace
 
@@ -92,7 +100,12 @@ WsSocket::WsSocket(
 	connect(
 		&_socket,
 		&QAbstractSocket::connected,
-		wrap([=] { _tcpTimer.cancel(); }));
+		wrap([=] {
+			_tcpTimer.cancel();
+			if (_target.plain) {
+				onEncrypted();
+			}
+		}));
 	connect(
 		&_socket,
 		&QSslSocket::encrypted,
@@ -172,8 +185,21 @@ std::vector<WsSocket::Target> WsSocket::buildTargets() const {
 		.isMedia = isMediaDc(),
 		.isTestDc = isTestDc(),
 	});
+	const auto plainFirst = MirrorPlainFirst.load();
 	for (const auto &host : hosts) {
-		result.push_back({ .host = host, .address = host, .sni = host });
+		if (IsOfficialHost(host)) {
+			result.push_back({ .host = host, .address = host, .sni = host });
+			continue;
+		}
+		// WHY: since 16.11.2026 mirror SNI is blocked, plain ws:// on port 80 passes.
+		for (const auto plain : { plainFirst, !plainFirst }) {
+			result.push_back({
+				.host = host,
+				.address = host,
+				.sni = host,
+				.plain = plain,
+			});
+		}
 	}
 	const auto frontDown = (crl::now() < FrontDownUntil.load());
 	result.insert(
@@ -224,7 +250,7 @@ void WsSocket::onHostTimeout() {
 
 QString WsSocket::debugTarget() const {
 	return (_target.address == _target.host)
-		? _target.host
+		? (_target.plain ? (_target.host + u":80"_q) : _target.host)
 		: u"%1 via %2 sni %3"_q.arg(
 			_target.host,
 			_target.address,
@@ -259,6 +285,14 @@ void WsSocket::connectCurrentTarget() {
 	// good connect takes under half a second, so retry quickly instead.
 	if (_target.address != _target.host) {
 		_tcpTimer.callOnce(kFrontTcpTryTimeout);
+	}
+	if (_target.plain) {
+		_socket.connectToHost(
+			_target.address,
+			kWsPlainPort,
+			QIODevice::ReadWrite,
+			QAbstractSocket::IPv4Protocol);
+		return;
 	}
 	// WHY: a fronted hello names another domain, so the certificate can't
 	// match; MTProto itself authenticates the server.
@@ -313,7 +347,11 @@ void WsSocket::tryNextHost() {
 			FrontDownUntil = now + kFrontDownCooldown;
 		}
 	} else if (!_host.isEmpty()) {
-		NotifyBypassHostResult(_host, false);
+		// A mirror is bad only once both its TLS and plain tries failed.
+		const auto next = _hostIndex + 1;
+		if (next >= int(_hosts.size()) || _hosts[next].host != _host) {
+			NotifyBypassHostResult(_host, false);
+		}
 	}
 	++_hostIndex;
 	if (_hostIndex >= int(_hosts.size())) {
@@ -396,6 +434,9 @@ bool WsSocket::consumeUpgradeResponse() {
 	NotifyBypassConnected();
 	if (_target.address == _target.host) {
 		NotifyBypassHostResult(_host, true);
+		if (!IsOfficialHost(_host)) {
+			MirrorPlainFirst = _target.plain;
+		}
 	} else {
 		FrontingFirst = _target.fronted;
 		FrontDownUntil = 0;

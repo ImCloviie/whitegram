@@ -217,9 +217,9 @@ void TabbedSelector::SlideAnimation::paintFrame(
 		+ std::clamp(_innerWidth + leftCoord, 0, _innerWidth);
 	auto rightFrom = _innerLeft + std::clamp(rightCoord, 0, _innerWidth);
 	auto painterRightFrom = rightFrom / style::DevicePixelRatio();
-	if (opacity < 1.) {
-		_frame.fill(Qt::transparent);
-	}
+	// Glass backgrounds do not overwrite the previous frame. Clear even at
+	// full animation opacity, otherwise moving glyphs leave opaque trails.
+	_frame.fill(Qt::transparent);
 	{
 		auto p = QPainter(&_frame);
 		p.setOpacity(opacity);
@@ -1114,7 +1114,11 @@ QImage TabbedSelector::grabForAnimation() {
 		QImage::Format_ARGB32_Premultiplied);
 	result.setDevicePixelRatio(style::DevicePixelRatio());
 	result.fill(Qt::transparent);
-	render(&result);
+	{
+		auto p = QPainter(&result);
+		// Keep the grab translucent, without QWidget's window background.
+		Ui::RenderWidget(p, this);
+	}
 
 	_a_slide = base::take(slideAnimation);
 	_slideAnimation = base::take(slideAnimationData);
@@ -1466,8 +1470,9 @@ void TabbedSelector::switchTab() {
 		std::move(nowCache),
 		slidingRect,
 		wasSectionIcons);
-	_slideAnimation->setCornerMasks(
-		Images::CornersMask(st::emojiPanRadius));
+	if (_roundRadius > 0) {
+		_slideAnimation->setCornerMasks(Images::CornersMask(_roundRadius));
+	}
 	_slideAnimation->start();
 
 	hideForSliding();

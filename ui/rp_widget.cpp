@@ -358,10 +358,11 @@ RpWidget::RpWidget(QWidget *parent)
 	[[maybe_unused]] static const auto Once = [] {
 		auto format = QSurfaceFormat::defaultFormat();
 		format.setSwapInterval(::Platform::MetalSupported() ? 1 : 0);
-#ifdef Q_OS_WIN
+		// Qt 5 has no DComp output: alpha there only breaks capture exclusion.
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 		// DirectComposition composites swap chain only with alpha in it.
 		format.setAlphaBufferSize(8);
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && Qt 6
 #ifdef DESKTOP_APP_USE_ANGLE
 		format.setRedBufferSize(8);
 		format.setGreenBufferSize(8);

@@ -519,7 +519,7 @@ HistoryWidget::HistoryWidget(
 				const auto myUserId = session().userId().bare;
 				const auto recipientId = peerToUser(_peer->id).bare;
 
-				const auto doEncryptAndSend = [=](std::vector<QByteArray> keys) {
+				const auto encryptAndSend = [=](std::vector<QByteArray> keys) {
 					if (keys.empty()) {
 						controller->showToast(Whitegram::E2EE::NoRecipientKeyText());
 						return;
@@ -550,6 +550,18 @@ HistoryWidget::HistoryWidget(
 
 						sendTextWithTags(TextWithTags{ encryptedText, { { 0, Whitegram::E2EE::PlaceholderTitleLength(), Ui::InputField::kTagBold } } }, false, options, nullptr);
 					}
+				};
+
+				// No key: the peer has no Whitegram yet. An invite is sent: the peer sees
+				// the placeholder with the download link, the text is sealed for our devices only.
+				const auto doEncryptAndSend = [=](std::vector<QByteArray> keys) {
+					if (keys.empty()) {
+						Whitegram::E2EE::ShowInviteConfirm(controller->uiShow(), [=] {
+							encryptAndSend({ Whitegram::E2EE::GetMyPublicKey() });
+						});
+						return;
+					}
+					encryptAndSend(std::move(keys));
 				};
 
 				if (recipientId == myUserId) {

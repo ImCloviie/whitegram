@@ -90,6 +90,13 @@ void FetchBadges();
 // The icon of a custom badge or of a built-in variant, downloaded from
 // the backend and cached.
 [[nodiscard]] QImage CustomBadgeIcon(const QString &customId);
+// Starts loading a custom badge icon: from the disk cache, then the server.
+void LoadCustomBadgeIcon(const QString &customId);
+// Picks the color of the own colorable badge, done gets an error or "".
+void SetBadgeColor(
+	not_null<Main::Session*> session,
+	const QString &color,
+	Fn<void(QString error)> done);
 [[nodiscard]] QString CustomBadgeText(const QString &customId);
 [[nodiscard]] QImage VariantIcon(const QString &variant);
 

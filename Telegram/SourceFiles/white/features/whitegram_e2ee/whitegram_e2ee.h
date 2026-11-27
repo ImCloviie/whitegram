@@ -21,7 +21,7 @@ inline constexpr auto kProfileUrl = "https://t.me/whitegrambeta";
 inline constexpr auto kPlaceholderText =
 	"🔒 Одноразовое сообщение Whitegram\n\n"
 	"Сообщение защищено сквозным шифрованием и откроется только в Whitegram.\n\n"
-	"Скачать Whitegram: https://t.me/whitegrambeta\n";
+	"Скачать Whitegram: @whitegrambeta\n";
 
 struct KeyPair {
 	QByteArray publicKey;  // 65 bytes uncompressed or 33 bytes compressed X9.62

@@ -3,6 +3,8 @@
 // Copyright @ImCloviie, 2026
 #include "white/features/whitegram_e2ee/whitegram_e2ee.h"
 
+#include "white/features/whitegram_e2ee/whitegram_key_manager.h"
+
 #include "white/libs/json.hpp"
 #include "base/flat_map.h"
 #include "core/application.h"
@@ -634,6 +636,22 @@ QString Encrypt(
 	if (recipients.empty()) {
 		return {};
 	}
+	// The sender's other devices get ordinary recipient blocks, so the
+	// sent message opens on all of them; older clients read it unchanged.
+	{
+		const auto mine = GetMyPublicKey();
+		auto own = size_t(0);
+		for (const auto &key : KeyManager::Instance().cachedKeys(senderId)) {
+			const auto valid = EnsureUncompressedPublicKey(key);
+			if (valid.size() == kP256X962Length
+				&& valid != mine
+				&& !ranges::contains(recipients, valid)
+				&& own < kMaxRecipientKeys) {
+				recipients.push_back(valid);
+				++own;
+			}
+		}
+	}
 	const auto ephemeral = GenerateKeyPair();
 	if (ephemeral.publicKey.isEmpty() || ephemeral.privateKey.isEmpty()) {
 		return {};
@@ -1072,14 +1090,8 @@ bool IsEncryptedMessage(const QString &text) {
 		|| text.contains(QString::fromLatin1(kPasscodePrefix))) {
 		return true;
 	}
-	if (text.contains(kZwStart) || text.contains(kVsStart)) {
-		return true;
-	}
-	const auto trimmed = text.trimmed();
-	if (trimmed.startsWith(u"🔒 Одноразовое сообщение Whitegram"_q)) {
-		return true;
-	}
-	return false;
+	// Only with the packet: a hand-copied placeholder is ordinary text.
+	return text.contains(kZwStart) || text.contains(kVsStart);
 }
 
 bool IsPasscodeEncryptedMessage(const QString &text) {

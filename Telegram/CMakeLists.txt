@@ -240,6 +240,8 @@ set(ayugram_files
         white/ui/message_history/history_item.h
         white/ui/message_history/history_section.cpp
         white/ui/message_history/history_section.h
+        white/ui/boxes/badge_color_box.cpp
+        white/ui/boxes/badge_color_box.h
         white/ui/boxes/edit_mark_box.cpp
         white/ui/boxes/edit_mark_box.h
         white/ui/boxes/font_selector.cpp

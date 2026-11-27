@@ -290,7 +290,9 @@ int PeerBadge::drawGetWidth(Painter &p, Descriptor &&descriptor) {
 		&& !hidePremiumStatuses;
 
 	const auto admin = Whitegram::Backend::AdminBadgeFor(getBareID(peer));
+	// A custom badge from the admin panel wins over the built-in lists.
 	const auto paintWhitegramDeveloper = peer->isUser()
+		&& !(admin && admin->isCustom())
 		&& (isWhitegramDeveloperPeer(getBareID(peer))
 			|| (admin && admin->isDeveloper()))
 		&& !hidePremiumStatuses;

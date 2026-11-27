@@ -23,6 +23,7 @@
 #include <QtCore/QEvent>
 #include <QtCore/QOperatingSystemVersion>
 #include <QtCore/QPointer>
+#include <QtCore/QSettings>
 #include <QtGui/QPaintEvent>
 #include <QtGui/QPainterPath>
 #include <QtWidgets/QApplication>
@@ -147,7 +148,13 @@ void SetBlurBehind(
 		= (QOperatingSystemVersion::current().microVersion() >= 22000);
 	// WHY: plain blur on Windows 11 lags behind a dragged window and may not
 	// render, so it stays acrylic there; DWM has no radius, 0% turns it off.
-	if (strength <= 0) {
+	// Windows transparency effects off: DWM paints blur solid, so skip it.
+	const auto system = QSettings(
+		u"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion"
+		"\\Themes\\Personalize"_q,
+		QSettings::NativeFormat);
+	if (strength <= 0
+		|| system.value(u"EnableTransparency"_q, 1).toInt() == 0) {
 		enabled = false;
 	}
 	const auto acrylic = kAcrylicSupported;

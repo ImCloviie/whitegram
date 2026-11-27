@@ -4975,7 +4975,7 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 		// profile, but they cannot decrypt the zero-width payload.
 		const auto bubbleText = u"🔒 Одноразовое сообщение Whitegram"_q;
 		const auto hintLine = u"Нажмите, чтобы открыть"_q;
-		const auto profileLine = u"Скачать Whitegram: https://t.me/whitegrambeta"_q;
+		const auto profileLine = u"Скачать Whitegram: @whitegrambeta"_q;
 
 		auto finalText = TextWithEntities();
 		finalText.text = bubbleText + u"\n\n"_q + hintLine + u"\n\n"_q + profileLine;
@@ -4990,10 +4990,9 @@ void HistoryItem::setText(TextWithEntities textWithEntities) {
 			bubbleText.length() + u"\n\n"_q.length() + hintLine.length(),
 			viewOnceUrl));
 		finalText.entities.push_back(EntityInText(
-			EntityType::Url,
-			finalText.text.length() - profileLine.length(),
-			profileLine.length(),
-			u"https://t.me/whitegrambeta"_q));
+			EntityType::Mention,
+			finalText.text.length() - u"@whitegrambeta"_q.length(),
+			u"@whitegrambeta"_q.length()));
 
 		text = finalText;
 	} else {

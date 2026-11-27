@@ -8,6 +8,7 @@
 #include "white/white_settings.h"
 #include "white/features/whitegram_e2ee/whitegram_e2ee.h"
 #include "white/features/whitegram_e2ee/whitegram_view_status.h"
+#include "base/event_filter.h"
 #include "base/timer.h"
 #include "mainwindow.h"
 #include "data/data_channel.h"
@@ -36,6 +37,7 @@
 #include "ui/widgets/fields/password_input.h"
 #include "ui/widgets/labels.h"
 #include "window/window_session_controller.h"
+#include <QtGui/QKeyEvent>
 #include <QtGui/QPainterPath>
 #include <rpl/range.h>
 
@@ -124,6 +126,15 @@ protected:
 		const auto radius = double(st::roundRadiusLarge) * 2;
 		auto path = QPainterPath();
 		path.addRoundedRect(QRectF(rect()), radius, radius);
+
+		// Dissolving: the card shrinks a little while the particles eat it.
+		if (progress > 0.) {
+			const auto scale = 1. - 0.06 * progress;
+			const auto center = QRectF(rect()).center();
+			p.translate(center);
+			p.scale(scale, scale);
+			p.translate(-center);
+		}
 
 		p.setOpacity(1. - progress * 0.6);
 		p.fillPath(path, st::windowBgOver);
@@ -311,6 +322,7 @@ void SetupDecryptedContentBox(
 			RevokeOnce(item);
 		};
 		if (animated) {
+			status->set(u"Сообщение исчезает…"_q, -1., false);
 			card->dissolve([=] {
 				box->closeBox();
 				destroy();
@@ -374,15 +386,33 @@ void SetupDecryptedContentBox(
 	state->timer.callEach(kStatusTick);
 	refresh();
 
-	if (!isOut && ttl >= 0) {
+	// The recipient's copy is removed on close: closing early dissolves the
+	// card the same way the timer does. A forced close still removes it.
+	const auto removesOnClose = (!isOut && ttl >= 0);
+	const auto close = [=] {
+		if (removesOnClose) {
+			finish(true);
+		} else {
+			box->closeBox();
+		}
+	};
+	if (removesOnClose) {
 		box->boxClosing(
 		) | rpl::on_next([=] {
 			finish(false);
 		}, box->lifetime());
+		box->setCloseByOutsideClick(false);
+		box->setCloseByEscape(false);
+		base::install_event_filter(box, [=](not_null<QEvent*> e) {
+			if (e->type() == QEvent::KeyPress
+				&& static_cast<QKeyEvent*>(e.get())->key() == Qt::Key_Escape) {
+				close();
+				return base::EventFilterResult::Cancel;
+			}
+			return base::EventFilterResult::Continue;
+		});
 	}
-	box->addButton(tr::lng_close(), [=] {
-		box->closeBox();
-	});
+	box->addButton(tr::lng_close(), close);
 }
 
 } // namespace

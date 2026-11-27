@@ -17,6 +17,7 @@
 #include "white/features/filters/filters_controller.h"
 #include "white/features/whitegram_backend/whitegram_backend.h"
 #include "white/features/whitegram_e2ee/whitegram_e2ee.h"
+#include "white/ui/boxes/badge_color_box.h"
 #include "white/ui/boxes/donate_info_box.h"
 #include "white/ui/toasts.h"
 #include "white/utils/rc_manager.h"
@@ -347,7 +348,10 @@ QImage MakeWhitegramAdminBadgeImage(uint64 peerId) {
 [[nodiscard]] Info::Profile::Badge::Content ComputeExteraBadgeContent(
 		not_null<PeerData*> peer) {
 	const auto admin = Whitegram::Backend::AdminBadgeFor(getBareID(peer));
-	if (peer->isUser() && (isWhitegramDeveloperPeer(getBareID(peer))
+	// A custom badge from the admin panel wins over the built-in lists.
+	const auto adminCustom = admin && admin->isCustom();
+	if (peer->isUser() && !adminCustom
+		&& (isWhitegramDeveloperPeer(getBareID(peer))
 			|| (admin && admin->isDeveloper()))) {
 		return Info::Profile::Badge::Content{
 			.badge = Info::Profile::BadgeType::WhitegramDeveloper,
@@ -434,6 +438,7 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 			|| (admin && admin->isSponsor());
 		const auto isWhitegramUser = isWhitegramUserPeer(getBareID(peer));
 		const auto isWhitegramDeveloper = peer->isUser()
+			&& !isWhitegramCustom
 			&& (isWhitegramDeveloperPeer(getBareID(peer))
 				|| (admin && admin->isDeveloper()));
 
@@ -443,8 +448,9 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 			auto own = admin->text;
 			own.replace(u"{name}"_q, peer->name());
 			text = tr::rich(own);
-		} else if (isWhitegramTeamPeer(getBareID(peer))
-			|| (admin && admin->variant == u"team"_q)) {
+		} else if (!isWhitegramCustom
+			&& (isWhitegramTeamPeer(getBareID(peer))
+				|| (admin && admin->variant == u"team"_q))) {
 			text = tr::wg_TeamPopup(
 				tr::now,
 				lt_item,
@@ -535,6 +541,23 @@ Fn<void()> badgeClickHandler(not_null<PeerData*> peer) {
 					controller->show(Box([=](not_null<Ui::GenericBox*> box) {
 						Ui::FillDonateInfoBox(box, controller, type);
 					}));
+					window->activate();
+				});
+		} else if (peer->isSelf() && Ui::HasColorableBadge(getBareID(peer))) {
+			White::Ui::ShowToastWithAction(
+				std::move(config),
+				Ui::BadgeColorButtonText(),
+				[=] {
+					const auto window = Core::App().activeWindow();
+					const auto controller = window
+						? window->sessionController()
+						: nullptr;
+					if (!controller) {
+						return;
+					}
+					controller->show(Box(
+						Ui::FillBadgeColorBox,
+						&controller->session()));
 					window->activate();
 				});
 		} else {

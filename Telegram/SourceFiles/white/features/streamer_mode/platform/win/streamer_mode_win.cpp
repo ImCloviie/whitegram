@@ -51,7 +51,7 @@ void LogFailure(HWND handle, DWORD excludeError, DWORD monitorError) {
 		).arg(device));
 }
 
-void WarnOnce() {
+void WarnOnce(bool translucent) {
 	static auto warned = false;
 	if (warned) {
 		return;
@@ -59,6 +59,17 @@ void WarnOnce() {
 	warned = true;
 	const auto ru = Lang::GetInstance().id().startsWith(u"ru"_q)
 		|| Lang::GetInstance().baseId().startsWith(u"ru"_q);
+	if (translucent) {
+		// Windows 10 can't exclude per-pixel layered windows the glass needs.
+		Ui::Toast::Show(ru
+			? QString::fromUtf8(
+				"Windows не скрывает от записи окно со «Стеклом». "
+				"Выключи стекло и перезапусти Whitegram.")
+			: QString(
+				"Windows does not hide a window with Glass from capture. "
+				"Turn off Glass and restart Whitegram."));
+		return;
+	}
 	Ui::Toast::Show(ru
 		? QString::fromUtf8(
 			"Windows не дала скрыть окно от записи экрана. "
@@ -99,7 +110,7 @@ void SetWindowCaptureExcluded(
 			return;
 		}
 		LogFailure(again, e1, e2);
-		WarnOnce();
+		WarnOnce(weak->testAttribute(Qt::WA_TranslucentBackground));
 	});
 }
 

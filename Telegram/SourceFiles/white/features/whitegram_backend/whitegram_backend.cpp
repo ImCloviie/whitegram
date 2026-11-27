@@ -2087,6 +2087,39 @@ QImage CustomBadgeIcon(const QString &customId) {
 	return (i != icons.end()) ? i->second : QImage();
 }
 
+void LoadCustomBadgeIcon(const QString &customId) {
+	LoadCustomBadgeIconFromDisk(customId);
+	FetchCustomBadgeIcon(customId);
+}
+
+void SetBadgeColor(
+		not_null<Main::Session*> session,
+		const QString &color,
+		Fn<void(QString error)> done) {
+	EnsureOwnerToken(session);
+	auto request = AuthorizedRequest(
+		QUrl(BaseUrl() + u"/api/v1/badges/me/color"_q));
+	ApplyOwnerToken(request, session->userId().bare);
+	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+	const auto body = QJsonDocument(QJsonObject{
+		{ u"color"_q, color },
+	}).toJson(QJsonDocument::Compact);
+	const auto reply = Service::Instance().accessManager().post(request, body);
+	QObject::connect(reply, &QNetworkReply::finished, [=] {
+		const auto guard = gsl::finally([&] { reply->deleteLater(); });
+		const auto status = reply->attribute(
+			QNetworkRequest::HttpStatusCodeAttribute).toInt();
+		if (reply->error() != QNetworkReply::NoError || status != 200) {
+			const auto answer = QJsonDocument::fromJson(reply->readAll());
+			const auto error = answer.object().value(u"error"_q).toString();
+			done(error.isEmpty() ? reply->errorString() : error);
+			return;
+		}
+		FetchBadges();
+		done(QString());
+	});
+}
+
 QString CustomBadgeText(const QString &customId) {
 	const auto &texts = CustomBadgeTexts();
 	const auto i = texts.find(customId);

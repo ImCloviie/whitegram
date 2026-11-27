@@ -56,6 +56,20 @@ QString DiskCachePath() {
 
 } // namespace
 
+void ShowInviteConfirm(std::shared_ptr<Ui::Show> show, Fn<void()> confirmed) {
+	const auto ru = IsRussian();
+	show->showBox(Ui::MakeConfirmBox({
+		.text = (ru
+			? u"У собеседника пока нет Whitegram, поэтому прочитать одноразовое сообщение он не сможет.\n\nМожно отправить приглашение: он увидит «🔒 Одноразовое сообщение Whitegram» и @whitegrambeta, где скачать Whitegram, а сам текст останется зашифрованным только для ваших устройств."_q
+			: u"Your contact has no Whitegram yet, so they cannot read a one-time message.\n\nYou can send an invite: they will see \"🔒 One-time Whitegram message\" with @whitegrambeta to download it, while the text itself stays encrypted for your devices only."_q),
+		.confirmed = [=](Fn<void()> close) {
+			close();
+			confirmed();
+		},
+		.confirmText = (ru ? u"Отправить приглашение"_q : u"Send invite"_q),
+	}));
+}
+
 KeyManager &KeyManager::Instance() {
 	static KeyManager instance;
 	return instance;
@@ -67,6 +81,37 @@ KeyManager::KeyManager() {
 
 void KeyManager::init(not_null<Main::Session*> session) {
 	registerMyKey(session);
+	const auto userId = session->userId().bare;
+	if (_ownUserIds.emplace(userId).second) {
+		fetchPeerPublicKeys(userId, nullptr);
+	}
+}
+
+std::vector<QByteArray> KeyManager::cachedKeys(uint64 userId) const {
+	const auto i = _fresh.find(userId);
+	return (i != _fresh.end()) ? i->second.keys : std::vector<QByteArray>();
+}
+
+void KeyManager::refreshOwnKeys(Fn<void()> done) {
+	auto stale = std::vector<uint64>();
+	for (const auto userId : _ownUserIds) {
+		const auto i = _fresh.find(userId);
+		if (i == _fresh.end() || crl::now() - i->second.at >= kFreshFor) {
+			stale.push_back(userId);
+		}
+	}
+	if (stale.empty()) {
+		done();
+		return;
+	}
+	const auto left = std::make_shared<int>(int(stale.size()));
+	for (const auto userId : stale) {
+		fetchPeerPublicKeys(userId, [=](std::vector<QByteArray>) {
+			if (!--*left) {
+				done();
+			}
+		});
+	}
 }
 
 void KeyManager::registerMyKey(
@@ -212,7 +257,13 @@ void KeyManager::pin(uint64 userId, std::vector<QByteArray> keys) {
 void KeyManager::withPeerKeys(
 		std::shared_ptr<Ui::Show> show,
 		uint64 userId,
-		Fn<void(std::vector<QByteArray> keys)> done) {
+		Fn<void(std::vector<QByteArray> keys)> sendWith) {
+	// Our other devices' keys are refreshed too: Encrypt wraps for them.
+	const auto done = [=](std::vector<QByteArray> keys) {
+		KeyManager::Instance().refreshOwnKeys([=] {
+			sendWith(keys);
+		});
+	};
 	const auto proceed = [=](std::vector<QByteArray> fetched) {
 		auto &manager = KeyManager::Instance();
 		const auto pinned = manager.pinnedKeys(userId);
@@ -230,7 +281,13 @@ void KeyManager::withPeerKeys(
 				added.push_back(key);
 			}
 		}
-		if (added.empty()) {
+		// A new device next to the known ones is the usual case (the
+		// contact logged in on a phone): taken silently. Only a known key
+		// that disappeared, i.e. a replaced key, may be a substitution.
+		const auto replaced = ranges::any_of(pinned, [&](const QByteArray &key) {
+			return !ranges::contains(fetched, key);
+		});
+		if (added.empty() || !replaced) {
 			manager.pin(userId, fetched);
 			done(fetched);
 			return;

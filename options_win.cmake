@@ -65,8 +65,8 @@ if (MSVC)
     target_link_options(common_options
     INTERFACE
         $<$<CONFIG:Debug>:/NODEFAULTLIB:LIBCMT>
-        $<$<AND:$<CONFIG:Debug>,$<OR:$<BOOL:${build_win64}>,$<BOOL:${build_winarm}>>>:/DEBUG:FASTLINK>
-        $<$<NOT:$<CONFIG:Debug>>:/DEBUG:NONE>
+        $<$<AND:$<CONFIG:Debug>,$<OR:$<BOOL:${build_win64}>,$<BOOL:${build_winarm}>>>:/DEBUG:$<IF:$<VERSION_LESS:${MSVC_VERSION},1950>,FASTLINK,FULL>>
+        $<$<NOT:$<AND:$<CONFIG:Debug>,$<OR:$<BOOL:${build_win64}>,$<BOOL:${build_winarm}>>>>:$<IF:$<BOOL:$<GENEX_EVAL:$<TARGET_PROPERTY:MSVC_DEBUG_INFORMATION_FORMAT>>>,/DEBUG,/DEBUG:NONE>>
         $<$<NOT:$<CONFIG:Debug>>:/OPT:REF>
         /INCREMENTAL:NO
         /DEPENDENTLOADFLAG:0x800
@@ -145,6 +145,15 @@ INTERFACE
     Crypt32
     Propsys
     Bcrypt
+    Mscms
+    Authz
+    Dwrite
+    dxguid
+    $<LINK_ONLY:desktop-app::win_directx_helper>
+    D3D12
+    SetupAPI
+    Shcore
+    uiautomationcore
 )
 
 if (build_winstore)
